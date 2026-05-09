@@ -1,0 +1,264 @@
+﻿
+/* start ribbon set*/
+
+/*hnRibbonBar*/
+hnRibbonBar{
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #4374A0, stop:0.2 #B8CFE9,stop:0.5 #C0D8F0, stop:1 #C9D9ED);
+  font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonButtonGroupWidget*/
+hnRibbonButtonGroupWidget{
+  background-color: transparent;
+  font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonCtrlContainer*/
+hnRibbonCtrlContainer{
+    background-color: transparent;
+	font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonCategory*/
+hnRibbonCategory:focus{
+  outline: none;
+}   
+ 
+hnRibbonCategory{
+  background: #CCDCEE;
+  font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonStackedWidget*/
+hnRibbonStackedWidget{
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #BEE8F5, stop:0.3 #D4E1F1,stop:0.31 #C8D8ED, stop:0.8 #D0E0F0, stop:1 #E3F4FE);
+  font-family: "Microsoft YaHei";
+}
+hnRibbonStackedWidget:focus{
+  outline: none;
+}
+
+/*hnRibbonApplicationButton*/
+hnRibbonApplicationButton{
+  color:white;  
+  border-image: url(":/resource/logo_64_xroe2.ico");
+  border: 1px solid #416ABD;  
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #4374A0, stop:0.2 #B8CFE9,stop:0.5 #C0D8F0, stop:1 #C9D9ED);
+}
+
+hnRibbonApplicationButton::hover{  
+  background: transparent;  
+}
+
+hnRibbonApplicationButton::pressed{  
+  border - top - left - radius: 2px;
+  border - top - right - radius: 2px;
+}  
+
+hnRibbonApplicationButton:focus{
+  border - top - left - radius: 2px;
+  border - top - right - radius: 2px;
+}
+
+/*hnRibbonTabBar*/
+hnRibbonTabBar{
+    background-color: transparent;
+	font-family: "Microsoft YaHei";
+}
+
+hnRibbonTabBar::tab {
+    color:#444444;
+    border:none;
+    border-top-left-radius: 2px;  
+    border-top-right-radius: 2px; 
+    margin-top: 0px;
+    margin-right: 0px;
+    margin-left: 6px;
+    margin-bottom: 0px;
+    min-width:60px;
+    max-width:200px;
+    min-height:30px;
+    max-height:30px;
+    padding-left:1px;
+    padding-right:1px;
+    padding-top:1px;
+    padding-bottom:1px;
+	font-family: "Microsoft YaHei";
+}
+
+hnRibbonTabBar::tab:selected, QTabBar::tab:hover { 
+  border-top-left-radius: 2px;
+  border-top-right-radius: 2px;
+}
+
+hnRibbonTabBar::tab:selected{
+    color:#000000;
+    border: 1px solid #BAC9DB;
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #BEE8F5, stop:0.3 #D4E1F1,stop:0.31 #C8D8ED, stop:0.8 #D0E0F0, stop:1 #E3F4FE);
+    border-bottom-color: #FFFFFF;
+}
+
+hnRibbonTabBar::tab:hover:!selected{
+    border: 1px solid #ECBC3D;
+    color: #000000;
+}
+
+hnRibbonTabBar::tab:!selected {
+    margin-top: 0px;
+}
+
+/*hnRibbonToolButton*/
+hnRibbonToolButton{
+    border:none;
+    color:#444444;
+    background-color:transparent;
+	font-family: "Microsoft YaHei";
+}
+hnRibbonToolButton::pressed{
+    color:#444444;
+    border: 1px solid #FFBF3E;
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEDA3, stop:0.1282 #FDD36A,stop:0.8333 #FCD57C, stop:1 #FDFDEB);
+}
+hnRibbonToolButton::checked{
+    color:#444444;
+    border: 1px solid #f2ca58;
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);
+}
+hnRibbonToolButton::hover {
+    color:#000000;
+    border: 1px solid #f2ca58;
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);
+}
+
+/*hnRibbonControlButton*/
+hnRibbonControlButton{
+  background-color:transparent;
+  border: none;
+  color:#444444;
+}
+hnRibbonControlButton#hnRibbonGalleryButtonUp,#hnRibbonGalleryButtonDown,#hnRibbonGalleryButtonMore{
+  border: 1px solid #C0C2C4;
+}
+hnRibbonControlButton#SARibbonBarHidePannelButton{
+  border: none;
+}
+hnRibbonControlButton::pressed{
+  border: 1px solid #f2ca58;
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);
+}
+hnRibbonControlButton::checked{
+  border: 1px solid #f2ca58;
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);
+}
+hnRibbonControlButton::hover {
+  border: 1px solid #f2ca58;
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);
+ }
+
+
+/*hnRibbonMenu*/
+hnRibbonMenu {  
+  color:#444444;
+  background-color: #FCFCFC;  
+  border: 1px solid #8492A6;  
+}
+hnRibbonMenu::item {  
+  padding: 5px 25px 5px 25px;
+  background-color: transparent;  
+}
+hnRibbonMenu::item:selected {   
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FEF9F4, stop:0.38 #FDE0BD,stop:0.39 #FFCE69, stop:1 #FFFFE7);
+}
+hnRibbonMenu::item:hover {
+    color:#000;
+    border: 1px solid #FFB700;
+}  
+hnRibbonMenu::icon{
+  margin-left: 5px;
+}
+
+/*hnRibbonPannelOptionButton*/
+hnRibbonPannelOptionButton {
+  background-color: transparent;
+  color:#444444;
+}
+
+hnRibbonPannelOptionButton::hover {  
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);  
+  border: 0px;
+}
+
+/*hnRibbonPannel*/
+hnRibbonPannel {
+  background: #CCDCEE;
+  border: 0px;
+  color: #303030;
+  font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonGallery*/
+hnRibbonGallery {  
+  background-color: #CCDCEE;
+  border: 1px solid #C0C2C4;
+  font-family: "Microsoft YaHei";
+}
+
+/*hnRibbonGalleryGroup*/
+hnRibbonGalleryGroup {  
+  show-decoration-selected: 1;
+  background-color: transparent;
+  color: #444444;
+}
+hnRibbonGalleryGroup::item:selected {  
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);  
+}
+hnRibbonGalleryGroup::item:hover {  
+  border: 2px solid #FDEEB3;
+}
+
+/*hnRibbonComboBox*/
+hnRibbonComboBox {
+  border: 1px solid #C0C2C4;
+
+}
+
+hnRibbonComboBox:hover{
+  border: 1px solid #FDEEB3;
+  color : #000;
+}
+
+hnRibbonComboBox:editable {
+  color : #000;
+  background: white;
+  selection-background-color: #9BBBF7;
+  selection-color: #000;
+}
+
+hnRibbonComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 15px;
+  border-left: none;
+  border-top-right-radius: 0px;
+  border-bottom-right-radius: 0px;
+}
+
+hnRibbonComboBox::drop-down:hover {
+  border: 1px solid #FDEEB3;
+  background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,stop:0 #FDEEB3, stop:0.1282 #FDE38A,stop:0.8333 #FCE58C, stop:1 #FDFDEB);  
+}
+hnRibbonComboBox::down-arrow {
+  image: url(:/image/resource/ArrowDown.png);
+}
+
+
+/*hnRibbonSeparatorWidget*/
+hnRibbonSeparatorWidget{
+    /*background-color: transparent;*/
+    background-color: #D3D3D3;
+}
+
+/*QDockWidget*/
+QDockWidget{
+  background-color: #CCDCEE;
+}

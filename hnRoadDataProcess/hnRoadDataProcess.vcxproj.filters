@@ -1,0 +1,464 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="对话框">
+      <UniqueIdentifier>{b4d37ae0-8b7a-408e-9ef2-6380a878053a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\打开工程对话框">
+      <UniqueIdentifier>{6cb5f9b2-e1b7-45fd-9b15-2c1e1fd4e9b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口">
+      <UniqueIdentifier>{e580f2da-aa6b-4987-a887-676ba8bd0863}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\病害列表窗口">
+      <UniqueIdentifier>{09fe4b77-5542-4c89-b457-a1706c6f1fd4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\IRM计算窗口">
+      <UniqueIdentifier>{ede87cc3-8d82-4d4b-a66c-00ffe022bbf5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="状态栏">
+      <UniqueIdentifier>{0e36af73-74e3-4727-9226-00f2109f0793}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\出表选择窗口">
+      <UniqueIdentifier>{d9ee8400-6c06-4dca-80fe-c5d72fba753e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="主窗口">
+      <UniqueIdentifier>{13cfc6b2-a05a-4c01-872a-3263d2a62da1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="QXlsx封装">
+      <UniqueIdentifier>{564cc1ca-2f35-4ade-b838-d82512891d3e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\校桩窗口">
+      <UniqueIdentifier>{21defc37-eece-45ee-81d2-73efe659e599}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\放大镜参数设置">
+      <UniqueIdentifier>{57880d45-b62b-46d6-8898-2f9852390af0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="导入自动识别病害">
+      <UniqueIdentifier>{e48cd845-b395-44e9-b3d8-65f0ca639cde}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\原始比例放大窗口">
+      <UniqueIdentifier>{ab602acf-4512-482a-bd2a-8d663c105760}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\里程跳转对话框">
+      <UniqueIdentifier>{7c17becd-9bb2-46d5-816a-186e45b96552}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\软件设置窗口">
+      <UniqueIdentifier>{9de7599e-9d0d-4b7b-8ccd-ae9597d511a1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\出表选择窗口\等级公路2018-路面病害面积统计表">
+      <UniqueIdentifier>{ed72fbd1-20e9-4dec-ae7a-cbe6453da5eb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="景观窗口">
+      <UniqueIdentifier>{402127bb-7429-4dc9-882e-4211d242a88e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="全局快捷键">
+      <UniqueIdentifier>{5a7a65c2-6040-4390-866c-5b48cba8c80b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\合并小框病害对话框">
+      <UniqueIdentifier>{dededda0-c698-4290-8c69-fd05789a3858}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\工程信息窗口">
+      <UniqueIdentifier>{e9cc71ad-3b8d-4c2d-888c-a26b8aec8c66}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\出表选择窗口\config">
+      <UniqueIdentifier>{41364a4a-1a92-496f-93c4-6fdb74cb754a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\DXF计算对话框">
+      <UniqueIdentifier>{13977f7a-6d5c-4c03-95bd-690091c4afcb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\IRM实时显示">
+      <UniqueIdentifier>{e527e201-728a-4aca-8e43-e401c4ae55f4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\地图显示">
+      <UniqueIdentifier>{0135cc02-aeb0-4b58-b12f-f97407f37b6c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\打标窗口">
+      <UniqueIdentifier>{2a4b88ba-9ce3-49d9-9d8c-c2aaca05df5a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\关于信息对话框">
+      <UniqueIdentifier>{8e3849e6-b18b-40da-aaf7-b9b26a0e0721}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\数据库备份窗口">
+      <UniqueIdentifier>{467409ca-4007-4897-a7eb-b4aa5862d431}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="对话框\高精度输出窗口">
+      <UniqueIdentifier>{71baedc5-0a4b-41c8-9e39-00ba12d70e57}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="停靠窗口\图像调整对话框">
+      <UniqueIdentifier>{e27ecea8-9c21-4b1b-9ad0-0cdb852d3054}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="hnRoadDataProcess.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtUic Include="hnRoadDataProcess.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtRcc Include="qss.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hnwidget3dview.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOpenProjectDlg.cpp">
+      <Filter>对话框\打开工程对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDiseaseListWidget.cpp">
+      <Filter>停靠窗口\病害列表窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnMarkInfoDlg.cpp">
+      <Filter>对话框\打标窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="calculateIrmForm.cpp">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="CalculationThread.cpp">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="statusBarWidget.cpp">
+      <Filter>状态栏</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputExcelDialog.cpp">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutExcelMile.cpp">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutExcelMileManage.cpp">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnRoadDataProcess.cpp">
+      <Filter>主窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnXlsxInterface.cpp">
+      <Filter>QXlsx封装</Filter>
+    </ClCompile>
+    <ClCompile Include="hnMileAdjustDlg.cpp">
+      <Filter>对话框\校桩窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnMagnifySettingDlg.cpp">
+      <Filter>对话框\放大镜参数设置</Filter>
+    </ClCompile>
+    <ClCompile Include="hnImportAidcDiseases.cpp">
+      <Filter>导入自动识别病害</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOriginalScalePixShowWidget.cpp">
+      <Filter>停靠窗口\原始比例放大窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnRegionJumpDlg.cpp">
+      <Filter>对话框\里程跳转对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnProjectConfig.cpp">
+      <Filter>对话框\软件设置窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDxfCaculateDialog.cpp">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDxfInfoPreprocess.cpp">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDiseaseSumAreaCaculate.cpp">
+      <Filter>对话框\出表选择窗口\等级公路2018-路面病害面积统计表</Filter>
+    </ClCompile>
+    <ClCompile Include="hnStreetWidget.cpp">
+      <Filter>景观窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="..\QHotkey\qhotkey.cpp">
+      <Filter>全局快捷键</Filter>
+    </ClCompile>
+    <ClCompile Include="..\QHotkey\qhotkey_win.cpp">
+      <Filter>全局快捷键</Filter>
+    </ClCompile>
+    <ClCompile Include="applyAllDialog.cpp">
+      <Filter>对话框\打开工程对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="dxfExcelInfo.cpp">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="StreetDiseaseManage.cpp">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="mergeAidcDiseases.cpp">
+      <Filter>导入自动识别病害</Filter>
+    </ClCompile>
+    <ClCompile Include="IsMergeableDisease.cpp">
+      <Filter>导入自动识别病害</Filter>
+    </ClCompile>
+    <ClCompile Include="mergeTwoDiseases.cpp">
+      <Filter>导入自动识别病害</Filter>
+    </ClCompile>
+    <ClCompile Include="VMirror2dRectI.cpp">
+      <Filter>导入自动识别病害</Filter>
+    </ClCompile>
+    <ClCompile Include="customTableView.cpp">
+      <Filter>停靠窗口\病害列表窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnMergeLittleFrameThresholdDlg.cpp">
+      <Filter>对话框\合并小框病害对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="projectView.cpp">
+      <Filter>停靠窗口\工程信息窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="ReportConfig.cpp">
+      <Filter>对话框\出表选择窗口\config</Filter>
+    </ClCompile>
+    <ClCompile Include="IrmActualTimeShow.cpp">
+      <Filter>停靠窗口\IRM实时显示</Filter>
+    </ClCompile>
+    <ClCompile Include="CustomChartView.cpp">
+      <Filter>停靠窗口\IRM实时显示</Filter>
+    </ClCompile>
+    <ClCompile Include="hnSelProjectDlg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CustomBaiduMapView.cpp">
+      <Filter>停靠窗口\地图显示</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutExcelManage.cpp">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnAboutInfoWidgets.cpp">
+      <Filter>对话框\关于信息对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDBManagerDlg.cpp">
+      <Filter>对话框\数据库备份窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="HighAccuracySettingForm.cpp">
+      <Filter>对话框\高精度输出窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="adjustImageWidget.cpp">
+      <Filter>停靠窗口\图像调整对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="RutParm.cpp">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnCalRoadGeometry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnSelProjectDlg.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="hnwidget3dview.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="hnOpenProjectDlg.h">
+      <Filter>对话框\打开工程对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDiseaseListWidget.h">
+      <Filter>停靠窗口\病害列表窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnMarkInfoDlg.h">
+      <Filter>对话框\打标窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="calculateIrmForm.h">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="CalculationThread.h">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="statusBarWidget.h">
+      <Filter>状态栏</Filter>
+    </QtMoc>
+    <QtMoc Include="hnOutputExcelDialog.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnRoadDataProcess.h">
+      <Filter>主窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnXlsxInterface.h">
+      <Filter>QXlsx封装</Filter>
+    </QtMoc>
+    <QtMoc Include="hnMileAdjustDlg.h">
+      <Filter>对话框\校桩窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnMagnifySettingDlg.h">
+      <Filter>对话框\放大镜参数设置</Filter>
+    </QtMoc>
+    <QtMoc Include="hnImportAidcDiseases.h">
+      <Filter>导入自动识别病害</Filter>
+    </QtMoc>
+    <QtMoc Include="hnOriginalScalePixShowWidget.h">
+      <Filter>停靠窗口\原始比例放大窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnRegionJumpDlg.h">
+      <Filter>对话框\里程跳转对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hnProjectConfig.h">
+      <Filter>对话框\软件设置窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDxfCaculateDialog.h">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDxfInfoPreprocess.h">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDiseaseSumAreaCaculate.h">
+      <Filter>对话框\出表选择窗口\等级公路2018-路面病害面积统计表</Filter>
+    </QtMoc>
+    <QtMoc Include="hnStreetWidget.h">
+      <Filter>景观窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="..\QHotkey\qhotkey.h">
+      <Filter>全局快捷键</Filter>
+    </QtMoc>
+    <QtMoc Include="..\QHotkey\qhotkey_p.h">
+      <Filter>全局快捷键</Filter>
+    </QtMoc>
+    <QtMoc Include="applyAllDialog.h">
+      <Filter>对话框\打开工程对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="dxfExcelInfo.h">
+      <Filter>对话框\DXF计算对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="mergeAidcDiseases.h">
+      <Filter>导入自动识别病害</Filter>
+    </QtMoc>
+    <QtMoc Include="IsMergeableDisease.h">
+      <Filter>导入自动识别病害</Filter>
+    </QtMoc>
+    <QtMoc Include="mergeTwoDiseases.h">
+      <Filter>导入自动识别病害</Filter>
+    </QtMoc>
+    <QtMoc Include="VMirror2dRectI.h">
+      <Filter>导入自动识别病害</Filter>
+    </QtMoc>
+    <QtMoc Include="customTableView.h">
+      <Filter>停靠窗口\病害列表窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnMergeLittleFrameThresholdDlg.h">
+      <Filter>对话框\合并小框病害对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="projectView.h">
+      <Filter>停靠窗口\工程信息窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="IrmActualTimeShow.h">
+      <Filter>停靠窗口\IRM实时显示</Filter>
+    </QtMoc>
+    <QtMoc Include="CustomChartView.h">
+      <Filter>停靠窗口\IRM实时显示</Filter>
+    </QtMoc>
+    <QtMoc Include="CustomBaiduMapView.h">
+      <Filter>停靠窗口\地图显示</Filter>
+    </QtMoc>
+    <QtMoc Include="hnAboutInfoWidgets.h">
+      <Filter>对话框\关于信息对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDBManagerDlg.h">
+      <Filter>对话框\数据库备份窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="HighAccuracySettingForm.h">
+      <Filter>对话框\高精度输出窗口</Filter>
+    </QtMoc>
+    <QtMoc Include="adjustImageWidget.h">
+      <Filter>停靠窗口\图像调整对话框</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="hnSelProjectDlg.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="hnProjectConfig.ui">
+      <Filter>对话框\软件设置窗口</Filter>
+    </QtUic>
+    <QtUic Include="applyAllDialog.ui">
+      <Filter>对话框\打开工程对话框</Filter>
+    </QtUic>
+    <QtUic Include="customTableView.ui">
+      <Filter>停靠窗口\病害列表窗口</Filter>
+    </QtUic>
+    <QtUic Include="hnMergeLittleFrameThresholdDlg.ui">
+      <Filter>对话框\合并小框病害对话框</Filter>
+    </QtUic>
+    <QtUic Include="projectView.ui">
+      <Filter>停靠窗口\工程信息窗口</Filter>
+    </QtUic>
+    <QtUic Include="hnMileAdjustDlg.ui">
+      <Filter>对话框\校桩窗口</Filter>
+    </QtUic>
+    <QtUic Include="hnOutputExcelDialog.ui">
+      <Filter>对话框\出表选择窗口</Filter>
+    </QtUic>
+    <QtUic Include="hnAboutInfoWidgets.ui">
+      <Filter>对话框\关于信息对话框</Filter>
+    </QtUic>
+    <QtUic Include="hnDBManagerDlg.ui">
+      <Filter>对话框\数据库备份窗口</Filter>
+    </QtUic>
+    <QtUic Include="HighAccuracySettingForm.ui">
+      <Filter>对话框\高精度输出窗口</Filter>
+    </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="hnOutExcelMile.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutExcelMileManage.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="StreetDiseaseManage.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="ReportConfig.h">
+      <Filter>对话框\出表选择窗口\config</Filter>
+    </ClInclude>
+    <ClInclude Include="MileAndDmi.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutExcelManage.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="RutParm.h">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="hnCalRoadGeometry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hnRoadDataProcess.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="iconsNew\logo_xroe.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\QHotkey\QHotkey">
+      <Filter>全局快捷键</Filter>
+    </None>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/new/prefix1">
+        <file>Icon/bullet_arrow_right.png</file>
+        <file>Icon/Media_16x16.png</file>
+        <file>Icon/Last_16x16.png</file>
+        <file>Icon/SelectAll_16x16.png</file>
+        <file>Icon/Add_16x16.png</file>
+        <file>Icon/First_16x16.png</file>
+        <file>Icon/Next_16x16.png</file>
+        <file>Icon/Prev_16x16.png</file>
+        <file>Icon/Remove_16x16.png</file>
+    </qresource>
+</RCC>

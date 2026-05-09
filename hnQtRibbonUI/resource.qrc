@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resource/ArrowDown.png</file>
+        <file>resource/ArrowMore.png</file>
+        <file>resource/ArrowUp.png</file>
+        <file>resource/ribbonPannelOptionButton.png</file>
+        <file>resource/default.qss</file>
+        <file>resource/hn.png</file>
+        <file>resource/logo_64_xroe.ico</file>
+        <file>resource/logo_64_xroe2.ico</file>
+    </qresource>
+</RCC>

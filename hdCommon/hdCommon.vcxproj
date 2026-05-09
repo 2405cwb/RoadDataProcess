@@ -1,0 +1,370 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B78D15F3-F9DA-4BE9-90A4-A124C115197F}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>hdCommon</RootNamespace>
+    <SccProjectName>SAK</SccProjectName>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccLocalPath>SAK</SccLocalPath>
+    <SccProvider>SAK</SccProvider>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\bin\$(Configuration)\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IntDir>$(Configuration)-x64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\bin\$(Configuration)\</OutDir>
+    <EmbedManifest>false</EmbedManifest>
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IntDir>$(Configuration)-x64\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;HDCOMMON_EXPORTS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>..\3rd;..\3rd\GDAL\Include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\GDAL\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_WIN64;_DEBUG;_WINDOWS;_USRDLL;HDCOMMON_EXPORTS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;_BJMKPRJ</PreprocessorDefinitions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>..\3rd;..\3rd\GDAL\Include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BrowseInformation>true</BrowseInformation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\GDAL\lib-x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <Bscmake>
+      <PreserveSbr>true</PreserveSbr>
+    </Bscmake>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;HDCOMMON_EXPORTS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\3rd;..\3rd\GDAL\Include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\GDAL\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EnableUAC>false</EnableUAC>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <Manifest>
+      <OutputManifestFile>
+      </OutputManifestFile>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <Optimization>Full</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>_WIN64;NDEBUG;_WINDOWS;_USRDLL;HDCOMMON_EXPORTS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\3rd;..\3rd\GDAL\Include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\GDAL\lib-x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram1.cd" />
+    <None Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="BursaWolfModel.h" />
+    <ClInclude Include="CClassificationMap.h" />
+    <ClInclude Include="eigen.h" />
+    <ClInclude Include="HD2DBoundingBox.h" />
+    <ClInclude Include="HD2DEllipse.h" />
+    <ClInclude Include="HD2DObject.h" />
+    <ClInclude Include="HD2DPoint.h" />
+    <ClInclude Include="HD2DPolygon.h" />
+    <ClInclude Include="HD2DPolyline.h" />
+    <ClInclude Include="HD2DRect.h" />
+    <ClInclude Include="HD3DBoundingBox.h" />
+    <ClInclude Include="HD3DCube.h" />
+    <ClInclude Include="HD3DNormalPoint.h" />
+    <ClInclude Include="HD3DObject.h" />
+    <ClInclude Include="HD3DPoint.h" />
+    <ClInclude Include="HD3DPolyline.h" />
+    <ClInclude Include="hdAppDTStruct.h" />
+    <ClInclude Include="HdBoard.h" />
+    <ClInclude Include="HdBuildingExtractSetting.h" />
+    <ClInclude Include="hdCommon.h" />
+    <ClInclude Include="hdConstDef.h" />
+    <ClInclude Include="HDCrossLine.h" />
+    <ClInclude Include="hdDBTypeDef.h" />
+    <ClInclude Include="hdDTEnumDef.h" />
+    <ClInclude Include="HDEntity.h" />
+    <ClInclude Include="HDFacade.h" />
+    <ClInclude Include="HDFace.h" />
+    <ClInclude Include="HdGdalRegister.h" />
+    <ClInclude Include="HdGridObject.h" />
+    <ClInclude Include="hdHdiStruct.h" />
+    <ClInclude Include="hdkdtree.hpp" />
+    <ClInclude Include="hdLandMarkTransform.h" />
+    <ClInclude Include="hdBillBoardDTStruct.h" />
+    <ClInclude Include="HdLayerObject.h" />
+    <ClInclude Include="hdLock.h" />
+    <ClInclude Include="HDMarkerFacade.h" />
+    <ClInclude Include="hdMongoDBStructDef.h" />
+    <ClInclude Include="hdMongoDBTableFieldNameDef.h" />
+    <ClInclude Include="HDObject.h" />
+    <ClInclude Include="HdOriImageByHdiStruct.h" />
+    <ClInclude Include="HDPanoMarker.h" />
+    <ClInclude Include="HDPanoSymbol.h" />
+    <ClInclude Include="hdParaDTStruct.h" />
+    <ClInclude Include="HdPlnPathSetting.h" />
+    <ClInclude Include="HdPointSet.h" />
+    <ClInclude Include="hdPointStyle.h" />
+    <ClInclude Include="HdProcessCallback.h" />
+    <ClInclude Include="HdRandomGenerator.h" />
+    <ClInclude Include="HDRoutePoint.h" />
+    <ClInclude Include="HDRoutePoints.h" />
+    <ClInclude Include="HdSceneModel.h" />
+    <ClInclude Include="hdSceneStr.h" />
+    <ClInclude Include="hdSceneType.h" />
+    <ClInclude Include="HdSoftIDForSyConfig.h" />
+    <ClInclude Include="HdStationInfo.h" />
+    <ClInclude Include="HdSlopeMonitorStruct.h" />
+    <ClInclude Include="HdSoftTypeConfig.h" />
+    <ClInclude Include="hdSvDBStructDef.h" />
+    <ClInclude Include="HdSvLink.h" />
+    <ClInclude Include="hdSvStr.h" />
+    <ClInclude Include="HdSvTileInfoBuffer.h" />
+    <ClInclude Include="hdTin.h" />
+    <ClInclude Include="hdLog.h" />
+    <ClInclude Include="HdUploadDataStruct.h" />
+    <ClInclude Include="hnPoint3d.h" />
+    <ClInclude Include="LtTriangulate.h" />
+    <ClInclude Include="point_types.h" />
+    <ClInclude Include="point_types2.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="sceneData\hd3LSScanStruct.h" />
+    <ClInclude Include="sceneData\HdCtrlPoint.h" />
+    <ClInclude Include="sceneData\HdFeaturePoint.h" />
+    <ClInclude Include="sceneData\HdFileData.h" />
+    <ClInclude Include="sceneData\HdFitObject.h" />
+    <ClInclude Include="sceneData\HdGPSPoint.h" />
+    <ClInclude Include="sceneData\HdHsTarget.h" />
+    <ClInclude Include="sceneData\hdImgCtrlPoint.h" />
+    <ClInclude Include="sceneData\HdKeyboard.h" />
+    <ClInclude Include="sceneData\HdLabel.h" />
+    <ClInclude Include="sceneData\HdLasScan.h" />
+    <ClInclude Include="sceneData\HdOrientPoint.h" />
+    <ClInclude Include="sceneData\HdPicture.h" />
+    <ClInclude Include="sceneData\HdPlane.h" />
+    <ClInclude Include="sceneData\HdSceneIscan.h" />
+    <ClInclude Include="sceneData\HdSxPoint2D.h" />
+    <ClInclude Include="sceneData\HdSxPoint3D.h" />
+    <ClInclude Include="sceneData\HdSxPolyline3D.h" />
+    <ClInclude Include="sceneData\HdSxPolyline2D.h" />
+    <ClInclude Include="sceneData\HdScanCtrlPoint.h" />
+    <ClInclude Include="sceneData\HdSceneScan.h" />
+    <ClInclude Include="sceneData\HdSphere.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="HDBaseStruct.h" />
+    <ClInclude Include="targetver.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="BursaWolfModel.cpp" />
+    <ClCompile Include="CClassificationMap.cpp" />
+    <ClCompile Include="dllmain.cpp">
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</CompileAsManaged>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+      </PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      </PrecompiledHeader>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</CompileAsManaged>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+      </PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      </PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="HD2DBoundingBox.cpp" />
+    <ClCompile Include="HD2DEllipse.cpp" />
+    <ClCompile Include="HD2DPoint.cpp" />
+    <ClCompile Include="HD2DPolygon.cpp" />
+    <ClCompile Include="HD2DPolyline.cpp" />
+    <ClCompile Include="HD2DRect.cpp" />
+    <ClCompile Include="HD3DBoundingBox.cpp" />
+    <ClCompile Include="HD3DCube.cpp" />
+    <ClCompile Include="HD3DNormalPoint.cpp" />
+    <ClCompile Include="HD3DPoint.cpp" />
+    <ClCompile Include="HD3DPolyline.cpp" />
+    <ClCompile Include="HdBoard.cpp" />
+    <ClCompile Include="HdBuildingExtractSetting.cpp" />
+    <ClCompile Include="hdCommon.cpp" />
+    <ClCompile Include="HDCrossLine.cpp" />
+    <ClCompile Include="HDEntity.cpp" />
+    <ClCompile Include="HDFacade.cpp" />
+    <ClCompile Include="HdGdalRegister.cpp" />
+    <ClCompile Include="HdGridObject.cpp" />
+    <ClCompile Include="HdLayerObject.cpp" />
+    <ClCompile Include="HDMarkerFacade.cpp" />
+    <ClCompile Include="HDPanoMarker.cpp" />
+    <ClCompile Include="HDPanoSymbol.cpp" />
+    <ClCompile Include="HdPlnPathSetting.cpp" />
+    <ClCompile Include="HdPointSet.cpp" />
+    <ClCompile Include="HdRandomGenerator.cpp" />
+    <ClCompile Include="HdSceneModel.cpp" />
+    <ClCompile Include="HdSoftIDForSyConfig.cpp" />
+    <ClCompile Include="HdSoftTypeConfig.cpp" />
+    <ClCompile Include="HdSvLink.cpp" />
+    <ClCompile Include="HdSvTileInfoBuffer.cpp" />
+    <ClCompile Include="hdTin.cpp" />
+    <ClCompile Include="hdLog.cpp" />
+    <ClCompile Include="LtPredicates.cpp" />
+    <ClCompile Include="LtTriangulate.cpp" />
+    <ClCompile Include="sceneData\HdLasScan.cpp" />
+    <ClCompile Include="sceneData\HdSceneIscan.cpp" />
+    <ClCompile Include="sceneData\HdSxPolyline2D.cpp" />
+    <ClCompile Include="sceneData\HdSceneScan.cpp" />
+    <ClCompile Include="stdafx.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hdCommon.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

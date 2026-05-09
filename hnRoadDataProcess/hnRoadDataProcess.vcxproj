@@ -1,0 +1,285 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{72B866C7-2249-4370-945C-84B1B8EC8D93}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <SccProjectName>SAK</SccProjectName>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccLocalPath>SAK</SccLocalPath>
+    <SccProvider>SAK</SccProvider>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>QT5.8.0</QtInstall>
+    <QtModules>core;gui;widgets;xml;sql;charts;webenginewidgets;</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>QT5.8.0</QtInstall>
+    <QtModules>core;gui;widgets;xml;sql;charts;webenginewidgets;</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <LibraryPath>$(SolutionDir)bin\(Configuration)-x64\;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <LibraryPath>$(SolutionDir)bin\(Configuration)-x64\;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Link>
+      <AdditionalLibraryDirectories>$(OutDir);$(QTDIR)\lib;../3rd/SQLite/lib;../3rd/opencv3.2.0/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>HighAccConvertPlane.lib;qtmain.lib;hnApplication.lib;hnDataTable.lib;qtadvanceddocking.lib;hdFramework.lib;hnQtRibbonUI.lib;hnCommon.lib;hnProject.lib;hnIO.lib;hnLogService.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;sqlite3.lib;QXlsx.lib;hnAlgorithm.lib;opencv_world320.lib;hnDxfIO.lib;Qt5PrintSupport.lib;Qt5Core.lib;Qt5Widgets.lib;Qt5Gui.lib;Qt5AxContainer.lib;Qt5AxBase.lib;Qt5Network.lib;Qt5WebEngineWidgets.lib;Qt5WebEngineCore.lib;Qt5WebChannel.lib;Qt5WebEngine.lib;Qt5WebView.lib;hnPavementCreate3d.lib;hnCoordTranslate.lib;hnPcdCoordinate.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ForcedIncludeFiles>../hnQtCommon\BaseException.h</ForcedIncludeFiles>
+    </ClCompile>
+    <QtRcc>
+      <QtRccDir>..\bin\$(Configuration)-x64\rcc\</QtRccDir>
+    </QtRcc>
+    <QtUic>
+      <QtUicDir>..\bin\$(Configuration)-x64\uic\</QtUicDir>
+    </QtUic>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Link>
+      <AdditionalLibraryDirectories>$(OutDir);$(QTDIR)\lib;../3rd/SQLite/lib;../3rd/opencv3.2.0/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>HighAccConvertPlane.lib;hnApplication.lib;hnDataTable.lib;qtadvanceddocking.lib;hdFramework.lib;hnQtRibbonUI.lib;hnCommon.lib;hnProject.lib;hnIO.lib;hnLogService.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;sqlite3.lib;QXlsxd.lib;hnAlgorithm.lib;opencv_world320d.lib;hnDxfIO.lib;Qt5PrintSupportd.lib;Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;qtmaind.lib;Qt5AxContainerd.lib;Qt5AxBased.lib;Qt5Networkd.lib;Qt5WebEngineWidgetsd.lib;Qt5WebEngineCored.lib;Qt5WebChanneld.lib;Qt5WebEngined.lib;Qt5WebViewd.lib;hnPavementCreate3d.lib;hnCoordTranslate.lib;hnPcdCoordinate.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <BrowseInformation>true</BrowseInformation>
+      <PreprocessorDefinitions>$(Qt_DEFINES_);DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ForcedIncludeFiles>../hnQtCommon\BaseException.h</ForcedIncludeFiles>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+    </ClCompile>
+    <Bscmake>
+      <PreserveSbr>true</PreserveSbr>
+    </Bscmake>
+    <QtRcc>
+      <QtRccDir>..\bin\$(Configuration)-x64\rcc\</QtRccDir>
+    </QtRcc>
+    <QtUic>
+      <QtUicDir>..\bin\$(Configuration)-x64\uic\</QtUicDir>
+    </QtUic>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <Optimization>Full</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\QHotkey\qhotkey.cpp" />
+    <ClCompile Include="..\QHotkey\qhotkey_win.cpp" />
+    <ClCompile Include="adjustImageWidget.cpp" />
+    <ClCompile Include="applyAllDialog.cpp" />
+    <ClCompile Include="CustomBaiduMapView.cpp" />
+    <ClCompile Include="CustomChartView.cpp" />
+    <ClCompile Include="customTableView.cpp" />
+    <ClCompile Include="dxfExcelInfo.cpp" />
+    <ClCompile Include="HighAccuracySettingForm.cpp" />
+    <ClCompile Include="hnAboutInfoWidgets.cpp" />
+    <ClCompile Include="hnCalRoadGeometry.cpp" />
+    <ClCompile Include="hnDBManagerDlg.cpp" />
+    <ClCompile Include="hnDiseaseSumAreaCaculate.cpp" />
+    <ClCompile Include="hnDxfCaculateDialog.cpp" />
+    <ClCompile Include="hnDxfInfoPreprocess.cpp" />
+    <ClCompile Include="hnImportAidcDiseases.cpp" />
+    <ClCompile Include="hnMagnifySettingDlg.cpp" />
+    <ClCompile Include="hnMergeLittleFrameThresholdDlg.cpp" />
+    <ClCompile Include="hnMileAdjustDlg.cpp" />
+    <ClCompile Include="hnOriginalScalePixShowWidget.cpp" />
+    <ClCompile Include="hnOutExcelManage.cpp" />
+    <ClCompile Include="hnOutExcelMile.cpp" />
+    <ClCompile Include="hnOutExcelMileManage.cpp" />
+    <ClCompile Include="hnOutputExcelDialog.cpp" />
+    <ClCompile Include="hnProjectConfig.cpp" />
+    <ClCompile Include="hnRegionJumpDlg.cpp" />
+    <ClCompile Include="hnStreetWidget.cpp" />
+    <ClCompile Include="hnXlsxInterface.cpp" />
+    <ClCompile Include="IrmActualTimeShow.cpp" />
+    <ClCompile Include="IsMergeableDisease.cpp" />
+    <ClCompile Include="mergeAidcDiseases.cpp" />
+    <ClCompile Include="mergeTwoDiseases.cpp" />
+    <ClCompile Include="projectView.cpp" />
+    <ClCompile Include="ReportConfig.cpp" />
+    <ClCompile Include="RutParm.cpp" />
+    <ClCompile Include="statusBarWidget.cpp" />
+    <ClCompile Include="StreetDiseaseManage.cpp" />
+    <ClCompile Include="VMirror2dRectI.cpp" />
+    <QtRcc Include="hnRoadDataProcess.qrc" />
+    <QtRcc Include="qss.qrc" />
+    <QtUic Include="applyAllDialog.ui" />
+    <QtUic Include="customTableView.ui" />
+    <QtUic Include="HighAccuracySettingForm.ui" />
+    <QtUic Include="hnAboutInfoWidgets.ui" />
+    <QtUic Include="hnDBManagerDlg.ui" />
+    <QtUic Include="hnMergeLittleFrameThresholdDlg.ui" />
+    <QtUic Include="hnMileAdjustDlg.ui" />
+    <QtUic Include="hnOutputExcelDialog.ui" />
+    <QtUic Include="hnProjectConfig.ui" />
+    <QtUic Include="hnRoadDataProcess.ui" />
+    <QtMoc Include="hnRoadDataProcess.h" />
+    <ClCompile Include="calculateIrmForm.cpp" />
+    <ClCompile Include="CalculationThread.cpp" />
+    <ClCompile Include="hnDiseaseListWidget.cpp" />
+    <ClCompile Include="hnMarkInfoDlg.cpp" />
+    <ClCompile Include="hnOpenProjectDlg.cpp" />
+    <ClCompile Include="hnRoadDataProcess.cpp" />
+    <ClCompile Include="hnSelProjectDlg.cpp" />
+    <ClCompile Include="hnwidget3dview.cpp" />
+    <ClCompile Include="main.cpp" />
+    <QtUic Include="hnSelProjectDlg.ui" />
+    <QtUic Include="projectView.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnSelProjectDlg.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnwidget3dview.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnOpenProjectDlg.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnDiseaseListWidget.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnMarkInfoDlg.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="calculateIrmForm.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="CalculationThread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="statusBarWidget.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="VMirror2dRectI.h" />
+    <QtMoc Include="mergeAidcDiseases.h" />
+    <QtMoc Include="IsMergeableDisease.h" />
+    <QtMoc Include="mergeTwoDiseases.h" />
+    <QtMoc Include="customTableView.h" />
+    <QtMoc Include="hnMergeLittleFrameThresholdDlg.h" />
+    <QtMoc Include="projectView.h" />
+    <QtMoc Include="IrmActualTimeShow.h" />
+    <QtMoc Include="CustomChartView.h" />
+    <QtMoc Include="CustomBaiduMapView.h" />
+    <QtMoc Include="hnAboutInfoWidgets.h" />
+    <QtMoc Include="hnDBManagerDlg.h" />
+    <QtMoc Include="HighAccuracySettingForm.h" />
+    <ClInclude Include="hnCalRoadGeometry.h" />
+    <ClInclude Include="hnOutExcelManage.h" />
+    <ClInclude Include="MileAndDmi.h" />
+    <ClInclude Include="ReportConfig.h" />
+    <ClInclude Include="RutParm.h" />
+    <ClInclude Include="StreetDiseaseManage.h" />
+    <QtMoc Include="..\QHotkey\qhotkey.h" />
+    <QtMoc Include="..\QHotkey\qhotkey_p.h" />
+    <QtMoc Include="applyAllDialog.h" />
+    <QtMoc Include="dxfExcelInfo.h" />
+    <ClInclude Include="resource.h" />
+    <QtMoc Include="hnProjectConfig.h" />
+    <QtMoc Include="hnRegionJumpDlg.h" />
+    <QtMoc Include="hnOutputExcelDialog.h" />
+    <QtMoc Include="hnStreetWidget.h" />
+    <QtMoc Include="hnMileAdjustDlg.h" />
+    <QtMoc Include="hnMagnifySettingDlg.h" />
+    <QtMoc Include="hnImportAidcDiseases.h" />
+    <QtMoc Include="hnOriginalScalePixShowWidget.h" />
+    <QtMoc Include="adjustImageWidget.h" />
+    <QtMoc Include="hnDxfCaculateDialog.h" />
+    <QtMoc Include="hnDxfInfoPreprocess.h" />
+    <QtMoc Include="hnDiseaseSumAreaCaculate.h" />
+    <ClInclude Include="hnOutExcelMile.h" />
+    <ClInclude Include="hnOutExcelMileManage.h" />
+    <QtMoc Include="hnXlsxInterface.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hnRoadDataProcess.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="iconsNew\logo_xroe.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\QHotkey\QHotkey" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

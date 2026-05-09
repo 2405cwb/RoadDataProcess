@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="hnOutputRoadDiseaseXR" Collapsed="true">
+    <Position X="0.5" Y="1.75" Width="3.5" />
+    <TypeIdentifier>
+      <HashCode>ACAQCAEAKgAAAQABQAQAAAAEIAEAAAAEEIAAAAQAAAA=</HashCode>
+      <FileName>hnOutputRoadDiseaseXR.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="hnOutputRoadDisease" Collapsed="true">
+    <Position X="0.75" Y="0.5" Width="3" />
+    <TypeIdentifier>
+      <HashCode>AIgAIoAAAwQiAAAIQAAAJAAEAAAABAAEAAIgKECAACA=</HashCode>
+      <FileName>hnOutputRoadDisease.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="hnOutDiseaseDxf" Collapsed="true">
+    <Position X="5" Y="0.5" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>UgAAAAGCAAAgACChAAAYMGgIAAIghCQCAABCCDAAAAA=</HashCode>
+      <FileName>hnOutDiseaseDxf.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Struct Name="Disease_C" Collapsed="true">
+    <Position X="5" Y="1.75" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAEAAAAQAAAQABAAAAAAAAQAIAgAMBAACAAAAA=</HashCode>
+      <FileName>hnOutputXR.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="GridDisease_C" Collapsed="true">
+    <Position X="7.25" Y="1.75" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAABiAAIAAAAAgAAAAAAAAAAAAAAAAggA=</HashCode>
+      <FileName>hnOutputXR.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="_HN_MILEAGE_PILE_" Collapsed="true">
+    <Position X="1.5" Y="6.5" Width="2.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAQAABAAAAAAAAAAAAAAAAAAAAAAACAAA=</HashCode>
+      <FileName>hnOutputRoadDisease.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Typedef Name="hnMileagePile" Collapsed="true">
+    <Position X="1.5" Y="4.5" Width="2.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>hnOutputRoadDisease.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Font Name="Microsoft YaHei UI" Size="9" />
+</ClassDiagram>

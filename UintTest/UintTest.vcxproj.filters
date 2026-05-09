@@ -1,0 +1,77 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{D9D6E242-F8AF-46E4-B9FD-80ECBC20BA3E}</UniqueIdentifier>
+      <Extensions>qrc;*</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
+    <Filter Include="test_hnRoadDataProcess">
+      <UniqueIdentifier>{11773180-5b15-4dd8-94e0-386acc5d04ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="test_hnRoadDataProcess\Source">
+      <UniqueIdentifier>{e3a5cdd2-60a2-4e92-8389-fcecd0a48e4e}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_mergeAidcDiseases.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="test_isMergeableDisease.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnRoadDataProcess\IsMergeableDisease.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="test_mergeTwoDiseases.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnRoadDataProcess\mergeTwoDiseases.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="test_VMirror2dRectI.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnRoadDataProcess\VMirror2dRectI.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="test_mergeAidcDiseases.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="test_isMergeableDisease.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="..\hnRoadDataProcess\IsMergeableDisease.h">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </QtMoc>
+    <QtMoc Include="test_mergeTwoDiseases.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="..\hnRoadDataProcess\mergeTwoDiseases.h">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </QtMoc>
+    <QtMoc Include="test_VMirror2dRectI.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="..\hnRoadDataProcess\VMirror2dRectI.h">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </QtMoc>
+  </ItemGroup>
+</Project>

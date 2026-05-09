@@ -1,0 +1,97 @@
+# Visual Studio / C++ cache
+.vs/
+ipch/
+*.VC.db
+*.VC.opendb
+*.sdf
+*.suo
+*.user
+*.filters.user
+
+# Build output
+bin/
+obj/
+build/
+build-*/
+Debug/
+Release/
+x64/
+Win32/
+
+# C++ intermediate/debug files
+*.obj
+*.ilk
+*.ipdb
+*.iobj
+*.pdb
+*.bsc
+*.pch
+*.idb
+*.tmp
+*.log
+
+# Executables / libraries
+*.exe
+*.dll
+*.lib
+*.exp
+
+# Qt generated/user files
+*.pro.user
+*.pro.user.*
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Archives / packages
+*.rar
+*.zip
+*.7z
+
+# Documentation packages
+*.chm
+
+# OS files
+Thumbs.db
+.DS_Store
+# Recursive Visual Studio build folders
+**/Debug*/
+**/Release*/
+**/debug*/
+**/release*/
+
+# Visual Studio intermediate files
+*.sbr
+*.bsc
+*.idb
+*.pdb
+*.ilk
+*.ipdb
+*.iobj
+*.obj
+*.pch
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+
+# VS cache
+.vs/
+ipch/
+*.VC.db
+*.VC.opendb
+
+# Packages / installers
+*.rar
+*.zip
+*.7z
+*.msi
+
+# PCL generated docs
+3rd/PCL/share/doc/

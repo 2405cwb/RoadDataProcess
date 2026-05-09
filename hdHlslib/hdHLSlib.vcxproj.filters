@@ -1,0 +1,539 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{47b5f146-96c8-4417-bce8-4053288eb91c}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;rc;def;r;odl;idl;hpj;bat</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{19aa1932-6c3b-419a-863e-209cf906b9fd}</UniqueIdentifier>
+      <Extensions>.h</Extensions>
+    </Filter>
+    <Filter Include="hlsIO">
+      <UniqueIdentifier>{7f2505c4-da4b-469c-8a38-3317d2e78af2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rsaIO">
+      <UniqueIdentifier>{2727690a-3689-4e13-8d3a-6e56eb0da0d3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hlsInterface">
+      <UniqueIdentifier>{6eb53307-a32f-4112-8943-0bd83a482b17}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\octree">
+      <UniqueIdentifier>{3222b123-f5bd-4b32-bae2-67f19832593f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hlzIO">
+      <UniqueIdentifier>{e79aa69c-5580-4bc9-b339-b37a1d06928b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hlz31">
+      <UniqueIdentifier>{470b5c8a-0c87-421a-bf8d-0be87f287847}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\arithmeticdecoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\arithmeticencoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\arithmeticmodel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\fopen_compressed.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\integercompressor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasfilter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasindex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasinterval.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasquadtree.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_asc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_bil.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_bin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_las.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_qfit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_shp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreader_txt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreadermerged.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreaditemcompressed_v1.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreaditemcompressed_v2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasreadpoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasspatial.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lastransform.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasunzipper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lasutility.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswaveform13reader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswaveform13writer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriteitemcompressed_v1.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriteitemcompressed_v2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswritepoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriter_bin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriter_las.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriter_qfit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laswriter_txt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laszip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\laszipper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HLSReader.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HLSWriter.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HL2Reader.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HL2Writer.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="RsaReader.cpp">
+      <Filter>rsaIO</Filter>
+    </ClCompile>
+    <ClCompile Include="RsaWriter.cpp">
+      <Filter>rsaIO</Filter>
+    </ClCompile>
+    <ClCompile Include="InclinometerFit.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="IHLSReader.cpp">
+      <Filter>hlsInterface</Filter>
+    </ClCompile>
+    <ClCompile Include="HLSReadOpener.cpp">
+      <Filter>hlsInterface</Filter>
+    </ClCompile>
+    <ClCompile Include="HL1Reader.cpp">
+      <Filter>hlsInterface</Filter>
+    </ClCompile>
+    <ClCompile Include="HLS2Reader.cpp">
+      <Filter>hlsInterface</Filter>
+    </ClCompile>
+    <ClCompile Include="HLS2Builder.cpp">
+      <Filter>hlsIO</Filter>
+    </ClCompile>
+    <ClCompile Include="IRCReader.cpp">
+      <Filter>hlsInterface</Filter>
+    </ClCompile>
+    <ClCompile Include="HlzBuilder.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBlock.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBlockset.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdParcel.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdLevel.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdCoreData.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HLZWriter.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdParcelBase.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HlzBufferBuilder.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="src\arithmetic_codec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PtEncoder.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HlzCloudBuilder.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HlzMemCloudBuilder.cpp">
+      <Filter>hlzIO</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBlock31.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBlockset31.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+    <ClCompile Include="HdLevel31.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+    <ClCompile Include="HdParcel31.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+    <ClCompile Include="HLZ31Writer.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+    <ClCompile Include="Hlz31Builder.cpp">
+      <Filter>hlz31</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\arithmeticdecoder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\arithmeticencoder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\arithmeticmodel.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\bytestreamin.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamin_file.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamin_istream.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamout.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamout_file.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamout_nil.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bytestreamout_ostream.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\entropydecoder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\entropyencoder.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\integercompressor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasdefinitions.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasfilter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasindex.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasinterval.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasquadtree.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_asc.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_bil.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_bin.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_las.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_qfit.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_shp.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreader_txt.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasreadermerged.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lasreaditem.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lasreaditemcompressed_v1.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lasreaditemcompressed_v2.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lasreaditemraw.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lasreadpoint.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasspatial.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lastransform.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasunzipper.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\lasutility.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswaveform13reader.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswaveform13writer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laswriteitem.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laswriteitemcompressed_v1.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laswriteitemcompressed_v2.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laswriteitemraw.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laswritepoint.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswriter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswriter_bin.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswriter_las.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswriter_qfit.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laswriter_txt.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laszip.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\laszip_common_v2.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\laszipper.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HLSReader.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HLSWriter.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hlsDefinition.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\mydefs.hpp">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="hdGPSTime.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hl2Definition.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HL2Reader.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HL2Writer.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="RsaDefs.h">
+      <Filter>rsaIO</Filter>
+    </ClInclude>
+    <ClInclude Include="RsaWriter.h">
+      <Filter>rsaIO</Filter>
+    </ClInclude>
+    <ClInclude Include="RsaReader.h">
+      <Filter>rsaIO</Filter>
+    </ClInclude>
+    <ClInclude Include="InclinometerFit.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="IHLSReader.h">
+      <Filter>hlsInterface</Filter>
+    </ClInclude>
+    <ClInclude Include="HLSReadOpener.h">
+      <Filter>hlsInterface</Filter>
+    </ClInclude>
+    <ClInclude Include="HL1Reader.h">
+      <Filter>hlsInterface</Filter>
+    </ClInclude>
+    <ClInclude Include="HLS2Reader.h">
+      <Filter>hlsInterface</Filter>
+    </ClInclude>
+    <ClInclude Include="HLS2Builder.h">
+      <Filter>hlsIO</Filter>
+    </ClInclude>
+    <ClInclude Include="IRCReader.h">
+      <Filter>hlsInterface</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\array.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\array2d.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\numtraits.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\octree.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\point3d.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\shareddata.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="octree\tinyvector.h">
+      <Filter>Header Files\octree</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzDefs.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzBuilder.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBlock.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBlockset.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdParcel.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdLevel.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdCoreData.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HLZWriter.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdParcelBase.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzBufferBuilder.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzBuilderDefs.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\arithmetic_codec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PtEncoder.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzCloudBuilder.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzMemCloudBuilder.h">
+      <Filter>hlzIO</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBlock31.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBlockset31.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="HdLevel31.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="HdParcel31.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="HlzDefs31.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="HLZ31Writer.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+    <ClInclude Include="Hlz31Builder.h">
+      <Filter>hlz31</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram1.cd" />
+  </ItemGroup>
+</Project>
