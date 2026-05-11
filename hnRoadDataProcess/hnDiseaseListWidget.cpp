@@ -10,8 +10,12 @@
 #include <QTimer>
 #include <QScrollBar>
 hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
-	: QWidget(parent),m_model(new QStandardItemModel),m_view(new customTableView)
-{
+	:  QWidget(parent),
+      m_model(new QStandardItemModel(this)),
+      m_view(new customTableView(this)),
+      filterComboBox(nullptr),
+      sortDiseaseTypeModel(new QSortFilterProxyModel(this))
+
 	QHeaderView *verticalHeader = m_view->verticalHeader();
 	verticalHeader->setVisible(true);
 	verticalHeader->setDefaultSectionSize(35);				// 设置病害列表行高固定
@@ -30,7 +34,12 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
 	this->m_model->clear();
 	this->initTableHeader(m_model);
 	//设置源模型 
-	this->m_view->setModel(this->m_model);
+this->sortDiseaseTypeModel->setSourceModel(m_model);
+this->sortDiseaseTypeModel->setDynamicSortFilter(true);
+this->sortDiseaseTypeModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
+this->sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
+
+this->m_view->setModel(this->sortDiseaseTypeModel);
 
 	//QGridLayout *mainGridLayout = new QGridLayout;
 	//this->setLayout(mainGridLayout);
@@ -59,6 +68,8 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
 	connect(header, &QHeaderView::sectionClicked, this, &hnDiseaseListWidget::on_section_clicked);
 	connect(header, &QHeaderView::sectionDoubleClicked, this,&hnDiseaseListWidget::on_section_doubleClicked);
 	connect(m_view, &customTableView::customContextMenuRequested, this, &hnDiseaseListWidget::slot_MenuClicked);
+	connect(filterComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &hnDiseaseListWidget::slot_selectDiseaseTypeIndexChanged);
 }
 
 hnDiseaseListWidget::~hnDiseaseListWidget()
@@ -72,30 +83,28 @@ void hnDiseaseListWidget::updateAllDiseases()
 	QVector<hnRoadDiseaseInfo> allDiseaseInfos = this->getAllDisease();	//获取所有病害
 	this->addDiseaseToTable(allDiseaseInfos, this->m_model);			//遍历病害，添加到表上
 
-	sortDiseaseTypeModel = new QSortFilterProxyModel(this);
-	sortDiseaseTypeModel->setSourceModel(m_model);
-	sortDiseaseTypeModel->setDynamicSortFilter(true);
-	//设置想要过滤的列，也就是id的那一列，就是第0列
-	sortDiseaseTypeModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
-	sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn );
-
-
-	this->m_view->setModel(this->sortDiseaseTypeModel);								//给view设置model
-
-	connect(filterComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &hnDiseaseListWidget::slot_selectDiseaseTypeIndexChanged);
+	 if (sortDiseaseTypeModel)
+    {
+        sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
+        sortDiseaseTypeModel->invalidate();
+    }
 }
 
 void hnDiseaseListWidget::addDisease(const hnRoadDiseaseInfo & disease,bool modify)
 {
-	if (modify)
-	{
-		//更新操作
-		deleteDisease(disease);
-	}
-	modelAddDisease(*m_model, disease);
-	
-	slot_selectDisease(disease);
-	//m_view->setModel(m_model); 
+	 if (!m_model || !sortDiseaseTypeModel)
+        return;
+
+    if (modify)
+    {
+        deleteDisease(disease);
+    }
+
+    modelAddDisease(*m_model, disease);
+
+    sortDiseaseTypeModel->invalidate();
+
+    slot_selectDisease(disease);
 	 
 }
 
@@ -103,7 +112,7 @@ void hnDiseaseListWidget::deleteDisease(const hnRoadDiseaseInfo & disease)
 {
 	modelDeleteDisease(*m_model, disease);
 
-	m_view->setModel(m_model);
+	 
 }
 
 void hnDiseaseListWidget::editDisease(const hnRoadDiseaseInfo & disease)
@@ -113,7 +122,7 @@ void hnDiseaseListWidget::editDisease(const hnRoadDiseaseInfo & disease)
 	//再添加
 	modelAddDisease(*m_model, disease);
 	//设置模型
-	m_view->setModel(m_model);
+	 
 }
 
 void hnDiseaseListWidget::seclectLastRowDisease()
@@ -821,8 +830,7 @@ QModelIndex hnDiseaseListWidget::getUserSelectIndex(QSortFilterProxyModel * prox
 
 	//源索引修改为代理索引
 	QModelIndex proxyIndex = proxy->mapFromSource(sourceIndex);
-
-	return sourceIndex;
+	return proxyIndex;
 }
 
 void hnDiseaseListWidget::MoveScrollBar(QTableView * view, QModelIndex viewIdx)
