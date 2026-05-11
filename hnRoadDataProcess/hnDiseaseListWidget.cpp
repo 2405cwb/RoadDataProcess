@@ -15,61 +15,48 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
       m_view(new customTableView(this)),
       filterComboBox(nullptr),
       sortDiseaseTypeModel(new QSortFilterProxyModel(this))
+{
+	QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
-	QHeaderView *verticalHeader = m_view->verticalHeader();
-	verticalHeader->setVisible(true);
-	verticalHeader->setDefaultSectionSize(35);				// 设置病害列表行高固定
-	//verticalHeader->setSectionResizeMode(QHeaderView::Stretch);
+    populateComboBox();
+    filterComboBox->setEditable(false);
+    mainLayout->addWidget(filterComboBox);
 
-	//设置表格视图选择行为  选择为整行
-	this->m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
+    initTableHeader(m_model);
 
-	//设置表格视图选择模式为单选模式
-	this->m_view->setSelectionMode(QAbstractItemView::SingleSelection);
+    sortDiseaseTypeModel->setSourceModel(m_model);
+    sortDiseaseTypeModel->setDynamicSortFilter(true);
+    sortDiseaseTypeModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
 
-	//禁止编辑功能
-	this->m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
-	
-	
-	this->m_model->clear();
-	this->initTableHeader(m_model);
-	//设置源模型 
-this->sortDiseaseTypeModel->setSourceModel(m_model);
-this->sortDiseaseTypeModel->setDynamicSortFilter(true);
-this->sortDiseaseTypeModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
-this->sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
+    m_view->setModel(sortDiseaseTypeModel);
+    m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_view->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-this->m_view->setModel(this->sortDiseaseTypeModel);
+    QHeaderView* verticalHeader = m_view->verticalHeader();
+    verticalHeader->setVisible(true);
+    verticalHeader->setDefaultSectionSize(35);
 
-	//QGridLayout *mainGridLayout = new QGridLayout;
-	//this->setLayout(mainGridLayout);
-	//mainGridLayout->addWidget(m_view);
+    mainLayout->addWidget(m_view);
 
-	QVBoxLayout * mainGridLayout = new QVBoxLayout;
-	  filterComboBox =  new QComboBox(this);
-	  populateComboBox();
-	filterComboBox->setEditable(false);
-	mainGridLayout->addWidget(filterComboBox);
-	 this->setLayout(mainGridLayout);
-	mainGridLayout->addWidget(m_view);
+    connect(m_view, &QTableView::doubleClicked,
+            this, &hnDiseaseListWidget::slot_itemDoubleClicked);
 
+    QHeaderView* header = m_view->horizontalHeader();
+    header->setSectionsClickable(true);
 
-	 
+    connect(header, &QHeaderView::sectionClicked,
+            this, &hnDiseaseListWidget::on_section_clicked);
 
+    connect(header, &QHeaderView::sectionDoubleClicked,
+            this, &hnDiseaseListWidget::on_section_doubleClicked);
 
-	//信号槽连接 双击表格，进行处理
-	connect(this->m_view, &QTableView::doubleClicked,this, &hnDiseaseListWidget::slot_itemDoubleClicked);
-	QHeaderView* header =  this->m_view->horizontalHeader();
-	
-	header->setSectionsClickable(true);
-	//proxyModel = new QSortFilterProxyModel(this);
-	//proxyModel->setSourceModel(m_model);
-	 
-	connect(header, &QHeaderView::sectionClicked, this, &hnDiseaseListWidget::on_section_clicked);
-	connect(header, &QHeaderView::sectionDoubleClicked, this,&hnDiseaseListWidget::on_section_doubleClicked);
-	connect(m_view, &customTableView::customContextMenuRequested, this, &hnDiseaseListWidget::slot_MenuClicked);
-	connect(filterComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
-        this, &hnDiseaseListWidget::slot_selectDiseaseTypeIndexChanged);
+    connect(m_view, &customTableView::customContextMenuRequested,
+            this, &hnDiseaseListWidget::slot_MenuClicked);
+
+    connect(filterComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &hnDiseaseListWidget::slot_selectDiseaseTypeIndexChanged);
 }
 
 hnDiseaseListWidget::~hnDiseaseListWidget()
@@ -151,41 +138,26 @@ void hnDiseaseListWidget::seclectNextRowDisease()
 
 void hnDiseaseListWidget::modelDeleteDisease(QStandardItemModel & model, const hnRoadDiseaseInfo & disease)
 {
-	QModelIndexList deleteList;
-	//这是一个过滤模型的类，我们使用这个类，快速的找到该病害所在的行，然后删掉它
-	QSortFilterProxyModel sortModel;
-	//设置源模型
-	sortModel.setSourceModel(&model);
-	//设置想要过滤的列，也就是id的那一列，就是第0列
-	sortModel.setFilterKeyColumn(m_idColumn);
-	//设置过滤条件为病害的ID
-	sortModel.setFilterRegExp(QString::number(disease.nID));
+	 if (!sortDiseaseTypeModel)
+        return;
 
-	//遍历过滤后的model，然后找到病害表名和传入病害的相同的那一个
-	const int rowCount = sortModel.rowCount();
-	const int tableNameColumnCount = m_tableNameColumn;
-	for (int row = 0; row < rowCount; row++)
-	{
-		//获取病害表名列的索引
-		QModelIndex idx = sortModel.index(row, tableNameColumnCount);
-		//获取该索引的表名
-		QString tableName = sortModel.data(idx).toString();
-		//与病害表名比较
-		if (tableName == QString::fromLocal8Bit(disease.strDiseaseTableName))
-		{
-			//获取原模型的索引
-			QModelIndex srcIdx = sortModel.mapToSource(idx);
-			
-			//获取原模型的行
-			int srcRow = srcIdx.row();
-			//删除原模型的行
-		//	model.removeRow(srcRow);
-			deleteList.push_back(srcIdx);
-			//退出循环
-			break;
-		}	
-	}
-	deleteDiseases(deleteList);
+    for (int row = model.rowCount() - 1; row >= 0; --row)
+    {
+        QModelIndex idIndex = model.index(row, m_idColumn);
+        QModelIndex tableIndex = model.index(row, m_tableNameColumn);
+
+        int id = model.data(idIndex).toInt();
+        QString tableName = model.data(tableIndex).toString();
+
+        if (id == disease.nID &&
+            tableName == QString::fromLocal8Bit(disease.strDiseaseTableName))
+        {
+            model.removeRow(row);
+            break;
+        }
+    }
+
+    sortDiseaseTypeModel->invalidate();
 }
 
 QStandardItem* hnDiseaseListWidget::createNumericItem(const QString &text)
@@ -206,36 +178,44 @@ QStandardItem* hnDiseaseListWidget::createNumericItem(const QString &text)
 
 void hnDiseaseListWidget::slot_itemDoubleClicked(const QModelIndex & index)
 {
-	//获取所在行数
-	int row = index.row();
+	if (!index.isValid() || !sortDiseaseTypeModel)
+        return;
 
-	//获取病害中心里程所在的列
-	QModelIndex regionIdx = this->sortDiseaseTypeModel->index(row, m_centerMileColumn);
-	QModelIndex idIdx = this->sortDiseaseTypeModel->index(row, m_idColumn);
-	//获取病害的编码器里程
-	double region = this->sortDiseaseTypeModel->data(regionIdx).toDouble();
-	int id = this->sortDiseaseTypeModel->data(idIdx).toInt();
+    QModelIndex regionIdx = index.sibling(index.row(), m_centerMileColumn);
+    QModelIndex idIdx = index.sibling(index.row(), m_idColumn);
 
-	auto projectType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
-	if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
-	{
-		//路面2d图像视图跳转
-		this->road2dDiseaseJump(region,id);
-	}
-	else
-	{
-		this->road3dDiseaseJump(region,id);
-	}
+    if (!regionIdx.isValid() || !idIdx.isValid())
+        return;
+
+    double region = regionIdx.data().toDouble();
+    int id = idIdx.data().toInt();
+
+    auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+    if (!project)
+        return;
+
+    auto projectType = project->getProjectType();
+
+    if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
+    {
+        road2dDiseaseJump(region, id);
+    }
+    else
+    {
+        road3dDiseaseJump(region, id);
+    }
 }
 
 void hnDiseaseListWidget::on_section_clicked(int logicalIndex)
 {
-	m_model->sort(logicalIndex); 
+	if (sortDiseaseTypeModel)
+        sortDiseaseTypeModel->sort(logicalIndex, Qt::AscendingOrder);
 }
 
 void hnDiseaseListWidget::on_section_doubleClicked(int logicalIndex)
 {
-	m_model->sort(logicalIndex,Qt::DescendingOrder);
+	  if (sortDiseaseTypeModel)
+        sortDiseaseTypeModel->sort(logicalIndex, Qt::DescendingOrder);
 
 }
 
@@ -298,81 +278,113 @@ void hnDiseaseListWidget::slot_selectDiseaseTypeIndexChanged(int index)
 
 void hnDiseaseListWidget::deleteDiseases(QModelIndexList selectedIndexes)
 {
+    if (!m_model || !sortDiseaseTypeModel || selectedIndexes.isEmpty())
+        return;
 
+    QSet<int> proxyRows;
+    QList<hnRoadDiseaseInfo> diseasesToDelete;
 
-	QSet<int> rowsToRemove;;
-	QList<hnRoadDiseaseInfo> rowDataList;//存储每一行的Id
-	for (const QModelIndex &index:selectedIndexes)
-	{
-		int row = index.row();
-		rowsToRemove.insert(row);
+    // 1. 先收集代理模型里的行
+    for (const QModelIndex& index : selectedIndexes)
+    {
+        if (!index.isValid())
+            continue;
 
-		QModelIndex firstColumnIndex = sortDiseaseTypeModel->index(row, 0);
-		 
-		if (firstColumnIndex.isValid())
-		{
-		QVariant data = sortDiseaseTypeModel->data(firstColumnIndex, Qt::UserRole);
-		 if (data.canConvert<hnRoadDiseaseInfo>())
-		 {
-			 hnRoadDiseaseInfo disease = data.value<hnRoadDiseaseInfo>();
-			 bool exists = false;
-			 for (const hnRoadDiseaseInfo &existing : rowDataList)
-			 {
-				 if (existing.nID == disease.nID && strcmp(  existing.strDiseaseTableName,disease.strDiseaseTableName) ==0)
-				 {
-					 exists = true;
-					 break;
-				 }
+        proxyRows.insert(index.row());
+    }
 
-			 }
-			 if (!exists)
-			 {
-				 rowDataList.append(disease);
-				 //从数据库中删除该病害
-				 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.deleteDisease(disease);
-				 emit signal_deleteDisease(disease);
-				 emit signal_updateView();
-			 }
-		 }
-			 
-		}
-	}
+    if (proxyRows.isEmpty())
+        return;
 
-	QList<int >sortedRows = rowsToRemove.toList();
-	std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
-	int oldRowCount = m_model->rowCount();
-	int row = sortedRows.first();
-	if (row < 0 || row >= oldRowCount)
-	{
-		return;
-	}
-	for (int row:sortedRows)
-	{
-		m_model->removeRow(row);
-	}
+    QList<int> sortedProxyRows = proxyRows.values();
+    std::sort(sortedProxyRows.begin(), sortedProxyRows.end());
 
-	int newRowCount = m_model->rowCount();
-	
-	if (newRowCount <=0 )
-	{
-		return;
-	}
+    // 删除后准备选中的代理行
+    int nextProxyRow = sortedProxyRows.first();
 
-	int nextRow = row;
-	if (nextRow >= newRowCount)
-	{
-		nextRow = newRowCount - 1;
-	}
+    // 2. 代理行转源模型行
+    QSet<int> sourceRows;
 
-	QModelIndex nextIndex = m_model->index(nextRow, 0);
-	if (!nextIndex.isValid())
-	{
-		return;
-	}
-	//m_view->setCurrentIndex(nextIndex);
-	//m_view->selectionModel()->select(nextIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    for (int proxyRow : sortedProxyRows)
+    {
+        QModelIndex proxyIndex = sortDiseaseTypeModel->index(proxyRow, 0);
+        if (!proxyIndex.isValid())
+            continue;
 
-	slot_itemDoubleClicked(nextIndex);
+        QVariant data = proxyIndex.data(Qt::UserRole);
+        if (data.canConvert<hnRoadDiseaseInfo>())
+        {
+            hnRoadDiseaseInfo disease = data.value<hnRoadDiseaseInfo>();
+
+            bool exists = false;
+            for (const hnRoadDiseaseInfo& oldDisease : diseasesToDelete)
+            {
+                if (oldDisease.nID == disease.nID &&
+                    strcmp(oldDisease.strDiseaseTableName, disease.strDiseaseTableName) == 0)
+                {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists)
+            {
+                diseasesToDelete.append(disease);
+            }
+        }
+
+        QModelIndex sourceIndex = sortDiseaseTypeModel->mapToSource(proxyIndex);
+        if (sourceIndex.isValid())
+        {
+            sourceRows.insert(sourceIndex.row());
+        }
+    }
+
+    if (sourceRows.isEmpty())
+        return;
+
+    // 3. 先删数据库和发信号
+    for (const hnRoadDiseaseInfo& disease : diseasesToDelete)
+    {
+        hnApp::hnDataManager::getDataManager()
+            ->getCurrentProject()
+            ->getCurDB()
+            ->m_diseaseTable
+            .deleteDisease(disease);
+
+        emit signal_deleteDisease(disease);
+    }
+
+    // 4. 源模型从大到小删除
+    QList<int> sortedSourceRows = sourceRows.values();
+    std::sort(sortedSourceRows.begin(), sortedSourceRows.end(), std::greater<int>());
+
+    for (int sourceRow : sortedSourceRows)
+    {
+        if (sourceRow >= 0 && sourceRow < m_model->rowCount())
+        {
+            m_model->removeRow(sourceRow);
+        }
+    }
+
+    sortDiseaseTypeModel->invalidate();
+
+    emit signal_updateView();
+
+    // 5. 删除后选中下一行
+    int newProxyRowCount = sortDiseaseTypeModel->rowCount();
+    if (newProxyRowCount <= 0)
+        return;
+
+    if (nextProxyRow >= newProxyRowCount)
+        nextProxyRow = newProxyRowCount - 1;
+
+    QModelIndex nextIndex = sortDiseaseTypeModel->index(nextProxyRow, 0);
+    if (!nextIndex.isValid())
+        return;
+
+    MoveScrollBar(m_view, nextIndex);
+    slot_itemDoubleClicked(nextIndex);
 }
 
 void hnDiseaseListWidget::slot_selectDisease(const hnRoadDiseaseInfo& disease)
