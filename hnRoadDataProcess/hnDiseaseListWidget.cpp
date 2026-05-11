@@ -13,14 +13,22 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
 	:  QWidget(parent),
       m_model(new QStandardItemModel(this)),
       m_view(new customTableView(this)),
-      filterComboBox(nullptr),
+      filterComboBox(new QComboBox(this)),
       sortDiseaseTypeModel(new QSortFilterProxyModel(this))
 {
 	QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(4);
 
     populateComboBox();
+
     filterComboBox->setEditable(false);
-    mainLayout->addWidget(filterComboBox);
+    filterComboBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    m_view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    mainLayout->addWidget(filterComboBox, 0);
+    mainLayout->addWidget(m_view, 1);
 
     initTableHeader(m_model);
 
@@ -37,8 +45,6 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
     QHeaderView* verticalHeader = m_view->verticalHeader();
     verticalHeader->setVisible(true);
     verticalHeader->setDefaultSectionSize(35);
-
-    mainLayout->addWidget(m_view);
 
     connect(m_view, &QTableView::doubleClicked,
             this, &hnDiseaseListWidget::slot_itemDoubleClicked);
