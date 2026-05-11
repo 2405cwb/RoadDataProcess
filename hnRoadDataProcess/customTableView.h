@@ -16,5 +16,5 @@ protected:
 	void keyPressEvent(QKeyEvent *event);
 
 private:
-	Ui::customTableView ui;
+	 
 };

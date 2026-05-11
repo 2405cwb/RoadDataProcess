@@ -3,7 +3,7 @@
 customTableView::customTableView(QWidget *parent)
 	: QTableView(parent)
 {
-	ui.setupUi(this);
+	 
 	this->setContextMenuPolicy(Qt::CustomContextMenu);
 }
 
