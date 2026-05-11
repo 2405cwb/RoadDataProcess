@@ -70,7 +70,9 @@ hnDiseaseListWidget::~hnDiseaseListWidget()
 }
 
 void hnDiseaseListWidget::updateAllDiseases()
-{
+{ 
+	if (!m_model || !sortDiseaseTypeModel)
+        return;
 	this->m_model->clear();												//清理表			
 	this->initTableHeader(this->m_model);								//初始化表头
 	QVector<hnRoadDiseaseInfo> allDiseaseInfos = this->getAllDisease();	//获取所有病害
@@ -80,6 +82,12 @@ void hnDiseaseListWidget::updateAllDiseases()
     {
         sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
         sortDiseaseTypeModel->invalidate();
+    }
+	 if (filterComboBox)
+    {
+        filterComboBox->blockSignals(true);
+        filterComboBox->setCurrentIndex(0);
+        filterComboBox->blockSignals(false);
     }
 }
 
@@ -550,31 +558,13 @@ void hnDiseaseListWidget::modelAddDisease(QStandardItemModel & model, const hnRo
 	//model.appendRow(rowStandardItems);
 	 
 	if (selectAfterAdd)
-    {
-        insertAndSelectRow(m_model, m_view, rowStandardItems, 5);
-    }
-    else
-    {
-        // 只插入，不选中、不滚动
-        double newMileage = rowStandardItems[5]->data(Qt::DisplayRole).toDouble();
-
-        int low = 0;
-        int high = model.rowCount();
-
-        while (low < high)
-        {
-            int mid = low + (high - low) / 2;
-            QStandardItem * midItem = model.item(mid, 5);
-            double midMile = midItem->data(Qt::DisplayRole).toDouble();
-
-            if (midMile < newMileage)
-                low = mid + 1;
-            else
-                high = mid;
-        }
-
-        model.insertRow(low, rowStandardItems);
-    }
+{
+    insertAndSelectRow(&model, m_view, rowStandardItems, m_centerMileColumn);
+}
+else
+{
+    model.appendRow(rowStandardItems);
+}
 }
 void hnDiseaseListWidget::initTableHeader(QStandardItemModel *model)
 {

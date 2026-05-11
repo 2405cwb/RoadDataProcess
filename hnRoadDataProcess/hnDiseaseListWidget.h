@@ -59,7 +59,7 @@ public:
 	
 private:
 	// 模型添加病害
-	void modelAddDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease);
+	void modelAddDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease, bool selectAfterAdd = true);
 	// 模型删除病害
 	void modelDeleteDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease);
 
