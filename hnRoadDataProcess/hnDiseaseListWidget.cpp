@@ -12,12 +12,8 @@
 hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
 	:  QWidget(parent),
       m_model(new QStandardItemModel(this)),
-      m_view(new customTableView(this)),
-<<<<<<< HEAD
-      filterComboBox(new QComboBox(this)),
-=======
-      filterComboBox(new QComboxBox(this)),
->>>>>>> 25ac9545b7d4959d0aaaab62f57b82319271f1f7
+      m_view(new customTableView(this)), 
+      filterComboBox(new QComboBox(this)), 
       sortDiseaseTypeModel(new QSortFilterProxyModel(this))
 {
 	QVBoxLayout* mainLayout = new QVBoxLayout(this);
