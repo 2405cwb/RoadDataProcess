@@ -375,7 +375,7 @@ void hnDiseaseListWidget::deleteDiseases(QModelIndexList selectedIndexes)
 
     sortDiseaseTypeModel->invalidate();
 
-    emit signal_updateView();
+    
 
     // 5. 删除后选中下一行
     int newProxyRowCount = sortDiseaseTypeModel->rowCount();
@@ -391,14 +391,20 @@ void hnDiseaseListWidget::deleteDiseases(QModelIndexList selectedIndexes)
 
     MoveScrollBar(m_view, nextIndex);
     slot_itemDoubleClicked(nextIndex);
+	emit signal_updateView();
 }
 
 void hnDiseaseListWidget::slot_selectDisease(const hnRoadDiseaseInfo& disease)
 {
 	//选中病害，获取病害位置
-	QModelIndex selectIndex = 	getUserSelectIndex(sortDiseaseTypeModel, disease);
-	MoveScrollBar(m_view, selectIndex);
+	 if (!sortDiseaseTypeModel || !m_view)
+        return;
 
+    QModelIndex selectIndex = getUserSelectIndex(sortDiseaseTypeModel, disease);
+    if (!selectIndex.isValid())
+        return;
+
+    MoveScrollBar(m_view, selectIndex);
 }
 
 void hnDiseaseListWidget::keyPressEvent(QKeyEvent * event)
@@ -470,7 +476,7 @@ void hnDiseaseListWidget::streetJump(const double encoderMile)
 	emit this->signal_streetFrameIdxChanged(frameIdx);
 }
 
-void hnDiseaseListWidget::modelAddDisease(QStandardItemModel & model, const hnRoadDiseaseInfo & disease)
+void hnDiseaseListWidget::modelAddDisease(QStandardItemModel & model, const hnRoadDiseaseInfo & disease, bool selectAfterAdd )
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
@@ -543,8 +549,32 @@ void hnDiseaseListWidget::modelAddDisease(QStandardItemModel & model, const hnRo
 
 	//model.appendRow(rowStandardItems);
 	 
-	
-	insertAndSelectRow(m_model, m_view, rowStandardItems, 5);
+	if (selectAfterAdd)
+    {
+        insertAndSelectRow(m_model, m_view, rowStandardItems, 5);
+    }
+    else
+    {
+        // 只插入，不选中、不滚动
+        double newMileage = rowStandardItems[5]->data(Qt::DisplayRole).toDouble();
+
+        int low = 0;
+        int high = model.rowCount();
+
+        while (low < high)
+        {
+            int mid = low + (high - low) / 2;
+            QStandardItem * midItem = model.item(mid, 5);
+            double midMile = midItem->data(Qt::DisplayRole).toDouble();
+
+            if (midMile < newMileage)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+
+        model.insertRow(low, rowStandardItems);
+    }
 }
 void hnDiseaseListWidget::initTableHeader(QStandardItemModel *model)
 {
@@ -680,8 +710,7 @@ void hnDiseaseListWidget::addDiseaseToTable(QVector<hnRoadDiseaseInfo> diseases,
 	for (auto diseaseInfo : diseases)
 	{ 
 		//添加一个病害到model中
-		modelAddDisease(*model, diseaseInfo);
-	}
+	  modelAddDisease(*model, diseaseInfo, false);
 }
 
 QString hnDiseaseListWidget::diseaseLevelIntToQString(int intLevel)
@@ -804,7 +833,7 @@ QModelIndex hnDiseaseListWidget::getUserSelectIndex(QSortFilterProxyModel * prox
 	const hnRoadDiseaseInfo& disease,
 	int searchCol /*= 0*/, int role /*= QT::UserRole*/)
 {
-	if (!proxy || !&disease )
+	if (!proxy   )
 	{
 		return QModelIndex();
 	} 
@@ -853,43 +882,23 @@ QModelIndex hnDiseaseListWidget::getUserSelectIndex(QSortFilterProxyModel * prox
 
 void hnDiseaseListWidget::MoveScrollBar(QTableView * view, QModelIndex viewIdx)
 {
-	if (viewIdx.isValid())
-	{
-		QItemSelectionModel* selectionModel = view->selectionModel();
-		selectionModel->setCurrentIndex(viewIdx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+	   if (!view)
+        return;
 
-		QTimer::singleShot(10, [view, viewIdx]() {
+    if (!viewIdx.isValid())
+        return;
 
-			QRect rect = view->visualRect(viewIdx);
+    if (viewIdx.model() != view->model())
+        return;
 
-			if (rect.isEmpty())
-			{
-				view->resizeRowToContents(viewIdx.row());
-				rect = view->visualRect(viewIdx);
+    QItemSelectionModel* selectionModel = view->selectionModel();
+    if (!selectionModel)
+        return;
 
-			}
+    selectionModel->setCurrentIndex(
+        viewIdx,
+        QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows
+    );
 
-			if (!rect.isEmpty())
-			{
-				view->scrollTo(viewIdx, QAbstractItemView::EnsureVisible);
-
-			}
-			else
-			{
-				QScrollBar *vBar = view->verticalScrollBar();
-
-				int rowHeight = view->rowHeight(viewIdx.row());
-
-				if (rowHeight <= 0)
-				{
-					rowHeight = 30;
-				}
-
-				int targetY = viewIdx.row()*rowHeight;
-				int viewportHeight = view->viewport()->height();
-				vBar->setValue(targetY - (viewportHeight / 2));
-			}
-
-		});
-	}
+    view->scrollTo(viewIdx, QAbstractItemView::EnsureVisible);
 }
