@@ -166,7 +166,10 @@ namespace hnApp
 		}  
 		this->m_bOpenProject = true;
 		this->m_pCurProject = m_pProjectManager->getCurProject();
-
+		if (m_diseaseService)
+		{
+			m_diseaseService->setProject(m_pCurProject);
+		}
 		if (proName == m_strPreProName)
 		{
 		
