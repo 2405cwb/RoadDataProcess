@@ -19,7 +19,7 @@
 
 #include <QElapsedTimer>
 #include <QDebug>
-#include "../hnDiseaseService.h"
+#include "hnDiseaseService.h"
  
 
 
