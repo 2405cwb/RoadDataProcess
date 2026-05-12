@@ -13,7 +13,7 @@
 //using namespace hnDataTable;
 #include "../hdPointCloud/SeaPointCloud.h"
 #include "..\hnPointCloud\hnPointCloud.h"
-#include "..\hnDiseaseService.h"
+#include "hnDiseaseService.h"
 using namespace hnPtCloud;
 using namespace hd;
 using namespace hnPro;
