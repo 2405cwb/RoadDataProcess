@@ -807,7 +807,7 @@ void hn2d3dPixBaseWidget::reCalculateDiseaseSizeAndSave(hnCommon::hnRoadDiseaseI
 
 void hn2d3dPixBaseWidget::reCalculateOldDiseaseSizeAndSave(const QVector<QRect>& diseaseRects,hnCommon::hnRoadDiseaseInfo& disease)
 {
-	if (disease.dLength == 0 || disease.dArea == 0)
+	
 	{
 		setLittleDiseaseSize(diseaseRects,disease);
 		hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
@@ -828,7 +828,7 @@ void hn2d3dPixBaseWidget::CalculateDiseaseSize(const QVector<QRect>&diseaseRects
 	}
 }
 
-QVector<hnCommon::hnRoadDiseaseInfo> hn2d3dPixBaseWidget::getAllRoadDisease()
+QVector<hnCommon::hnRoadDiseaseInfo> hn2d3dPixBaseWidget::getAllRoadDiseaseTemp()
 {
 	 //获取所有病害
 	 if (!hnApp::hnDataManager::getDataManager()->isOpenProject())

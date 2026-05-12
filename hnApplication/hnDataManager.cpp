@@ -13,6 +13,7 @@
 //using namespace hnDataTable;
 #include "../hdPointCloud/SeaPointCloud.h"
 #include "..\hnPointCloud\hnPointCloud.h"
+#include "..\hnDiseaseService.h"
 using namespace hnPtCloud;
 using namespace hd;
 using namespace hnPro;
@@ -29,6 +30,7 @@ namespace hnApp
 	hnDataManager::hnDataManager() :m_pProjectManager(NULL), m_pCurProject(NULL), m_bOpenProject(false),m_strPreProName(""), m_bHasProject(false)
 	{
 		m_xrSetting = HnXRSettings::getInstance();
+		m_diseaseService = new hnDiseaseService();
 	}
 
 
@@ -46,6 +48,8 @@ namespace hnApp
 		}
 
 		m_vecPtCloud.clear();
+		delete m_diseaseService;
+		m_diseaseService = nullptr;
 	}
 
 	// 根据传入路径获取所有工程
@@ -2372,6 +2376,11 @@ namespace hnApp
 		dHeight = m_vecPosInfo[nIndex].dHeight;
 
 		return true;
+	}
+
+	hnDiseaseService* hnDataManager::getDiseaseService()
+	{
+		return m_diseaseService;
 	}
 
 	//1.读POS得到经纬度// 加载POS数据至内存

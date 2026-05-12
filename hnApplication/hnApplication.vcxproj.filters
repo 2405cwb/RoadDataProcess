@@ -254,6 +254,9 @@
     <ClCompile Include="lineAlgorithm.cpp">
       <Filter>显示图片界面\功能基类\算法</Filter>
     </ClCompile>
+    <ClCompile Include="hnDiseaseService.cpp">
+      <Filter>hnDataManager</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnView.h">
@@ -297,6 +300,9 @@
     </QtMoc>
     <QtMoc Include="hn2d3dPixBaseWidget.h">
       <Filter>显示图片界面\23维视图基类</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDiseaseService.h">
+      <Filter>hnDataManager</Filter>
     </QtMoc>
   </ItemGroup>
   <ItemGroup>

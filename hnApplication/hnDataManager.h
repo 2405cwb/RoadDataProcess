@@ -17,6 +17,7 @@ using namespace hd;
 using namespace hnCommon;
 using namespace std;
 class HnXRSettings;
+class hnDiseaseService;
 namespace hnPro
 {
 	class hnProjectManager;
@@ -177,7 +178,9 @@ namespace hnApp
 		bool getDiseaseLoction(hn3dPointWithMileI pt, double& dLatitude, double& dLongtitude, double& dHeight);
 
 		bool getDiseaseLoction(hn3dPointWithMileI pt, double& dLatitude, double& dLongtitude, double& dHeight, hnPro::hnProject* project);
-	private:
+
+		hnDiseaseService* getDiseaseService();
+private:
 		// 查找类型
 		bool findData(const vector<QString>& vecOriData, QString strFindData);
 
@@ -295,6 +298,8 @@ namespace hnApp
 		// 自动化模式合并距离阈值
 		int hMergeLittleFrameThr;
 		int vMergeLittleFrameThr;
+
+		hnDiseaseService * m_diseaseService;
 	};
 }
 

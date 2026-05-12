@@ -5,6 +5,7 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QToolTip>
+#include "../hnDiseaseService.h"
 using namespace hnApp;
 using namespace hnPro;
 
@@ -32,7 +33,7 @@ void hn3dPixWidget::load3DImagePictures()
 	{
 		return;
 	}
-
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(hnApp::hnDataManager::getDataManager()->getCurrentProject());
 	//工程类型
 	m_projectType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
 
@@ -896,95 +897,64 @@ QVector<QPoint> hn3dPixWidget::createBrokenLinePoints(hnRoadDiseaseInfo & diseas
 
 void hn3dPixWidget::drawDatabaseLoadData(QImage & image)
 {
+	if (!m_isAllowDrawPix)
+	{
+		return;
+	}
+
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, this->m_currentWidgetDiseases);
+
 	auto projectInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 	QString standard = HnProjectEnums::roadTypeEnumToQString(hnApp::hnDataManager::getDataManager()->getCurrentProject()->getBaseStandard());
-	if (m_isAllowDrawPix)
+	//加载控制点
+	m_currentCtrlPoints.clear();
+	QString stateMent = QString("SELECT * FROM %1 WHERE Mileage >= %2 AND Mileage <= %3")
+		.arg(CTRL_POINT_TABLE).arg(m_beginEncoderMile).arg(m_endEncoderMile);
+	hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.readData(m_currentCtrlPoints, stateMent.toLocal8Bit().data());
+
+	if (PROJECT_23D_TYPE == m_projectType)
 	{
-		//获取当前视图的病害
-		this->m_currentWidgetDiseases.clear();
-		QVector<hnRoadDiseaseInfo> currentDiseases;
-
-		const auto drawType = projectInfo.nDrawType;
-		 
-		const auto projectType = hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
-
-		if (PROJECT_23D_TYPE == projectType)
+		if (false == m_seclectPoint.pixName.isEmpty())
 		{
-			if (2 == drawType)
-			{
-				double encoderMileDiff = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2d3dMileDiff();
-				QVector<hnCommon::hnRoadDiseaseInfo> diss;
-			 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-					m_diseaseTable.readDesignDiseases(standard,m_beginEncoderMile+ encoderMileDiff, m_endEncoderMile+ encoderMileDiff, diss);
-			 m_currentWidgetDiseases = diss.toStdVector();
-			}
-			else if (0 == drawType || 1 == drawType)
-			{
-				vector<hnMile> hnMiles = this->getCurrentWidgetHnMiles();
-				hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-					m_diseaseTable.readRoadDiseaseData(projectInfo,QVector<hnMile>::fromStdVector(hnMiles), currentDiseases,
-
-						hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector(), 8);
-				m_currentWidgetDiseases = currentDiseases.toStdVector();
-			}
+			QPoint startPoint = this->singleImagePointToBigImagePoint(QPoint(0, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
+			QPoint endPoint = this->singleImagePointToBigImagePoint(QPoint(m_pixWidth, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
+			QLine line(startPoint, endPoint);
+			this->drawLineOnImage(line, 10, Qt::yellow, image);
 		}
-		else if (PROJECT_JD_3D_TYPE == projectType || PROJECT_XD_3D_TYPE == projectType)
-		{
-			//单三维
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-				m_diseaseTable.read3dRoadDiseaseData(standard,m_beginEncoderMile, m_endEncoderMile, this->m_currentWidgetDiseases);
-		}
+	}
 
-		//加载控制点
-		m_currentCtrlPoints.clear();
-		QString stateMent = QString("SELECT * FROM %1 WHERE Mileage >= %2 AND Mileage <= %3")
-			.arg(CTRL_POINT_TABLE).arg(m_beginEncoderMile).arg(m_endEncoderMile);
-		hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.readData(m_currentCtrlPoints, stateMent.toLocal8Bit().data());
+	//将加载后的人工模式病害画到界面上
+	if (this->m_frameMode == FrameMode::BIG_FRAME)
+	{
+		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image);
+	}
 
-		if (PROJECT_23D_TYPE == m_projectType)
-		{
-			if (false == m_seclectPoint.pixName.isEmpty())
-			{
-				QPoint startPoint = this->singleImagePointToBigImagePoint(QPoint(0, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
-				QPoint endPoint = this->singleImagePointToBigImagePoint(QPoint(m_pixWidth, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
-				QLine line(startPoint, endPoint);
-				this->drawLineOnImage(line, 10, Qt::yellow, image);
-			}
-		} 
+	//将加载后的自动化模式病害画到界面上
+	if (this->m_frameMode == FrameMode::LITTLE_FRAME)
+	{
+		this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
+	}
 
-		//将加载后的人工模式病害画到界面上
-		if (this->m_frameMode == FrameMode::BIG_FRAME)
-		{
-			this->drawBigFrameDisease(this->m_currentWidgetDiseases, image);
-		}
+	//绘制设计模式面状病害
+	if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
+	{
+		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image);
 
-		//将加载后的自动化模式病害画到界面上
-		if (this->m_frameMode == FrameMode::LITTLE_FRAME)
-		{
-			this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
-		}
+		//绘制设计模式线状病害
+		this->drawLineDiseases(m_currentWidgetDiseases, image);
+	}
 
-		//绘制设计模式面状病害
-		if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
-		{
-			this->drawBigFrameDisease(this->m_currentWidgetDiseases, image);
+	//将加载后的控制点绘制到image上
+	this->drawCtrlPoint(image, m_currentCtrlPoints);
 
-			//绘制设计模式线状病害
-			this->drawLineDiseases(m_currentWidgetDiseases, image);
-		}
+	//记录临时内容画板
+	m_tmpContectImage = image;
 
-		//将加载后的控制点绘制到image上
-		this->drawCtrlPoint(image, m_currentCtrlPoints);
-
-		//记录临时内容画板
-		m_tmpContectImage = image;
-
-		//如果要画放大镜内容
-		if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
-		{
-			image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
-				m_tmpPixImageWithoutDisease, image);
-		}
+	//如果要画放大镜内容
+	if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
+	{
+		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
+			m_tmpPixImageWithoutDisease, image);
 	}
 }
 
@@ -3082,13 +3052,7 @@ void hn3dPixWidget::drawLittleFrameDisease(const vector<hnRoadDiseaseInfo>& dise
 		{
 			diseaseRect = this->hn3dRectToBigImageQtRect(hnRect);
 			rects.push_back(diseaseRect);
-		}
-		//适配以前的自动化模式病害
-		/*if (disease.nDrawType==1)
-		{ 
-			  
-			reCalculateOldDiseaseSizeAndSave(disease); 
-		}*/
+		} 
 
 		hnImagePainter imagePainter;
 		const int fontSize = m_fontSize;

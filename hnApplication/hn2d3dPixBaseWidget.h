@@ -192,12 +192,17 @@ protected:
 
 	//计算病害长度和宽度，根据自动化模式的最大外接矩形
 	void CalculateDiseaseSize(const QVector<QRect>&diseaseRects, hnCommon::hnRoadDiseaseInfo&  disease);
-	QVector<hnRoadDiseaseInfo> getAllRoadDisease();
+ 	QVector<hnRoadDiseaseInfo> getAllRoadDiseaseTemp();
 private:
 		//根据最大外接矩形设置病害尺寸
 		void setLittleDiseaseSize(const QVector<QRect>& diseaseRects, hnRoadDiseaseInfo& disease);
 protected:
 	//是否结束左键连续点击添加病害 
 	bool m_isEndAddPoint;
+
+	//bool m_diseaseCacheValid;
+	//double m_cacheBeginEncoderMile;
+	//double m_cacheEndEncoderMile;
+	//int m_cacheFrameMode;
 };
 

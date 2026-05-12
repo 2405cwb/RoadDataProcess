@@ -1,4 +1,7 @@
 #pragma once
+ 
+
+
 
 #include "hnDataManager.h"	//这个要放最前面，不然容易出问题
 #include <QWidget>

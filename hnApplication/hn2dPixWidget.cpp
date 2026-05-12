@@ -16,6 +16,13 @@
 #include "QMessageBox"
 
 #include <QTextEdit>
+
+#include <QElapsedTimer>
+#include <QDebug>
+#include "../hnDiseaseService.h"
+ 
+
+
 hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 //: hnBrowsePixWidget(parent)
 {
@@ -46,17 +53,7 @@ hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 		"	font-size: 10px;"
 		"	font-family: 'Microsoft YaHei','Segoe UI',Arial;"
 		"}");
-
-	//m_lblCoordinates->setAutoFillBackground(true);
-	//QPalette pal = m_lblCoordinates->palette();
-
-
-	//pal.setColor(QPalette::Window, QColor(0,0,0,180));
-	//pal.setColor(QPalette::WindowText, Qt::green);
-	//m_lblCoordinates->setPalette(pal);
-	//m_lblCoordinates->setFrameStyle(QFrame::Box | QFrame::Raised);
-	//m_lblCoordinates->setLineWidth(1);
-	//m_lblCoordinates->setMargin(5);
+	 
 	m_lblCoordinates->hide();
 }
 
@@ -70,7 +67,7 @@ void hn2dPixWidget::loadRoadPicture()
 	{
 		return;
 	}
-	 
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(hnApp::hnDataManager::getDataManager()->getCurrentProject());
 	{
 		
 		m_highAccuracy = std::make_unique<  HighAccuracyPositioning>(hnApp::hnDataManager::getDataManager()->getCurrentProject());
@@ -134,23 +131,29 @@ void hn2dPixWidget::loadRoadPicture()
 
 #endif 
 	//更新所有病害
-	QVector<hnRoadDiseaseInfo> allRoadDiseaes = getAllRoadDisease();
-	for (auto& disease : allRoadDiseaes)
-	{
-		//适配以前的自动化模式病害
-		if (disease.nDrawType == 1)
-		{
-			std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
-			QVector<QRect> diseaseRects;
+	//QVector<hnRoadDiseaseInfo> allRoadDiseaes = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
+ //  
+	//for (auto& disease : allRoadDiseaes)
+	//{
+	//	//适配以前的自动化模式病害
+	//	if (disease.nDrawType == 1)
+	//	{
 
-			for (hn2dRectI rect2d : qAsConst(hn2dRects))
-			{
-				QRect rect = this->hn2dRectToImageQtRect(rect2d);
-				diseaseRects.push_back(rect);
-			}
-			reCalculateOldDiseaseSizeAndSave(diseaseRects, disease);
-		}
-	}
+	//		if (disease.dLength == 0 || disease.dArea == 0)
+	//		{
+	//			std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
+	//			QVector<QRect> diseaseRects;
+
+	//			for (hn2dRectI rect2d : qAsConst(hn2dRects))
+	//			{
+	//				QRect rect = this->hn2dRectToImageQtRect(rect2d);
+	//				diseaseRects.push_back(rect);
+	//			}
+	//			reCalculateOldDiseaseSizeAndSave(diseaseRects, disease);
+	//		}
+	//		
+	//	}
+	//}
 	
 	m_lineWidth = 20;
 }
@@ -167,18 +170,34 @@ void hn2dPixWidget::drawSomeThingOnImage(QImage & image)
 		return;
 	} 
 	//调整图片
-	this->adjustImage(image);
+	QElapsedTimer timer;
 
+	timer.restart();
+	
+	this->adjustImage(image);
+	qDebug() << "PERF adjustImage" << timer.elapsed() << "ms";
+
+
+	timer.restart(); 
 	// 绘制数据库加载内容
 	this->drawDatabaseLoadData(image);
+	qDebug() << "PERF drawDatabaseLoadData" << timer.elapsed() << "ms";
 
+	timer.restart();
 	//绘制临时内容
 	this->drawTmpData(image);
+	qDebug() << "PERF drawTmpData" << timer.elapsed() << "ms";
+
+	timer.restart();
 	//绘制打标分界线
 	this->drawMarkValue(image);
+	qDebug() << "PERF drawMarkValue" << timer.elapsed() << "ms";
+	
 
+	timer.restart();
 	//设置当前的hnMile
 	this->setCurrentHnMile();
+	qDebug() << "PERF setCurrentHnMile" << timer.elapsed() << "ms";
 }
 
 void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
@@ -568,6 +587,7 @@ void hn2dPixWidget::mouseReleaseEvent(QMouseEvent * event)
 
 void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 {
+	 
 	//currentMousePos = event->pos();
 	currentMousePos = event->screenPos().toPoint();				// 记录鼠标在屏幕的位置
 
@@ -1412,70 +1432,46 @@ void hn2dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 {
-	if (this->m_isAllowDrawPix)
+	QElapsedTimer timer;
+
+	timer.restart();
+	if (!this->m_isAllowDrawPix)
+		return;
+
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, this->m_currentWidgetDiseases);
+	 
+	//auto allRoadDiseaes = getAllRoadDiseaseTemp();
+	if (this->m_frameMode == FrameMode::BIG_FRAME)
 	{
-		auto projectInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	 QString standard =   HnProjectEnums::roadTypeEnumToQString( 	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getBaseStandard());
-		this->m_currentWidgetDiseases.clear();
-		vector<hnMile> hnMiles = this->getCurrentWidgetHnMiles();
-		
-		//加载病害
-		if (FrameMode::DESIGN_LINE == m_frameMode || FrameMode::DESIGN_FACETS == m_frameMode)
+		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 0);
+	}
+
+	//将加载后的自动化模式病害画到界面上
+	if (this->m_frameMode == FrameMode::LITTLE_FRAME)
+	{
+		this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
+	}
+	qDebug() << "PERF drawLittleFrameDisease" << timer.elapsed() << "ms";
+	//绘制设计模式面状病害
+	if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
+	{
+		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 2);
+
+		//绘制设计模式线状病害
+		this->drawLineDiseases(m_currentWidgetDiseases, image);
+	}
+
+
+	//绘制二三维开始里程矫正的线
+	if (PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
+	{
+		if (false == m_seclectPoint.pixName.isEmpty())
 		{
-			QVector<hnCommon::hnRoadDiseaseInfo> diss;
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-				m_diseaseTable.readDesignDiseases(standard, m_beginEncoderMile, m_endEncoderMile,diss) ; 
-			m_currentWidgetDiseases = diss.toStdVector();
+			QPoint startPoint = this->singleImagePointToBigImagePoint(QPoint(0, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
+			QPoint endPoint = this->singleImagePointToBigImagePoint(QPoint(m_pixWidth, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
+			QLine line(startPoint, endPoint);
+			this->drawLineOnImage(line, 20, Qt::yellow, image);
 		}
-		else
-		{
-			QVector<hnCommon::hnRoadDiseaseInfo> currentWidgetDiseases;
-			/*hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.
-				readRoadDiseaseData(QVector<hnMile>::fromStdVector(hnMiles), currentWidgetDiseases, projectInfo.nLineType, projectInfo.dRoadLength );*/
-				//cwb 20240410 上下距离多增加了一个二三维里程差值  用以解决三维绘制后二维不显示的问题
-				//获取二三维的编码器里程差值  
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.
-				readRoadDiseaseData(projectInfo,QVector<hnMile>::fromStdVector(hnMiles), currentWidgetDiseases,
-					hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector(),
-					projectInfo.dRoadLength);
-
-			m_currentWidgetDiseases = currentWidgetDiseases.toStdVector();
-		}
-
-		//将加载后的人工模式病害画到界面上
-		if (this->m_frameMode == FrameMode::BIG_FRAME)
-		{
-			this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 0);
-		}
-
-		//将加载后的自动化模式病害画到界面上
-		if (this->m_frameMode == FrameMode::LITTLE_FRAME)
-		{
-			this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
-		}
-
-		//绘制设计模式面状病害
-		if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
-		{
-			this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 2);
-
-			//绘制设计模式线状病害
-			this->drawLineDiseases(m_currentWidgetDiseases, image);
-		}
-
-
-		//绘制二三维开始里程矫正的线
-		if (PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
-		{
-			if (false == m_seclectPoint.pixName.isEmpty())
-			{
-				QPoint startPoint = this->singleImagePointToBigImagePoint(QPoint(0, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
-				QPoint endPoint = this->singleImagePointToBigImagePoint(QPoint(m_pixWidth, m_seclectPoint.pixPoint.y()), m_seclectPoint.pixName);
-				QLine line(startPoint, endPoint);
-				this->drawLineOnImage(line, 20, Qt::yellow, image);
-			}
-		}
-
 		//记录临时内容画板
 		m_tmpContectImage = image;
 
@@ -1486,10 +1482,7 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 				m_tmpPixImageWithoutDisease, image);
 		}
 	}
-	else
-	{
-		return;
-	}
+	 
 }
 
 void hn2dPixWidget::drawTmpData(QImage & image)
