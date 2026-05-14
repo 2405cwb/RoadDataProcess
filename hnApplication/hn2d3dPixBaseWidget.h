@@ -43,14 +43,11 @@ protected:
 
 signals:
 	//信号 数据库添加病害
-	void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
+	//void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
 
 	//用户选中病害
 	void signal_selectDisease(const hnRoadDiseaseInfo& disease);
-	 
-signals:
-	//信号 数据库删除病害
-	void signal_deleteDisease(hnRoadDiseaseInfo disease);
+	  
 signals:
 	//状态栏信息改变
 	void signal_statusInfoChanged(QString &statusInfo);
@@ -192,7 +189,7 @@ protected:
 
 	//计算病害长度和宽度，根据自动化模式的最大外接矩形
 	void CalculateDiseaseSize(const QVector<QRect>&diseaseRects, hnCommon::hnRoadDiseaseInfo&  disease);
- 	QVector<hnRoadDiseaseInfo> getAllRoadDiseaseTemp();
+ 	 
 private:
 		//根据最大外接矩形设置病害尺寸
 		void setLittleDiseaseSize(const QVector<QRect>& diseaseRects, hnRoadDiseaseInfo& disease);

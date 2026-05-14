@@ -2,24 +2,23 @@
 #include "hnImagePainter.h"
 #include "addDiseaseDialog.h"
 #include "../hnDataTable/hnDBSqliteRoadInfo.h"
-#include "../hnDataTable/hnDBSqlite.h"
-#include <QMessageBox>
+#include "../hnDataTable/hnDBSqlite.h" 
 #include "hnDataManager.h"
 #include "hnProject.h"
 #include "hn3DProject.h"
+#include "../hnQtCommon/MyCommonMethods.h"
+#include "hnDiseaseService.h"
+#include <QMessageBox>
 #include <QTime>
 #include <QSet>
 #include <QEventLoop>
 #include <QTimer>
-#include <QApplication>
-#include "../hnQtCommon/MyCommonMethods.h"
-#include "QMessageBox"
-
-#include <QTextEdit>
-
+#include <QApplication> 
+#include "QMessageBox" 
+#include <QTextEdit> 
 #include <QElapsedTimer>
 #include <QDebug>
-#include "hnDiseaseService.h"
+#include<QProgressDialog>
  
 
 
@@ -55,6 +54,11 @@ hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 		"}");
 	 
 	m_lblCoordinates->hide();
+
+	connect(hnApp::hnDataManager::getDataManager()->getDiseaseService(),
+		SIGNAL(diseaseChanged()), this, SLOT(slotDiseaseChanged()));
+
+ 
 }
 
 void hn2dPixWidget::loadRoadPicture()
@@ -67,7 +71,7 @@ void hn2dPixWidget::loadRoadPicture()
 	{
 		return;
 	}
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(hnApp::hnDataManager::getDataManager()->getCurrentProject());
+
 	{
 		
 		m_highAccuracy = std::make_unique<  HighAccuracyPositioning>(hnApp::hnDataManager::getDataManager()->getCurrentProject());
@@ -131,30 +135,41 @@ void hn2dPixWidget::loadRoadPicture()
 
 #endif 
 	//更新所有病害
-	//QVector<hnRoadDiseaseInfo> allRoadDiseaes = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
- //  
-	//for (auto& disease : allRoadDiseaes)
-	//{
-	//	//适配以前的自动化模式病害
-	//	if (disease.nDrawType == 1)
-	//	{
+	QVector<hnRoadDiseaseInfo> allRoadDiseaes = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
+   
+	QProgressDialog progress(QStringLiteral("检测到旧版本病害，自动进行更新，此过程仅一次，耗时较长，请耐心等待"),
+		QString(), 0, allRoadDiseaes.size(), this);
+	progress.setWindowTitle(QStringLiteral("处理中..."));
+	progress.setWindowModality(Qt::ApplicationModal);
+	progress.setMinimumDuration(0);
+	progress.setValue(0);
+	for (int i = 0 ; i<allRoadDiseaes.size() ;++i)
+	{ 
+		auto& dis = allRoadDiseaes[i];
+		if (dis.nDrawType == 1)
+		{ 
+			if (dis.dLength == 0 || dis.dArea == 0)
+			{
+				std::vector<hn2dRectI>  hn2dRects = dis.vec2dRect;
+				if (hn2dRects .size()==0)
+				{
+					continue;
+				}
+				QVector<QRect> diseaseRects;
 
-	//		if (disease.dLength == 0 || disease.dArea == 0)
-	//		{
-	//			std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
-	//			QVector<QRect> diseaseRects;
+				for (hn2dRectI rect2d : qAsConst(hn2dRects))
+				{
+					QRect rect = this->hn2dRectToImageQtRect(rect2d);
+					diseaseRects.push_back(rect);
+				}
+				reCalculateOldDiseaseSizeAndSave(diseaseRects, dis);
+			} 
+		}
+		progress.setValue(i + 1);
+		QApplication::processEvents();
 
-	//			for (hn2dRectI rect2d : qAsConst(hn2dRects))
-	//			{
-	//				QRect rect = this->hn2dRectToImageQtRect(rect2d);
-	//				diseaseRects.push_back(rect);
-	//			}
-	//			reCalculateOldDiseaseSizeAndSave(diseaseRects, disease);
-	//		}
-	//		
-	//	}
-	//}
-	
+	}
+	progress.setValue(allRoadDiseaes.size());
 	m_lineWidth = 20;
 }
 
@@ -170,34 +185,34 @@ void hn2dPixWidget::drawSomeThingOnImage(QImage & image)
 		return;
 	} 
 	//调整图片
-	QElapsedTimer timer;
+//	QElapsedTimer timer;
 
-	timer.restart();
+	//timer.restart();
 	
 	this->adjustImage(image);
-	qDebug() << "PERF adjustImage" << timer.elapsed() << "ms";
+	//qDebug() << "PERF adjustImage" << timer.elapsed() << "ms";
 
 
-	timer.restart(); 
+	//timer.restart(); 
 	// 绘制数据库加载内容
 	this->drawDatabaseLoadData(image);
-	qDebug() << "PERF drawDatabaseLoadData" << timer.elapsed() << "ms";
+	//qDebug() << "PERF drawDatabaseLoadData" << timer.elapsed() << "ms";
 
-	timer.restart();
+	//timer.restart();
 	//绘制临时内容
 	this->drawTmpData(image);
-	qDebug() << "PERF drawTmpData" << timer.elapsed() << "ms";
+	//qDebug() << "PERF drawTmpData" << timer.elapsed() << "ms";
 
-	timer.restart();
+	//timer.restart();
 	//绘制打标分界线
 	this->drawMarkValue(image);
-	qDebug() << "PERF drawMarkValue" << timer.elapsed() << "ms";
+	//qDebug() << "PERF drawMarkValue" << timer.elapsed() << "ms";
 	
 
-	timer.restart();
+	//timer.restart();
 	//设置当前的hnMile
 	this->setCurrentHnMile();
-	qDebug() << "PERF setCurrentHnMile" << timer.elapsed() << "ms";
+	//qDebug() << "PERF setCurrentHnMile" << timer.elapsed() << "ms";
 }
 
 void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
@@ -724,6 +739,10 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 			}
 			else
 			{
+				if (m_littleSingleImagePoints.size()<=0)
+				{
+					return;
+				}
 				pixImagePoint  lastPointWithImage = m_littleSingleImagePoints.last();
 				//在最后一个点和当前位置之间绘制虚线
 				QPoint lastPoint = singleImagePointToBigImagePoint(lastPointWithImage.pixPoint, lastPointWithImage.pixName);
@@ -1187,19 +1206,12 @@ bool hn2dPixWidget::drawBigFrameProcess()
 	{
 
 		diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-			->getDB()->m_diseaseTable.getMaxID(diseaseTableName.toLocal8Bit().data());
-		auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, diseaseInfo))
+			->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
+		
 
-		{
-
-			emit this->signal_addDisease(diseaseInfo,false);
-
-		}
-	}
-
-
-	//发信号 数据库变化
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo); 
+ 
+	} 
 
 	return true;
 }
@@ -1400,32 +1412,24 @@ void hn2dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 		//重新设置ID
 		newDisease.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-			->getDB()->m_diseaseTable.getMaxID(newDisease.strDiseaseTableName);
+			->getDB()->getDiseaseTable()->getMaxID(newDisease.strDiseaseTableName);
 
 		//新病害写入数据库
-		auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 
 
 
 		//删除第一个病害
-		auto firstDisease = m_seclectedDiseases.at(0);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(firstDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(firstDisease);
+		auto firstDisease = m_seclectedDiseases.at(0); 
 
 		//删除第二个病害
-		auto secondDisease = m_seclectedDiseases.at(1);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(secondDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(secondDisease);
+		auto secondDisease = m_seclectedDiseases.at(1); 
 
-		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, newDisease))
-
-			//发信号 数据库变化
-			emit this->signal_addDisease(newDisease, false);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease); 
+		 
 		this->update();
-
-		//清空选中的病害数组
+		 
 		m_seclectedDiseases.clear();
 	}
 }
@@ -1436,11 +1440,14 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 
 	timer.restart();
 	if (!this->m_isAllowDrawPix)
-		return;
+		return;  
 
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, this->m_currentWidgetDiseases);
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+
+	QVector<hnRoadDiseaseInfo> diss;
 	 
-	//auto allRoadDiseaes = getAllRoadDiseaseTemp();
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getRoadDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, diss);
+	this->m_currentWidgetDiseases = diss.toStdVector();
 	if (this->m_frameMode == FrameMode::BIG_FRAME)
 	{
 		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 0);
@@ -1463,7 +1470,7 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 
 
 	//绘制二三维开始里程矫正的线
-	if (PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
+	if (PROJECT_23D_TYPE == project->getProjectType())
 	{
 		if (false == m_seclectPoint.pixName.isEmpty())
 		{
@@ -1472,17 +1479,18 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 			QLine line(startPoint, endPoint);
 			this->drawLineOnImage(line, 20, Qt::yellow, image);
 		}
-		//记录临时内容画板
-		m_tmpContectImage = image;
-
-		//如果要画放大镜内容
-		if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
-		{
-			image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
-				m_tmpPixImageWithoutDisease, image);
-		}
+	
+	
 	}
-	 
+	//记录临时内容画板
+	m_tmpContectImage = image;
+
+	//如果要画放大镜内容
+	if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
+	{
+		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
+			m_tmpPixImageWithoutDisease, image);
+	}
 }
 
 void hn2dPixWidget::drawTmpData(QImage & image)
@@ -1712,10 +1720,9 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	}
 	int drawType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
 
-	//数据库删除病害
-	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(disease);
-	//发信号 病害删除
-	emit this->signal_deleteDisease(disease);
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
+
+ 
 
 	//给病害赋值病害类型
 	strcpy(disease.strDisName, diseaseTypeName.toLocal8Bit().data());
@@ -1743,7 +1750,7 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	//病害赋值表名
 	strcpy(disease.strDiseaseTableName, diseaseTableName.toLocal8Bit().data());
 	// 获取最大ID
-	const int id = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.getMaxID(std::string(disease.strDiseaseTableName));
+	const int id = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getDiseaseTable()->getMaxID(std::string(disease.strDiseaseTableName));
 	disease.nID = id;
 
 	//计算病害面积信息
@@ -1776,16 +1783,14 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 			}
 		}
 	}
-	auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-
 	//写入数据库
 	auto mark8Bit = diseaseMark.toLocal8Bit();
 	auto markStd = mark8Bit.toStdString();
 	strcpy(disease.strRemark, markStd.c_str());
 
-	if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, disease))
-		//发信号 病害增加
-		emit this->signal_addDisease(disease,false);
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(disease);
+	 
+	 
 
 	m_isAllowDrawPix = true;
 	this->update();
@@ -1796,11 +1801,8 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 	PROJECT_TYPE projectType=  hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
 	// 如果自动化模式数量为0 ，则直接删除整个病害
 	if (disease.vec2dRect.size() <= 0 || (disease.vec3dRect.size() <= 0&& projectType!= PROJECT_TYPE::PROJECT_2D_TYPE))
-	{
-		//数据库删除病害
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(disease);
-		//发信号 病害删除
-		emit this->signal_deleteDisease(disease);
+	{ 
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease); 
 		this->update();
 		return;
 	}
@@ -1840,10 +1842,9 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 
 	// todo 经过测试主要耗时是读写数据库耗时，除非将病害变为临时病害，在鼠标释放事件写入数据库，才会流畅一些
 	//写入数据库
-	if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.updaetSingleDataInfo( disease));
-	//发信号 病害增加
-	emit this->signal_addDisease(disease,true);
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
 
+	 
 	m_isAllowDrawPix = true;
 	this->update();
 
@@ -2583,8 +2584,7 @@ bool hn2dPixWidget::littleFrameProcess()
 
 	//计算病害id
 	diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-		->getDB()->m_diseaseTable.getMaxID(diseaseTableName.toLocal8Bit().data());
-	auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
+		->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
 
 	if (!this->isTmpDiseaseAreaValid(diseaseInfo))
 	{
@@ -2594,12 +2594,8 @@ bool hn2dPixWidget::littleFrameProcess()
 		return false;
 	}
 
-
-	//写入数据库
-	if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, diseaseInfo));
-
-	//发信号 数据库变化
-	emit this->signal_addDisease(diseaseInfo,false);
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+	 
 
 	return true;
 }
@@ -2732,71 +2728,85 @@ void hn2dPixWidget::littleFrameEditDisease(const QPoint & mousePoint)
 
 void hn2dPixWidget::littleFrameRightButtonDragDelete(const QPoint & mousePoint)
 {
-	//获取鼠标在大图像上的坐标
-	QPoint bigImagePoint = this->screenPointToBigImagePoint(mousePoint);
-
-	//获取鼠标位置的病害
-	for (auto disease : this->m_currentWidgetDiseases)
+	try
 	{
-		if (disease.vec2dRect.empty())
+		//获取鼠标在大图像上的坐标
+		QPoint bigImagePoint = this->screenPointToBigImagePoint(mousePoint);
+
+		if (m_currentWidgetDiseases.size() <= 0)
 		{
-			continue;
+			return;
 		}
-
-		//获取病害的二维数组
-		std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
-		QVector<QRect> diseaseRects;
-
-		for (hn2dRectI rect2d : qAsConst(hn2dRects))
+		std::vector<hnRoadDiseaseInfo> currentDis = m_currentWidgetDiseases; 
+		//获取鼠标位置的病害
+		for (auto& disease : currentDis)
 		{
-			QRect rect = this->hn2dRectToImageQtRect(rect2d);	// 病害矩形框的坐标转为在大图像上的坐标，和鼠标在大图上的坐标进行比较
-			diseaseRects.push_back(rect);
-		}
-
-
-
-		bool project3dOpened = hnDataManager::getDataManager()->getCurrentProject()->get3DProject();
-		vector<hn2dRectI> newVec2dRectI;
-		vector<hn3dRectI> newVec3dRectI;
-		//遍历病害数组，如果包含鼠标点击的点，就编辑病害
-		for (int i = 0; i < diseaseRects.size(); i++)
-		{
-			// 将鼠标位置之外的自动化模式保存
-			if (!diseaseRects[i].contains(bigImagePoint)&& i<disease.vec2dRect.size())
+			if (disease.vec2dRect.empty())
 			{
-				newVec2dRectI.push_back(disease.vec2dRect[i]);
-				if (project3dOpened)
-				{
-					if (disease.vec3dRect.size() > 0 && i < disease.vec3dRect.size())
-					{
-						
-						newVec3dRectI.push_back(disease.vec3dRect[i]);
-
-					}
-				}
-
+				continue;
 			}
+
+			//获取病害的二维数组
+			std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
+			QVector<QRect> diseaseRects;
+
+			for (hn2dRectI rect2d : qAsConst(hn2dRects))
+			{
+				QRect rect = this->hn2dRectToImageQtRect(rect2d);	// 病害矩形框的坐标转为在大图像上的坐标，和鼠标在大图上的坐标进行比较
+				diseaseRects.push_back(rect);
+			}
+
+
+
+			bool project3dOpened = hnDataManager::getDataManager()->getCurrentProject()->get3DProject();
+			vector<hn2dRectI> newVec2dRectI;
+			vector<hn3dRectI> newVec3dRectI;
+			//遍历病害数组，如果包含鼠标点击的点，就编辑病害
+			for (int i = 0; i < diseaseRects.size(); i++)
+			{
+				// 将鼠标位置之外的自动化模式保存
+				if (!diseaseRects[i].contains(bigImagePoint) && i < disease.vec2dRect.size())
+				{
+					newVec2dRectI.push_back(disease.vec2dRect[i]);
+					if (project3dOpened)
+					{
+						if (disease.vec3dRect.size() > 0 && i < disease.vec3dRect.size())
+						{
+
+							newVec3dRectI.push_back(disease.vec3dRect[i]);
+
+						}
+					}
+
+				}
+			}
+			if (newVec2dRectI.size() == disease.vec2dRect.size())
+			{
+				// 如果自动化模式数量没有发生变化，则不做处理
+				continue;
+			}
+
+
+			disease.dArea = 0.01*newVec2dRectI.size();
+			disease.vec2dRect = newVec2dRectI;
+			disease.nRectCnt = newVec2dRectI.size();
+
+			if (project3dOpened)
+			{
+				disease.vec3dRect = newVec3dRectI;
+			}
+			disease.n3dCnt = newVec3dRectI.size();
+
+			// 重新计算病害参数，写入数据库
+			this->updateLittleFrameDisease(disease);
 		}
-		if (newVec2dRectI.size() == disease.vec2dRect.size())
-		{
-			// 如果自动化模式数量没有发生变化，则不做处理
-			continue;
-		}
-
-
-		disease.dArea = 0.01*newVec2dRectI.size();
-		disease.vec2dRect = newVec2dRectI;
-		disease.nRectCnt = newVec2dRectI.size();
-
-		if (project3dOpened)
-		{
-			disease.vec3dRect = newVec3dRectI;
-		}
-		disease.n3dCnt = newVec3dRectI.size();
-
-		// 重新计算病害参数，写入数据库
-		this->updateLittleFrameDisease(disease);
 	}
+	catch (exception* e)
+	{
+		
+	}
+	
+
 
 }
 
@@ -2911,29 +2921,20 @@ void hn2dPixWidget::littleFrameMergeDiseases(const QPoint & screenPoint)
 
 		//重新设置ID
 		newDisease.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-			->getDB()->m_diseaseTable.getMaxID(newDisease.strDiseaseTableName);
-		auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
+			->getDB()->getDiseaseTable()->getMaxID(newDisease.strDiseaseTableName);
 
 		
 	
 
 		//删除第一个病害
-		auto firstDisease = m_seclectedDiseases.at(0);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(firstDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(firstDisease);
+		auto firstDisease = m_seclectedDiseases.at(0); 
 
 		//删除第二个病害
-		auto secondDisease = m_seclectedDiseases.at(1);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(secondDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(secondDisease);
-
-		//新病害写入数据库
-		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, newDisease));
-
-		//发信号 数据库变化
-		emit this->signal_addDisease(newDisease, false);
+		auto secondDisease = m_seclectedDiseases.at(1); 
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease); 
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease);
+		 
 		this->update();
 
 		//清空选中的病害数组
@@ -3645,4 +3646,9 @@ hn2dPixWidget::~hn2dPixWidget()
 	 
 }
 
+void hn2dPixWidget::slotDiseaseChanged()
+{
+	this->m_currentWidgetDiseases.clear();
+	this->update();
+}
 

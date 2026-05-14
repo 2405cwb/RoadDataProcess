@@ -124,7 +124,7 @@ std::vector<hnCommon::hnRoadDiseaseInfo> mergeAidcDiseases::mergeSingleDisease(s
 	QVector<hnCommon::hnRoadDiseaseInfo> addSingleDiseaseSets;			// 记录所有需要添加的病害
 
 	// 获取数据库中病害最大编号，新增病害加到后面
-	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.getMaxID(diseaseInfos[0].strDiseaseTableName);
+	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getDiseaseTable()->getMaxID(diseaseInfos[0].strDiseaseTableName);
 	int newID = maxID + 1;
 
 	// 生成两张相邻大图的自动化模式集合
@@ -385,7 +385,7 @@ std::vector<hnCommon::hnRoadDiseaseInfo> mergeAidcDiseases::mergeSingleDiseaseMu
 	QVector<hnCommon::hnRoadDiseaseInfo> nextSingleDiseaseSets;			// 临时变量
 
 	// 获取数据库中病害最大编号，新增病害加到后面
-	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.getMaxID(diseaseInfos[0].strDiseaseTableName);
+	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getDiseaseTable()->getMaxID(diseaseInfos[0].strDiseaseTableName);
 	int newID = maxID + 1;
 
 	// 生成两张相邻大图的自动化模式集合
@@ -1147,7 +1147,7 @@ std::vector<hnCommon::hnRoadDiseaseInfo> mergeAidcDiseases::BigFrameMergeSingleD
 	QVector<hnCommon::hnRoadDiseaseInfo> nextSingleDiseaseSets;			// 临时变量
 
 	// 获取数据库中病害最大编号，新增病害加到后面
-	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.getMaxID(diseaseInfos[0].strDiseaseTableName);
+	int maxID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getDiseaseTable()->getMaxID(diseaseInfos[0].strDiseaseTableName);
 	int newID = maxID + 1;
 
 	int baseDiseaseIndex = 0;				// 要合并的最底部的图

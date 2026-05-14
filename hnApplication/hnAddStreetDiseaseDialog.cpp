@@ -1,5 +1,5 @@
 #include "hnAddStreetDiseaseDialog.h"
-
+#include "hnDiseaseService.h"
 hnAddStreetDiseaseDialog::hnAddStreetDiseaseDialog(QVector<hnCommon::hnDiseaseSetInfo> LJInfo, QVector<hnCommon::hnDiseaseSetInfo>YXInfo, QWidget *parent)
 	: QDialog(parent)
 {
@@ -197,11 +197,12 @@ void hnAddStreetDiseaseDialog::writeDiseaseDataBase(QGridLayout * layout, const 
 		strcpy(diseaseInfo.strDisName, currentDiseaseSetInfo.strDiseaseTypeName);
 
 		diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-			->getDB()->m_diseaseTable.getMaxID(diseaseTableName.toLocal8Bit().data());
+			->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
 
-		//Ð´ÈëÊý¾Ý¿â
-	  auto setting = 	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	  if (  hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, diseaseInfo))
+		
+
+	 
+	  if (hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo))
 	  {
 		  m_selectDiseases.append(diseaseInfo);
 

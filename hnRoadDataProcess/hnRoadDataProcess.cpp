@@ -65,6 +65,9 @@
 #include "..\hnPavementCreate3d\hnPavementImageInfo.h"
 #include "hnCalRoadGeometry.h"
 #include <QProgressDialog>
+#include "../hnApplication/hnDiseaseService.h"
+#include "../hnQtCommon/hnCenterToast.h"
+#include "../hnQtCommon/BusyLoadingDialog.h"
 using namespace hnApp;
 using namespace hnPro;
 
@@ -75,6 +78,7 @@ hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 	m_3dPixScrollWidget(NULL), m_diseaseListWidgetDockWidget(NULL), m_diseaseListWidget(NULL), m_pStreetViewWidget(NULL)
 	, m_projects(NULL), m_outExcelDialog(nullptr), m_projectConfgDialog(nullptr), m_projectDockWidget(NULL), m_projectWidget(NULL), m_IrmShowWidget(NULL), m_mapWidget(NULL),m_adjustImageWidget(NULL)
 {
+	m_centerToast = new hnCenterToast(this);
 	m_DockManager = new hn::CDockManager(this);
 
 	// 创建工具栏
@@ -566,15 +570,15 @@ void hnRoadDataProcess::createAction()
 void hnRoadDataProcess::initShortCuts()
 {
 	//添加病害
-	QHotkey *addDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_A | Qt::ShiftModifier), true, this);
+	QHotkey *addDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F1 ), true, this);
 	connect(addDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 
 	//删除病害
-	QHotkey *deleteDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_D | Qt::ShiftModifier), true, this);
+	QHotkey *deleteDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F2 ), true, this);
 	connect(deleteDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 
 	//编辑病害
-	QHotkey *editDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_E | Qt::ShiftModifier), true, this);
+	QHotkey *editDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F3 ), true, this);
 	connect(editDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 
 	//移动病害
@@ -670,44 +674,46 @@ void hnRoadDataProcess::createConnect()
 	);
 
 	//添加病害后，病害列表刷新
-	connect(this->m_2dPixScrollWidget->getPixWidget(),
-		&hn2dPixWidget::signal_addDisease,
-		this->m_diseaseListWidget,
-		&hnDiseaseListWidget::addDisease);
+	//connect(this->m_2dPixScrollWidget->getPixWidget(),
+	//	&hn2dPixWidget::signal_addDisease,
+	//	this->m_diseaseListWidget,
+	//	&hnDiseaseListWidget::addDisease);
 
-	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_addDisease,
-		this->m_diseaseListWidget, QOverload<const hnRoadDiseaseInfo &, bool>::of(&hnDiseaseListWidget::addDisease));
+	//connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_addDisease,
+	//	this->m_diseaseListWidget, QOverload<const hnRoadDiseaseInfo &, bool>::of(&hnDiseaseListWidget::addDisease));
 
-	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_addDisease,
-		this->m_diseaseListWidget, &hnDiseaseListWidget::addDisease);
+	//connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_addDisease,
+	//	this->m_diseaseListWidget, &hnDiseaseListWidget::addDisease);
 
 
 
 	// 添加病害后， 所有窗口都刷新
-	connect(this->m_2dPixScrollWidget->getPixWidget(),
+	/*connect(this->m_2dPixScrollWidget->getPixWidget(),
 		&hn2dPixWidget::signal_addDisease, this, &hnRoadDataProcess::updatePixWidget);
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_addDisease,
 		this, &hnRoadDataProcess::updatePixWidget);
 	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_addDisease,
 		this, &hnRoadDataProcess::updatePixWidget);
-	
+	*/
 
 	//选中病害后，病害列表滚动
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
-	connect(this->m_diseaseListWidget , &hnDiseaseListWidget::signal_updateView, this , &hnRoadDataProcess::updatePixWidget);
+
+
+	/*connect(this->m_diseaseListWidget , &hnDiseaseListWidget::signal_updateView, this , &hnRoadDataProcess::updatePixWidget);*/
 	
 
 
 	//删除病害后，病害列表刷新
-	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_deleteDisease,
-		this->m_diseaseListWidget, QOverload<const hnRoadDiseaseInfo &>::of(&hnDiseaseListWidget::deleteDisease));
-	connect(this->m_2dPixScrollWidget->getPixWidget(),
-		&hn2dPixWidget::signal_deleteDisease,
-		this->m_diseaseListWidget,
-		&hnDiseaseListWidget::deleteDisease);
-	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_deleteDisease,
-		this->m_diseaseListWidget, &hnDiseaseListWidget::deleteDisease);
+	//connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_deleteDisease,
+	//	this->m_diseaseListWidget, QOverload<const hnRoadDiseaseInfo &>::of(&hnDiseaseListWidget::deleteDisease));
+	//connect(this->m_2dPixScrollWidget->getPixWidget(),
+	//	&hn2dPixWidget::signal_deleteDisease,
+	//	this->m_diseaseListWidget,
+	//	&hnDiseaseListWidget::deleteDisease);
+	/*connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_deleteDisease,
+		this->m_diseaseListWidget, &hnDiseaseListWidget::deleteDisease);*/
 
 	//二维视图滚动条变化，更新打标 较桩界面
 	connect(this->m_2dPixScrollWidget, &hn2dPixScrollWidget::signal_roadMileAndDmiChanged,
@@ -1165,21 +1171,26 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 	//添加病害
 	  QIcon addDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/添加病害.png")));
-	this->m_addDiseaseAct = new QAction(addDiseaseIcon, QStringLiteral("添加病害"), this);
+	this->m_addDiseaseAct = new QAction(addDiseaseIcon, QStringLiteral("添加病害(F1)"), this);
+	m_addDiseaseAct->setToolTip(QStringLiteral("F1"));
 	connect(m_addDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_addDiseaseAct);
 
 	//删除病害
 	  QIcon deleteDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/删除病害.png")));
-	this->m_deleteDiseaseAct = new QAction(deleteDiseaseIcon, QStringLiteral("删除病害"), this);
+	this->m_deleteDiseaseAct = new QAction(deleteDiseaseIcon, QStringLiteral("删除病害(F2)"), this);
+	m_deleteDiseaseAct->setToolTip(QStringLiteral("F2"));
 	connect(m_deleteDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_deleteDiseaseAct);
 
 	//编辑病害
 	  QIcon editDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/编辑病害.png")));
-	this->m_editDiseaseAct = new QAction(editDiseaseIcon, QStringLiteral("编辑病害"), this);
+
+	this->m_editDiseaseAct = new QAction(editDiseaseIcon, QStringLiteral("编辑病害(F3)"), this);
+	m_editDiseaseAct->setToolTip(QStringLiteral("F3"));
+
 	connect(this->m_editDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_editDiseaseAct);
 
@@ -1490,7 +1501,7 @@ bool hnRoadDataProcess::loadConfigData()
 
 void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 {
-
+	 
 	QString selectedItemText = item->text(0);
 	int grade = item->data(1, Qt::UserRole).value<int>();
 	if (grade == 1)  //用户点击的是有效节点  二维工程名
@@ -1506,19 +1517,20 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 		return;
 	}
 	auto curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
-
+	BusyLoadingGuard loading(this, QStringLiteral("打开加载具体工程"), QStringLiteral("正在打开工程，请稍后......"));
 	if (curProject)
 	{
 		hnCommon::hnProjectSetInfo setting = curProject->getCurProSetInfo();
 		// 清空所有视图图片
 		this->clearAllWidgetPixs();
-
+		loading.setMessage(QStringLiteral("所有窗口加载图片..."));
 		//所有窗口加载图片
 		this->allWidgetLoadPictures();
+		loading.setMessage(QStringLiteral("更新病害列表..."));
 
 		//更新病害列表
 		this->m_diseaseListWidget->updateAllDiseases();
-
+		loading.setMessage(QStringLiteral("更新树状视图..."));
 		//更新树状视图
 		this->updateTreeWidget();
 		QVector<hnCommon::hnMarkInfo> marks;
@@ -1537,6 +1549,7 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 		QVector<hnCommon::hnMilePile> datas = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
 		if (2 == hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType)
 		{
+			
 			slot_addLineDiseaseMode();
 		}
 		else
@@ -1761,6 +1774,7 @@ void hnRoadDataProcess::slot_clearIrm()
 
 void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 {
+
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
 	{
 		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("当前未打开工程"), QString::fromLocal8Bit("确定"));
@@ -1772,6 +1786,8 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("当前模式为设计模式，请使用添加面状病害或者添加线状病害"), QString::fromLocal8Bit("确定"));
 		return;
 	}
+
+	m_centerToast->showMessage(QStringLiteral("进入绘制病害模式"), QStringLiteral("左键绘制病害区域,右键退出当前绘制", 2000));
 
 	//路面破损窗口设置为画病害模式
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
@@ -1795,6 +1811,8 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 {
+	m_centerToast->showMessage(QStringLiteral("进入删除病害模式"), QStringLiteral("左键点击病害删除", 2000));
+
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -1816,6 +1834,7 @@ void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToEditDiseaseMode()
 {
+	m_centerToast->showMessage(QStringLiteral("进入编辑病害模式"), QStringLiteral("左键点击病害区域,右键退出当前编辑", 2000));
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -2071,7 +2090,8 @@ void hnRoadDataProcess::slot_output2dDiseases()
 
 	if (frameType == 1)
 	{
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.readRoadDiseaseData(curProjet->getCurProSetInfo(), miles, allDiseaseInfos, curProjet->getCurrentMarkVector(), curProjet->getRoadSpace());
+	 
+		allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 
 	}
 
@@ -2247,10 +2267,10 @@ void hnRoadDataProcess::slot_clearAllDiseases()
 
 	if (0 == ret)
 	{
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteAllDisease();
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.deleteAllData();
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteAllDiseases();
+		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->deleteAllData();
 		//更新所有视图
-		this->updateAllWidget();
+		//this->updateAllWidget();
 	}
 	else
 	{
@@ -2506,31 +2526,14 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 	auto setting = project->getCurProSetInfo();
 	QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
 	if (type == 2)
-	{
+	{ 
+		//设计模式病害
+	allDiseaseInfos=	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDesignDiseases();
 
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-			m_diseaseTable.readDesignDiseases(standard, 0, project->getCurProSetInfo().dEndEnclMile, allDiseaseInfos);
 	}
 	else
 	{
-		if (PROJECT_TYPE::PROJECT_23D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() ||
-			PROJECT_TYPE::PROJECT_2D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
-		{
-
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.readRoadDiseaseData(setting, miles, allDiseaseInfos, project->getCurrentMarkVector(), project->getRoadSpace());
-
-		}
-		else
-		{
-			std::vector<hnRoadDiseaseInfo> diseases3d;
-			// 纯三维病害
-			const double projectBeginEncoderMile = 0;
-			const double projectEndEncoderMile = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dEndEnclMile;
-			auto xxx = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()
-				->m_diseaseTable.read3dRoadDiseaseData(standard, projectBeginEncoderMile, projectEndEncoderMile, diseases3d);
-			allDiseaseInfos = QVector<hnRoadDiseaseInfo>::fromStdVector(diseases3d);
-		}
+		allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 	}
 
 
@@ -2717,9 +2720,8 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		if (PROJECT_TYPE::PROJECT_23D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() ||
 			PROJECT_TYPE::PROJECT_2D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
 		{
-
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.readRoadDiseaseData(setting, miles, allDiseaseInfos, project->getCurrentMarkVector(), project->getRoadSpace());
-
+	
+			allDiseaseInfos = 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(); 
 		}
 		else
 		{
@@ -3030,7 +3032,7 @@ void hnRoadDataProcess::slot_importCtrlPoints()
 		{
 			continue;
 		}
-		const int id = hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.getMaxID();
+		const int id = hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->getMaxID();
 		ctrlPoint.nID = id;
 		QString name = QString::fromLocal8Bit("控制点_%1").arg(id);
 		strcpy(ctrlPoint.strKzdName, name.toLocal8Bit().data());
@@ -3057,7 +3059,7 @@ void hnRoadDataProcess::slot_importCtrlPoints()
 		ctrlPoint.dX = list.at(3).toDouble();
 		ctrlPoint.dY = list.at(4).toDouble();
 		ctrlPoint.dZ = list.at(5).toDouble();
-		hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.writeData(ctrlPoint);
+		hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->writeData(ctrlPoint);
 
 	}
 
@@ -3097,7 +3099,7 @@ void hnRoadDataProcess::slot_exportCtrlPoints()
 
 	// 获取所有控制点
 	std::vector<hnKZDDataInfo> ctrlPoints;
-	hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_ctrlPointTable.readData(ctrlPoints);
+	hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->readData(ctrlPoints);
 
 	for (const hnKZDDataInfo ctrlPoint : qAsConst(ctrlPoints))
 	{
@@ -3176,7 +3178,7 @@ void hnRoadDataProcess::slot_mergeAutoDisease()
 	//	// 二三维病害
 	//	hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	//	QVector<hnMile> miles = project->getCurrentMileVector();
-	//	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.readRoadDiseaseData(miles, allDiseaseInfos, project->getCurProSetInfo().nLineType, project->getRoadSpace());
+	//	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->getDiseaseTable()->readRoadDiseaseData(miles, allDiseaseInfos, project->getCurProSetInfo().nLineType, project->getRoadSpace());
 	//
 	//	for (auto dis: allDiseaseInfos)
 	//	{
@@ -3516,7 +3518,7 @@ bool hnRoadDataProcess::checkProjectFrameTypeConflict(const QString & projectNam
 	{
 		for (QString stand : standards)
 		{
-			if (true == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.checkDiseaseExist(stand, drawType))
+			if (true == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getDiseaseTable()->checkDiseaseExist(stand, drawType))
 			{
 				if (true == this->handleConflict(stand, drawType))
 				{
@@ -3558,8 +3560,9 @@ bool hnRoadDataProcess::handleConflict(QString standard, int drawType)
 
 	if (0 == result)
 	{
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->
-			getDB()->m_diseaseTable.deleteAllTargetDrawTypeDisease(standard, drawType);
+	 
+
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteAllTargetTypeDisease(standard, drawType);
 		return true;
 	}
 	else
@@ -3646,9 +3649,7 @@ void hnRoadDataProcess::openProjectSlot()
 
 	m_xrSetting->DefaultPath = projectPath;
 	m_xrSetting->writeData();
-	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE;
-
-
+	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE; 
 	//获取所有工程
 	m_projectDataInfos.clear();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
@@ -3656,8 +3657,7 @@ void hnRoadDataProcess::openProjectSlot()
 		QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("未解析任何到符合格式的项目数据，请检查"),
 			QStringLiteral("确定"));
 		return;
-	}
-
+	} 
 	//progressDialog.reset();
 	//打开工程对话框
 	auto roadTypes = hnDataManager::getDataManager()->getRoadStandardNames();
@@ -3672,16 +3672,9 @@ void hnRoadDataProcess::openProjectSlot()
 	{
 		return;
 	}
-	QProgressDialog progressDialog(this);
-	progressDialog.setFixedSize(QSize(500, 50));
-	progressDialog.setAutoClose(true);
-	progressDialog.setCancelButton(nullptr);
-	progressDialog.setWindowTitle(QString::fromLocal8Bit("导入工程"));
-	progressDialog.setModal(true);
-	progressDialog.setMaximum(m_projectDataInfos.size());
-
-
-
+	 
+	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
+	
 	//关闭工程
 	if (m_projects->isHasProject())
 	{
@@ -3695,23 +3688,31 @@ void hnRoadDataProcess::openProjectSlot()
 	//根据各个模块标准设置其病害表名称
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
 	//初始化工程
-	bool initok =  m_projects->initProject(m_projectDataInfos, progressDialog);
+	loading.setMessage(QStringLiteral("正在初始化工程..."));
+	bool initok =  m_projects->initProject(m_projectDataInfos);
 	if (initok)
 	{
+	
+		loading.setMessage(QStringLiteral("正在加载所有视图的图片数据..."));
 		// 加载所有视图的图片数据
-		this->allWidgetLoadPictures();
+		this->allWidgetLoadPictures(); 
+
+		loading.setMessage(QStringLiteral("正在更新树状视图..."));
 
 		//更新树状视图
-		this->updateTreeWidget();
+		this->updateTreeWidget(); 
+		loading.setMessage(QStringLiteral("正在更新更新所有界面..."));
 
 		//更新所有界面
 		this->updateAllWidget();
+		
 	}
-
+ 
 }
 
 void hnRoadDataProcess::openLastProjectSlot()
 {
+	 
 	//获取用户选择的文件夹
 	QString projectPath = m_xrSetting->DefaultPath;
 	if (projectPath.isEmpty())
@@ -3732,6 +3733,9 @@ void hnRoadDataProcess::openLastProjectSlot()
 			QStringLiteral("确定"));
 		return;
 	}
+
+	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
+ 
 	//关闭工程
 	if (m_projects->isHasProject())
 	{
@@ -3741,22 +3745,21 @@ void hnRoadDataProcess::openLastProjectSlot()
 		//清空三维视图窗口
 		m_3dPixScrollWidget->getPixWidget()->clearPix();
 	}
-	QProgressDialog progressDialog(this);
-	progressDialog.setFixedSize(QSize(500, 50));
-	progressDialog.setAutoClose(true);
-	progressDialog.setCancelButton(nullptr);
-	progressDialog.setWindowTitle(QString::fromLocal8Bit("导入工程"));
-	progressDialog.setModal(true);
-	progressDialog.setMaximum(m_projectDataInfos.size());
+	 
 
 	//根据各个模块标准设置其病害表名称
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
 
+	loading.setMessage(QStringLiteral("正在初始化工程..."));
 	//初始化工程
-	m_projects->initProject(m_projectDataInfos, progressDialog);
+	m_projects->initProject(m_projectDataInfos);
 
+	 
+	loading.setMessage(QStringLiteral("正在加载所有视图的图片数据..."));
 	// 加载所有视图的图片数据
 	this->allWidgetLoadPictures();
+
+	loading.setMessage(QStringLiteral("正在更新树状视图..."));
 
 	//更新树状视图
 	this->updateTreeWidget();
@@ -3786,7 +3789,8 @@ void hnRoadDataProcess::openLastProjectSlot()
 		this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
 
 	int maxScrollValue2d = m_2dPixScrollWidget->getMaxScrollBarValue();
-	m_2dPixScrollWidget->setCurrentScrollBarValue(maxScrollValue2d - 2 * (frameNum2d - 1));
+	m_2dPixScrollWidget->setCurrentScrollBarValue(maxScrollValue2d - 2 * (frameNum2d - 1)); 
+	 
 }
 
 void hnRoadDataProcess::slot_openCurrentProjectDir()
@@ -4860,9 +4864,11 @@ bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps
 
 void hnRoadDataProcess::writeStreetDiseaseMsgToExcel(int disType, hnProject* project, Document& xlsx)
 {
-	QVector<hnCommon::hnRoadDiseaseInfo> diss;
-	QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
-	project->getDB()->m_diseaseTable.readStreetData(standard, project->getCurrentMileVector(), diss, project->getCurProSetInfo().nLineType, project->getStreetSpace());
+	QVector<hnCommon::hnRoadDiseaseInfo> diss; 
+
+	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
+
+	 
 	for (int d = diss.size() - 1; d >= 0; d--)
 	{
 		if (diss[d].ndiseaseType != disType)
@@ -5808,7 +5814,8 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			}
 			//获取病害
 			QVector<hnCommon::hnRoadDiseaseInfo> diss;
-			project->getDB()->m_diseaseTable.readRoadDiseaseData(projectInfo, project->getCurrentMileVector(), diss, project->getCurrentMarkVector(), project->getRoadSpace());
+
+			diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(); 
 			int rowCount = 2;
 			QVector<hnMile> curMiles = project->getCurrentMileVector();
 			if (projectInfo.nDrawType == 0)

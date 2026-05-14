@@ -10,10 +10,12 @@
 #include <sstream>
 #include "..\hnProject\hn3DProject.h"
 #include <QSettings>
-//using namespace hnDataTable;
-#include "../hdPointCloud/SeaPointCloud.h"
+//using namespace hnDataTable; 
 #include "..\hnPointCloud\hnPointCloud.h"
 #include "hnDiseaseService.h"
+#include "..\hdPointCloud\SeaPointCloud.h"
+
+#include "..\hd3DScene\HdViewScrBuffer.h"
 using namespace hnPtCloud;
 using namespace hd;
 using namespace hnPro;
@@ -27,7 +29,12 @@ namespace hnApp
 
 	map<HnProjectEnums::StandardParmTypeEnum, vector<hnRoadTypeSetInfo>> hnDataManager::m_mapRoadTypeSetInfo;
 
-	hnDataManager::hnDataManager() :m_pProjectManager(NULL), m_pCurProject(NULL), m_bOpenProject(false),m_strPreProName(""), m_bHasProject(false)
+	hnDataManager::hnDataManager() :
+		m_pProjectManager(NULL), 
+		m_pCurProject(NULL), 
+		m_bOpenProject(false),
+		m_strPreProName(""),
+		m_bHasProject(false)
 	{
 		m_xrSetting = HnXRSettings::getInstance();
 		m_diseaseService = new hnDiseaseService();
@@ -48,8 +55,12 @@ namespace hnApp
 		}
 
 		m_vecPtCloud.clear();
-		delete m_diseaseService;
-		m_diseaseService = nullptr;
+		if (m_diseaseService)
+		{
+			delete m_diseaseService;
+			m_diseaseService = nullptr;
+		}
+
 	}
 
 	// 根据传入路径获取所有工程
@@ -133,13 +144,13 @@ namespace hnApp
 	}
 
 	// 打开工程
-	bool hnDataManager::initProject(vector<hnProjectDataInfo>& vecProData, QProgressDialog& progress)
+	bool hnDataManager::initProject(vector<hnProjectDataInfo>& vecProData)
 	{
 		if (!m_pProjectManager)
 		{
 			m_pProjectManager = new hnProjectManager();
 
-			if (m_pProjectManager->addProject(vecProData,progress))
+			if (m_pProjectManager->addProject(vecProData))
 			{
 				this->m_pCurProject = m_pProjectManager->getCurProject();
 				this->m_bHasProject = true;
@@ -211,6 +222,7 @@ namespace hnApp
 
 		m_strPreProName = proName;
 		setCurRoadTypeName(m_pCurProject->getBaseStandard());
+	 
 		return true;
 	}
 

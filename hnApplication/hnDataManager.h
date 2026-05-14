@@ -1,7 +1,7 @@
 #ifndef _HN_DATA_MAMAGER_H
 #define _HN_DATA_MAMAGER_H
 #include "hnapplication_global.h"
-#include "..\hdPointCloud\SeaPointCloud.h"
+
 #include <QString>
 #include <vector>
 #include <map>
@@ -10,18 +10,25 @@
 #include "HnProjectEnums.h"
 #include "../hnProject/hnProject.h"
 #include "../hnProject/hn2DProject.h"
-#include "..\hd3DScene\HdViewScrBuffer.h"
+
 #include <QProgressDialog>
 #include "../hnConvert/hnDataCombineStructInfo.h"
-using namespace hd;
+#include <QMap>
+ 
 using namespace hnCommon;
 using namespace std;
 class HnXRSettings;
 class hnDiseaseService;
+namespace hd
+{
+	class CSeaPointCloud; 
+}
+
 namespace hnPro
 {
 	class hnProjectManager;
 	class hnProject;
+	 
 }
 
 namespace hnApp
@@ -54,7 +61,7 @@ namespace hnApp
 		bool getAllProject(QString strFolder,vector<hnProjectDataInfo>& vecProData, PROJECT_TYPE&nWorkType);
 
 		// 打开工程
-		bool initProject(vector<hnProjectDataInfo>& vecProData, QProgressDialog& progress);
+		bool initProject(vector<hnProjectDataInfo>& vecProData);
 		
 		//设置当前工程
 		bool setCurrentProject(const QString& proName);
@@ -293,12 +300,12 @@ private:
 
 	public:
 		// 当前工程点云数据
-		vector<CSeaPointCloud*> m_vecPtCloud;
+		vector<hd::CSeaPointCloud*> m_vecPtCloud;
 
 		// 自动化模式合并距离阈值
 		int hMergeLittleFrameThr;
 		int vMergeLittleFrameThr;
-
+private:
 		hnDiseaseService * m_diseaseService;
 	};
 }

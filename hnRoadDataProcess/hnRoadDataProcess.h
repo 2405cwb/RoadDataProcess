@@ -61,7 +61,7 @@ class statusBarWidget;
 class hnOutputExcelDialog;
 class hnOutExcelMileManage;
 class hnAboutInfoWidgets;
-
+class hnCenterToast;
 namespace hn
 {
 	class CDockManager;
@@ -618,5 +618,7 @@ private:
 	
 private:
 	Ui::hnRoadDataProcessClass ui;
+
+	hnCenterToast * m_centerToast = nullptr;
 
 };

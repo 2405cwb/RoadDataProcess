@@ -77,7 +77,7 @@ protected:
 	QVector<hnMile> m_hnMileVector;
 
 	//当前视图的病害
-	vector<hnRoadDiseaseInfo> m_currentWidgetDiseases;
+	std::vector<hnRoadDiseaseInfo> m_currentWidgetDiseases;
 
 protected:
 	//病害起始点

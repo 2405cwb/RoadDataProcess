@@ -10,9 +10,11 @@
 #include <QMessageBox>
 #include "..\hnApplication\hnDataManager.h"
 #include "MileAndDmi.h"
+#include "..\hnApplication\hnDiseaseService.h"
 #ifdef DEBUG
 #include "..\hnProject\hn2DProject.h"
 #include "..\hnQtCommon\ExcelGPS.h"
+
 
 using namespace   hnPro;
 #endif // DEBUG
@@ -228,7 +230,6 @@ QVector<hnMile> hnOutExcelMileManage::getMilesInRange(const QVector<hnMile>& mil
 
 bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 {
-	
 	bool hasLeftIRI = false;
 	bool hasRightIRI = false;
 	 
@@ -278,16 +279,21 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 	QString standard = HnProjectEnums::roadTypeEnumToQString(m_standard);
 	if (m_equipMentList.ROAD)
 	{ 
+
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(m_project);
+		//if (m_project->getCurProSetInfo().nDrawType==2)
+		//{
+		//  m_project->getDB()->getDiseaseTable()->readDesignDiseases(standard, m_project->trueMileToEncl(m_sMile), m_project->trueMileToEncl(m_eMile),diss); 
+		//}
+		//else
+		//{
+		//	//过滤路面材质不一样,绘制类型不一样,  道路宽度等不一样的病害
+		//	m_project->getDB()->getDiseaseTable()->readRoadDiseaseData(m_projectSet, m_project->getCurrentMileVector(), diss, m_project->getCurrentMarkVector(), m_project->getRoadSpace());
+		//}
 		
-		if (m_project->getCurProSetInfo().nDrawType==2)
-		{
-		  m_project->getDB()->m_diseaseTable.readDesignDiseases(standard, m_project->trueMileToEncl(m_sMile), m_project->trueMileToEncl(m_eMile),diss); 
-		}
-		else
-		{
-			//过滤路面材质不一样,绘制类型不一样,  道路宽度等不一样的病害
-			m_project->getDB()->m_diseaseTable.readRoadDiseaseData(m_projectSet, m_project->getCurrentMileVector(), diss, m_project->getCurrentMarkVector(), m_project->getRoadSpace());
-		}
+		diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+
+
 		if (rutDiss.size()>0)
 		{
 			diss.append(rutDiss);
@@ -298,11 +304,14 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 	if (m_equipMentList.STREET)
 	{
 
-		m_project->getDB()->m_diseaseTable.readStreetData(standard, m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(m_project);
+	//	m_project->getDB()->getDiseaseTable()->readStreetData(standard, m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
+		streetDiss = 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
 		QVector<hnDiseaseSetInfo> tciDiseaseSetInfos = hnApp::hnDataManager::getDataManager()->
 			getCurrentProjectStreetDiseases(m_project->getBaseStandard(), 1);
 
-		m_project->getDB()->m_diseaseTable.readStreetData(standard,m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
+		//m_project->getDB()->getDiseaseTable()->readStreetData(standard,m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
+		streetDiss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases(); 
 		QVector<hnDiseaseSetInfo> sciDiseaseSetInfos = hnApp::hnDataManager::getDataManager()->
 			getCurrentProjectStreetDiseases(m_project->getBaseStandard(), 2);
 		streetSettingInfoMap.insert(1, tciDiseaseSetInfos);
@@ -2128,7 +2137,7 @@ void hnOutExcelMileManage::readPbiValueFromFile(QVector<hnOutExcelMile>& miles, 
 	{
 		oriDataD[i] = (nextDataD[i - 2] + nextDataD[i - 1] + nextDataD[i] + nextDataD[i + 1] + nextDataD[i + 2]) / 5;
 	}
-	QStringList temp;
+	//QStringList temp;
 	for (hnOutExcelMile& excelMile : miles)
 	{
 		bool HasData = false;
@@ -2152,7 +2161,7 @@ void hnOutExcelMileManage::readPbiValueFromFile(QVector<hnOutExcelMile>& miles, 
 			{
 				if (ValStridx % skipnum == 0)
 				{
-					temp.append(debugDatas[ValStridx]);
+					//temp.append(debugDatas[ValStridx]);
 				  hval = oriDataD.at(ValStridx); 
 				 
 					max = qMax(hval, max);

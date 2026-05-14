@@ -48,7 +48,7 @@ namespace hnApp
 		bool ptInImage(const QPoint& p);
 
 		// 添加图片 bResetCurImage表示重置当前图片
-		bool addImage(bool needRotate,const QString& picPath);
+		bool addStreetImage(bool needRotate,const QString& picPath);
 
 		// 添加图片
 		bool addImage(bool needRotate, int nImageIndex);
@@ -135,12 +135,12 @@ namespace hnApp
 		 
 
 		void sig_mousePosImageChanged(QImage widget);
-	signals:
-		//信号 数据库添加病害
-		void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
-	signals:
-		//信号 数据库删除病害
-		void signal_deleteDisease(hnRoadDiseaseInfo disease);
+	//signals:
+	//	//信号 数据库添加病害
+	//	void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
+	//signals:
+	//	//信号 数据库删除病害
+	//	void signal_deleteDisease(hnRoadDiseaseInfo disease);
 
 	public slots:
 		void hnStreetCameraView::setOriginalWidgetWidthHeight(const int w, const int h);
@@ -148,14 +148,16 @@ namespace hnApp
 
 	//更新图片亮度
 		void	slot_updatePictureBrightness(int value);
+		private slots:
+		void slotStreetDiseaseChanged();
 	private:
 		//添加病害
-		void addDisease();
+		void addStreetDisease();
 
 		//删除病害
-		void deleteDisease();
+		void deleteStreetDisease();
 
-		void deleteDisease(const QPoint &point);
+		void deleteStreetDisease(const QPoint &point);
 
 		QImage updateBrightness(QImage &image);
  

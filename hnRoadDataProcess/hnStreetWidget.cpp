@@ -50,11 +50,11 @@ hnStreetWidget::hnStreetWidget(QWidget *parent)
 	connect(brightnessSlider, &QSlider::valueChanged, this, &hnStreetWidget::slot_updateBrightness);
 	this->m_currentFrameIdx = 0;
 
-	connect(m_pStreetView, &hnStreetCameraView::signal_addDisease, this, &hnStreetWidget::signal_addDisease);
-	connect(m_pStreetView, &hnStreetCameraView::signal_deleteDisease, this, &hnStreetWidget::signal_deleteDisease);
+	//connect(m_pStreetView, &hnStreetCameraView::signal_addDisease, this, &hnStreetWidget::signal_addDisease);
+	//connect(m_pStreetView, &hnStreetCameraView::signal_deleteDisease, this, &hnStreetWidget::signal_deleteDisease);
 
-	connect(m_pStreetViewDouble, &hnStreetCameraView::signal_addDisease, this, &hnStreetWidget::signal_addDisease);
-	connect(m_pStreetViewDouble, &hnStreetCameraView::signal_deleteDisease, this, &hnStreetWidget::signal_deleteDisease);
+	//connect(m_pStreetViewDouble, &hnStreetCameraView::signal_addDisease, this, //&hnStreetWidget::signal_addDisease);
+	//connect(m_pStreetViewDouble, &hnStreetCameraView::signal_deleteDisease, this, &hnStreetWidget::signal_deleteDisease);
 	connect(this, &hnStreetWidget::signal_updateBrightness, m_pStreetViewDouble, &hnStreetCameraView::slot_updatePictureBrightness);
 	
 }
@@ -70,14 +70,13 @@ void hnStreetWidget::initView()
 	{
 		return;
 	}
-	 
-	double leftLength = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreetImgDis;
-	double rightLength = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreeRightImgDis;
-	int rightStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getRightStreetPicturePath().size();
+	auto  project2d = hnDataManager::getDataManager()->getCurrentProject()->get2DProject(); 
+	double leftLength = project2d->_StreetImgDis;
+	double rightLength = project2d->_StreeRightImgDis;
+	int rightStreetCount = project2d->getRightStreetPicturePath().size();
 	m_showModelIndex = 0; 
 	if (leftLength == rightLength)
-	{
-
+	{ 
 		connect(m_pStreetView, SIGNAL(updateShowImg(int)), this, SLOT(updateViewImage(int)));
 		 connect(m_pStreetViewDouble, SIGNAL(updateShowImg(int)), this, SLOT(updateViewImage(int))); 
 	 
@@ -265,14 +264,15 @@ void hnStreetWidget::enterEvent(QEvent * event)
 // 重新加载数据
 void hnStreetWidget::reloadData()
 { 
-	hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->leftStreetImgIndex = 0;
-	hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->rightStreetImgIndex = 0;
+	auto project2d = hnDataManager::getDataManager()->getCurrentProject()->get2DProject();
+	project2d->leftStreetImgIndex = 0;
+	project2d->rightStreetImgIndex = 0;
 
-int dis=	hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreetImgDis;
-int streetDis = 	hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreeRightImgDis;
+int dis= project2d->_StreetImgDis;
+int streetDis = project2d->_StreeRightImgDis;
 
-int rightStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getRightStreetPicturePath().size();
-int leftStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getLeftStreetPicturePath().size();
+int rightStreetCount = project2d->getRightStreetPicturePath().size();
+int leftStreetCount = project2d->getLeftStreetPicturePath().size();
 	if (m_pStreetView&&leftStreetCount >0)
 	{
 		m_pStreetView->reloadData(m_rightPicNeedRotate,STREET_LEFT_VIEW);
@@ -289,6 +289,7 @@ int leftStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2
 // 更新图像
 void hnStreetWidget::updateViewImage(int nIndex)
 {
+	auto project2d = hnDataManager::getDataManager()->getCurrentProject()->get2DProject();
 	//如果要更新的帧序号等于当前的帧序号，就不更新了，退出
 	if (nIndex == this->m_currentFrameIdx)
 	{
@@ -306,18 +307,18 @@ void hnStreetWidget::updateViewImage(int nIndex)
 			m_pStreetViewDouble->resize(m_rightImgLabel->size());
 		}
 	}
-	int rightStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getRightStreetPicturePath().size();
-	int leftStreetCount = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getLeftStreetPicturePath().size();
+	int rightStreetCount = project2d->getRightStreetPicturePath().size();
+	int leftStreetCount = project2d->getLeftStreetPicturePath().size();
 	if (m_pStreetView&&leftStreetCount)
 	{
 		m_pStreetView->addImage(false, nIndex);
-		hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->leftStreetImgIndex--;
+		project2d->leftStreetImgIndex--;
 
 	}
 
 	if (m_pStreetViewDouble&&rightStreetCount)
 	{
-		hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->rightStreetImgIndex--;
+		project2d->rightStreetImgIndex--;
 		m_pStreetViewDouble->addImage(m_rightPicNeedRotate, nIndex);
 	}
 	 

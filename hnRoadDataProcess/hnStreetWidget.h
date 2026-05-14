@@ -46,10 +46,10 @@ signals:
 
 signals:
 	//信号 数据库添加病害
-	void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
+	//void signal_addDisease(hnRoadDiseaseInfo disease,bool modify);
 signals:
 	//信号 数据库删除病害
-	void signal_deleteDisease(hnRoadDiseaseInfo disease);
+//	void signal_deleteDisease(hnRoadDiseaseInfo disease);
 
 	void signal_updateBrightness(int value);
 public slots :

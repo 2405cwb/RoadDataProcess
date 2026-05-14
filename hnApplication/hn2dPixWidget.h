@@ -1,8 +1,4 @@
 #pragma once
- 
-
-
-
 #include "hnDataManager.h"	//这个要放最前面，不然容易出问题
 #include <QWidget>
 #include "hnView.h"
@@ -244,7 +240,8 @@ private:
 	  bool isValidArea(QMouseEvent * event);
 
 	  void selectDisease(const QPoint & mousePoint);
-
+private slots:
+       void slotDiseaseChanged();
 private:
 	//创造单个图片的自动化模式数组	这里的自动化模式是针对小的image的
 	QVector<QRect> createSingleImageLittleFrameRect();

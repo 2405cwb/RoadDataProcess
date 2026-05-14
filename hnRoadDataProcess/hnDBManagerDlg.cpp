@@ -172,7 +172,7 @@ void hnDBManagerDlg::dbCopy()
 		}
 	}
 	auto curProject = hnDataManager::getDataManager()->getCurrentProject();
-	auto diseaseTableNames =  curProject->getCurDB()->m_diseaseTable.GetAllDiseaseTableNames();
+	auto diseaseTableNames =  curProject->getCurDB()->getDiseaseTable()->GetAllDiseaseTableNames();
 	if (QFile::copy(strSource, strDest))
 	{
 		string str = strDest.toLocal8Bit();
@@ -187,7 +187,7 @@ void hnDBManagerDlg::dbCopy()
 		}
 		else
 		{
-			dbSqlite->m_diseaseTable.deleteAllDisease();
+			dbSqlite->getDiseaseTable()->deleteAllDisease_Service();
 			delete dbSqlite;
 			dbSqlite = NULL;
 		}
@@ -270,7 +270,7 @@ void hnDBManagerDlg::mergeDb()
 	
 	
 	auto curProject = hnDataManager::getDataManager()->getCurrentProject();
-	auto diseaseTableNames = curProject->getCurDB()->m_diseaseTable.GetAllDiseaseTableNames();
+	auto diseaseTableNames = curProject->getCurDB()->getDiseaseTable()->GetAllDiseaseTableNames();
 
 	string str = strTarget.toLocal8Bit();
 	hnDBSqlite * targetDbSqlite = new hnDBSqlite(str.c_str());
@@ -289,14 +289,14 @@ void hnDBManagerDlg::mergeDb()
 	{ 
 		//获取当前数据库的所有病害 
 		QVector<	hnCommon::hnRoadDiseaseInfo> newDiss;
-		curProject->getDB()->m_diseaseTable.readAllDiseases(curProject->getCurProSetInfo(), newDiss,curProject->getCurrentMarkVector());
+		curProject->getDB()->getDiseaseTable()->readAllDiseases_Service(curProject->getCurProSetInfo(), newDiss,curProject->getCurrentMarkVector());
 
 		//获取目标数据库的所有病害
 		QVector<	hnCommon::hnRoadDiseaseInfo> oldDiss;
-		targetDbSqlite->m_diseaseTable.readAllDiseases(curProject->getCurProSetInfo(), oldDiss, curProject->getCurrentMarkVector());
+		targetDbSqlite->getDiseaseTable()->readAllDiseases_Service(curProject->getCurProSetInfo(), oldDiss, curProject->getCurrentMarkVector());
 		 
 		//写入到目标数据库
-		targetDbSqlite->m_diseaseTable.mergeDatas(curProject->getCurProSetInfo(), newDiss,oldDiss);
+		targetDbSqlite->getDiseaseTable()->mergeDatas_Service(curProject->getCurProSetInfo(), newDiss,oldDiss);
 		delete targetDbSqlite;
 		targetDbSqlite = NULL;
 	} 

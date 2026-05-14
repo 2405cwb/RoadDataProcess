@@ -89,6 +89,9 @@ private:
 	bool isValidArea(QMouseEvent * event);
 
 	void selectDisease(const QPoint & mousePoint);
+
+	private slots:
+	void slotDiseaseChanged();
 private:
 	//画人工模式病害
 	void drawBigFrameDisease(const vector<hnRoadDiseaseInfo> &diseases, QImage &image);

@@ -360,6 +360,8 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //	QTextCodec* codeT = QTextCodec::codecForName("utf-8");
 //	MyCommonMethods::writeAllLines(iriOutPath, results, codeT);
 //}
+
+
 void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPath, double dIntervel, vector<double> listIRI, const QVector<double>speeds, bool datasrc)
 {
 	bool IsParmFile = false;

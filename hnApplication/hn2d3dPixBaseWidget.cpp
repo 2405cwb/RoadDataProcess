@@ -1,6 +1,6 @@
 #include "hn2d3dPixBaseWidget.h"
 #include <QTimer>
-
+#include "hnDiseaseService.h"
 
 hn2d3dPixBaseWidget::hn2d3dPixBaseWidget(QWidget *parent) : hnBrowsePixWidget(parent)
 {
@@ -220,7 +220,7 @@ void hn2d3dPixBaseWidget::lineDiseaseAddDisease()
 	//for (int i = 0; i < 1000; i++)
 
 	diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-		->getDB()->m_diseaseTable.getMaxID(diseaseTableName.toLocal8Bit().data());
+		->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
 	//线状病害没有深度  深度计算
 #if 0
 	if (false == diseaseInfo.vec3dRect.empty() && true == m_isOPenDepthCaculate)
@@ -234,17 +234,11 @@ void hn2d3dPixBaseWidget::lineDiseaseAddDisease()
 #endif
 
 
-	auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 
 
-	//写入数据库
-	if (	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, diseaseInfo)) 
-	{
-		emit this->signal_addDisease(diseaseInfo,false);
-
-	}
-	//发信号 数据库变化
-	
+	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+ 
+ 
 	this->slot_cancelDrawDiseases();
 
 	return;
@@ -467,9 +461,9 @@ void hn2d3dPixBaseWidget::commonDeleteDisease(const QPoint & mousePoint, hnFrame
 			m_seclectedDiseases.append(disease);
 
 			 
-				//从数据库中删除该病害
-				hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.deleteDisease(disease);
-				emit this->signal_deleteDisease(disease);
+			hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
+
+			 
 				m_isAllowDrawPix = true;
 				//清空选中病害
 				m_seclectedDiseases.clear();
@@ -582,27 +576,20 @@ void hn2d3dPixBaseWidget::mergeLineDisease(const QPoint & widgetPoint)
 
 		//重新设置ID
 		newDisease.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
-			->getDB()->m_diseaseTable.getMaxID(newDisease.strDiseaseTableName);
+			->getDB()->getDiseaseTable()->getMaxID(newDisease.strDiseaseTableName);
 
-		//新病害写入数据库
-		auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	if(	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.writeSingleDatas(setting, newDisease))
+	 
 
-		//发信号 数据库变化
-		emit this->signal_addDisease(newDisease,false);
-
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease);
 		//删除第一个病害
 		auto firstDisease = m_seclectedDiseases.at(0);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(firstDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(firstDisease);
+		 
 
 		//删除第二个病害
 		auto secondDisease = m_seclectedDiseases.at(1);
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.deleteDisease(secondDisease);
-		//发信号 数据库变化
-		emit this->signal_deleteDisease(secondDisease);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
 
+		 
 		this->update();
 
 		//清空选中的病害数组
@@ -795,11 +782,9 @@ void hn2d3dPixBaseWidget::reCalculateDiseaseSizeAndSave(hnCommon::hnRoadDiseaseI
 		{
 			disease.nDrawType = drawType;
 			hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
-			//写入数据库
-			if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.updaetSingleDataInfo(disease));
 
-			//发信号 数据库变化
-			emit this->signal_addDisease(disease,true);
+			hnApp::hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+		 
 		}
 	}
 	
@@ -807,17 +792,10 @@ void hn2d3dPixBaseWidget::reCalculateDiseaseSizeAndSave(hnCommon::hnRoadDiseaseI
 
 void hn2d3dPixBaseWidget::reCalculateOldDiseaseSizeAndSave(const QVector<QRect>& diseaseRects,hnCommon::hnRoadDiseaseInfo& disease)
 {
-	
-	{
 		setLittleDiseaseSize(diseaseRects,disease);
 		hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
 		 
-			//写入数据库
-			if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->m_diseaseTable.updaetSingleDataInfo(disease));
-
-			//发信号 数据库变化
-			emit this->signal_addDisease(disease,true);
-	}
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
 }
 
 void hn2d3dPixBaseWidget::CalculateDiseaseSize(const QVector<QRect>&diseaseRects, hnCommon::hnRoadDiseaseInfo& disease)
@@ -828,56 +806,5 @@ void hn2d3dPixBaseWidget::CalculateDiseaseSize(const QVector<QRect>&diseaseRects
 	}
 }
 
-QVector<hnCommon::hnRoadDiseaseInfo> hn2d3dPixBaseWidget::getAllRoadDiseaseTemp()
-{
-	 //获取所有病害
-	 if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
-	 {
-		 return  QVector<hnRoadDiseaseInfo>();
-	 }
-	 QVector<hnRoadDiseaseInfo> allDiseaseInfos;
-
-	 hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
-	 QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
-	 if (PROJECT_TYPE::PROJECT_23D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() ||
-		 PROJECT_TYPE::PROJECT_2D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
-	 {
-
-		 // 二三维病害
-
-		 QVector<hnMile> miles = project->getCurrentMileVector();
-		 auto setinfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		 if (setinfo.nDrawType == 2)
-		 {
-			 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-				 m_diseaseTable.readDesignDiseases(standard, 0, project->getCurProSetInfo().dEndEnclMile, allDiseaseInfos);
-		 }
-		 else
-		 {
-			 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.readRoadDiseaseData(setinfo, miles, allDiseaseInfos, project->getCurrentMarkVector(), project->getRoadSpace());
-		 }
-	 }
-	 else
-	 {
-		 std::vector<hnRoadDiseaseInfo> diseases3d;
-		 // 纯三维病害
-		 const double projectBeginEncoderMile = 0;
-		 const double projectEndEncoderMile = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dEndEnclMile;
-		 auto xxx = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-
-		 if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType == 2)
-		 {
-			 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->
-				 m_diseaseTable.readDesignDiseases(standard, 0, project->getCurProSetInfo().dEndEnclMile, allDiseaseInfos);
-		 }
-		 else
-		 {
-			 hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()
-				 ->m_diseaseTable.read3dRoadDiseaseData(standard, projectBeginEncoderMile, projectEndEncoderMile, diseases3d);
-			 allDiseaseInfos = QVector<hnRoadDiseaseInfo>::fromStdVector(diseases3d);
-		 }
-	 }
-
-	 return allDiseaseInfos;
-}
+ 
 

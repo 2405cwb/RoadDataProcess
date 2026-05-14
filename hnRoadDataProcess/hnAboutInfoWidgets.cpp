@@ -15,7 +15,7 @@ hnAboutInfoWidgets::hnAboutInfoWidgets(QWidget *parent)
 
 	ui.label_2->setText( QString::fromLocal8Bit(
 		"<html><head/><body><p>二三维内业数据处理软件</p><p>hnRoadDataProcess</p><p>"
-		"版本号：V1.7.9_20260428</p><p>"
+		"版本号：V1.8.0</p><p>"
 		"版本类型：Official</p></body></html>"));
 	ui.label_6->setText(QString::fromLocal8Bit("<html><head/><body><p>CopyRight (C) 2020-2021 武汉汉宁轨道交通技术有限公司 保留所有权力</p></body></html>"));
 

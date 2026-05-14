@@ -18,7 +18,8 @@
 
 
 #pragma once
-#include "../hnApplication/hnDataManager.h"
+
+#include "../hnApplication/hnDataManager.h" 
 #include <QWidget>
 #include <QTableView>
 #include <QStandardItemModel>
@@ -38,9 +39,10 @@ public:
 	hnDiseaseListWidget(QWidget *parent = Q_NULLPTR);
 	~hnDiseaseListWidget();
 
-public:
+public slots:
 	// 更新所有病害
 	void updateAllDiseases();
+public:
 
 	// 添加一个病害
 	void addDisease(const hnRoadDiseaseInfo &disease,bool modify);
@@ -59,7 +61,7 @@ public:
 	
 private:
 	// 模型添加病害
-	void modelAddDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease, bool selectAfterAdd = true);
+	void modelAddDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease,bool selectAfterAdd = true);
 	// 模型删除病害
 	void modelDeleteDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease);
 
@@ -77,7 +79,7 @@ signals:
 signals:
 		void signal_deleteDisease(const hnRoadDiseaseInfo& disease);
 		//删除病害后更新界面
-		void signal_updateView();
+		//void signal_updateView();
 protected:
 	void keyPressEvent(QKeyEvent *event);
 
@@ -96,6 +98,13 @@ private slots:
 	void deleteDiseases(QModelIndexList selectedIndexes);
 
 	
+	void slot_DiseaseAdded(const hnCommon::hnRoadDiseaseInfo& disease);
+
+	void slot_DiseaseDeleted(const hnCommon::hnRoadDiseaseInfo& disease);
+
+	void slot_DiseaseUpdated(const hnCommon::hnRoadDiseaseInfo& disease);
+
+
 	public slots:
 	//用户选中病害
 	void slot_selectDisease(const hnRoadDiseaseInfo& disease);
@@ -116,8 +125,7 @@ private:
 	//初始化表头
 	void initTableHeader(QStandardItemModel *model);
 
-	//获取所有病害
-	QVector<hnRoadDiseaseInfo>  getAllDisease();
+ 
 
 	//添加病害到表上
 	void addDiseaseToTable(QVector<hnRoadDiseaseInfo> diseases, QStandardItemModel *model);

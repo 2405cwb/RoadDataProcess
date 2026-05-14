@@ -19,7 +19,7 @@
 #include "hnStreetCameraView.h"
 #include "..\hnProject\hn2DProject.h"
 #include "..\hnProject\hnProject.h"
-
+#include "hnDiseaseService.h"
 //////////////////////////////////////////////////////////////////////////
 using namespace hnPro;
 
@@ -67,6 +67,8 @@ namespace hnApp
 
 		//添加病害模式
 		m_workMode = WorkMode::ADD_MODE;
+		connect(hnApp::hnDataManager::getDataManager()->getDiseaseService(),
+			SIGNAL(diseaseChanged()), this, SLOT(slotStreetDiseaseChanged()));
 	}
 
 	hnStreetCameraView::~hnStreetCameraView()
@@ -137,11 +139,11 @@ namespace hnApp
 		currentMiles.push_back(currentHnMile);
 		//获取病害
 		QVector<hnRoadDiseaseInfo> diseases;
-		int lineType = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nLineType;
-		QString standard = HnProjectEnums::roadTypeEnumToQString( hnDataManager::getDataManager()->getCurrentProject()->getBaseStandard());
-		double roadDistance = hnDataManager::getDataManager()->getCurrentProject()->getRoadSpace();
-		hnDataManager::getDataManager()->getCurrentProject()->getDB()
-			->m_diseaseTable.readStreetData(standard,currentMiles, diseases, lineType, roadDistance);
+		 
+		 hnApp::hnDataManager::getDataManager()->getDiseaseService()->getStreetDiseaseInRange(
+		currentHnMile.dEnclMile, currentHnMile.dEnclMile,diseases
+		);
+		  
 		//储存当前视图的病害
 		this->m_currentWidgetDiseases = diseases;
 			QPainter diseasePainter(m_LoadPic);
@@ -295,12 +297,7 @@ namespace hnApp
 			{
 				m_scale = m_scale * scale;
 			}
-		}
-
-
-
-
-
+		} 
 	}
 
 	// 鼠标滚动事件(放大缩小)
@@ -409,12 +406,12 @@ namespace hnApp
 		//添加病害
 		if (this->m_workMode == hnWorkMode::ADD_MODE && event->button() == Qt::MouseButton::LeftButton)
 		{
-			this->addDisease();
+			this->addStreetDisease();
 		}
 		//删除病害
 		else if (this->m_workMode == hnWorkMode::DELETE_MODE && event->button() == Qt::MouseButton::LeftButton)
 		{
-			this->deleteDisease();
+			this->deleteStreetDisease();
 		}
 	}
 
@@ -623,7 +620,7 @@ namespace hnApp
 	/************************************************************************/
 
 	// 添加图片 bResetCurImage表示重置当前图片
-	bool hnStreetCameraView::addImage(bool needRotate,const QString& picPath)
+	bool hnStreetCameraView::addStreetImage(bool needRotate,const QString& picPath)
 	{
 		//法3
 		if (NULL != m_LoadPic)
@@ -697,7 +694,7 @@ namespace hnApp
 		}
 		m_nCurImageDmi = nImageIndex;
 
-		addImage(needRotate, m_listImage[curIdx]);
+		addStreetImage(needRotate, m_listImage[curIdx]);
 
 		//if (nImageIndex < 0 || nImageIndex >= m_listImage.size())
 		//{
@@ -829,12 +826,12 @@ namespace hnApp
 		}
 		if (nViewType== STREET_LEFT_VIEW)
 		{
-			addImage(false,m_listImage[m_nCurImageDmi]);
+			addStreetImage(false,m_listImage[m_nCurImageDmi]);
 
 		}
 		else
 		{
-			addImage(needRotate, m_listImage[m_nCurImageDmi]);
+			addStreetImage(needRotate, m_listImage[m_nCurImageDmi]);
 
 
 		}
@@ -846,19 +843,24 @@ namespace hnApp
 		m_pictureInterval = interval;
 	}
 
+	void hnStreetCameraView::slotStreetDiseaseChanged()
+	{
+		addStreetImage(m_needRotate, m_curPicPath);
+		//update();
+	}
+
 	void hnStreetCameraView::slot_updatePictureBrightness(int value)
 	{
 
 		PictureBrightnessFactor = value;
-		addImage(m_needRotate, m_curPicPath);
+		addStreetImage(m_needRotate, m_curPicPath);
 	}
 
 	//添加病害
-	void hnStreetCameraView::addDisease()
+	void hnStreetCameraView::addStreetDisease()
 	{
 		if (m_calculateRoadWidthMode)
 		{
-
 			return;
 		}
 		if (m_listImage.empty())
@@ -889,26 +891,23 @@ namespace hnApp
 			auto diseases = dialog.getSelectDiseases();
 			for (auto disease : qAsConst(diseases))
 			{
-				emit signal_addDisease(disease,false);
+				//hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(disease);
+				//emit signal_addDisease(disease,false);
 			}
 		}
 		return;
 	}
 
-	void hnStreetCameraView::deleteDisease()
+	void hnStreetCameraView::deleteStreetDisease()
 	{
 		const int  reply =
 			QMessageBox::question(nullptr, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("是否清空当前视图的病害？"),
 				QString::fromLocal8Bit("是"),QString::fromLocal8Bit("否"));
 		if (0 == reply)
-		{		
-			// 数据库删除病害
-			hnApp::hnDataManager::getDataManager()->getCurrentProject()->
-				getDB()->m_diseaseTable.deleteDiseases(m_currentWidgetDiseases.toStdVector());
-
+		{		 
 			for (auto disease : qAsConst(m_currentWidgetDiseases))
 			{
-				signal_deleteDisease(disease);
+				hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
 			}
 		}
 		else 
@@ -917,7 +916,7 @@ namespace hnApp
 		}
 	}
 
-	void hnStreetCameraView::deleteDisease(const QPoint & point)
+	void hnStreetCameraView::deleteStreetDisease(const QPoint & point)
 	{
 		//this->mapTo(m_LoadPic, point);
 	}

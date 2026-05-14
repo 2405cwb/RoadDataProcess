@@ -1,7 +1,8 @@
+#include "../hnDataTable/hnDataTable.h"
+#include "../hnProject/hnProject.h"
 #include "hnDiseaseService.h"
 #include "hnDataManager.h"
-#include "../hnProject/hnProject.h"
-#include "../hnDataTable/hnDBSqlite.h"
+
 #include <QDebug>
 #include <QElapsedTimer>
 #include <algorithm>
@@ -51,12 +52,8 @@ void hnDiseaseService::ensureAllDiseaseCache()
 
 	m_allDiseaseCache.clear();
 
-	// 这里你需要根据你现有的 DB 接口换成真正读取全部病害的函数
-	// 如果现在 getAllRoadDisease() 在 Widget 基类里，建议把那段逻辑搬到这里。 
-
-
-	 
-	m_allDiseaseCache = getAllRoadDisease();
+	m_allDiseaseCache = getAllDisease();
+	std::sort(m_allDiseaseCache.begin(), m_allDiseaseCache.end());
 
 	m_allDiseaseCacheValid = true;
 
@@ -66,16 +63,33 @@ void hnDiseaseService::ensureAllDiseaseCache()
 		<< m_allDiseaseCache.size();
 }
 
-const QVector<hnCommon::hnRoadDiseaseInfo>& hnDiseaseService::getAllDiseases()
+ QVector<hnCommon::hnRoadDiseaseInfo>& hnDiseaseService::getAllDiseases()
 {
 	ensureAllDiseaseCache();
 	return m_allDiseaseCache;
 }
 
-void hnDiseaseService::getDiseasesInRange(
+ QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllStreetDiseases()
+{
+	return	getAllTypeDiseases(false);
+}
+
+ QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllRoadDiseases()
+{
+	return	getAllTypeDiseases(true);
+}
+
+ QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllDesignDiseases()
+ {
+	 //error
+	 ensureAllDiseaseCache();
+	 return m_allDiseaseCache;
+ }
+
+void hnDiseaseService::getRoadDiseasesInRange(
 	double beginMile,
 	double endMile,
-	std::vector<hnCommon::hnRoadDiseaseInfo>& result)
+	QVector<hnCommon::hnRoadDiseaseInfo>& result)
 {
 	ensureAllDiseaseCache();
 
@@ -94,7 +108,32 @@ void hnDiseaseService::getDiseasesInRange(
 		}
 	}
 
-	qDebug() << "[DiseaseService] filter diseases:"
+	qDebug() << "[DiseaseService] filterRoad diseases:"
+		<< timer.elapsed()
+		<< "ms, result:"
+		<< result.size();
+}
+
+void hnDiseaseService::getStreetDiseaseInRange(double beginMile, double endMile, QVector<hnCommon::hnRoadDiseaseInfo>& result)
+{
+	ensureAllDiseaseCache();
+
+	result.clear();
+
+	QElapsedTimer timer;
+	timer.start();
+	QVector<hnCommon::hnRoadDiseaseInfo> diss = getAllStreetDiseases();
+	for (int i = 0; i < diss.size(); ++i)
+	{
+		const hnCommon::hnRoadDiseaseInfo& disease = diss.at(i);
+
+		if (isDiseaseInMileRange(disease, beginMile, endMile,0))
+		{
+			result.push_back(disease);
+		}
+	}
+
+	qDebug() << "[DiseaseService] filter StreetDiseases:"
 		<< timer.elapsed()
 		<< "ms, result:"
 		<< result.size();
@@ -103,7 +142,7 @@ void hnDiseaseService::getDiseasesInRange(
 bool hnDiseaseService::isDiseaseInMileRange(
 	const hnCommon::hnRoadDiseaseInfo& disease,
 	double beginMile,
-	double endMile) const
+	double endMile, int split) const
 {
 	double viewBegin = beginMile;
 	double viewEnd = endMile;
@@ -127,109 +166,275 @@ bool hnDiseaseService::isDiseaseInMileRange(
 		std::swap(diseaseBegin, diseaseEnd);
 	}
 
-	const double margin = 10.0;
+	const double margin = split;
 	viewBegin -= margin;
 	viewEnd += margin;
 
 	return diseaseEnd >= viewBegin && diseaseBegin <= viewEnd;
 }
 
-QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllRoadDisease()
+QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllDisease()
 {
-		 //获取所有病害
-		 if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
-		 {
-			 return  QVector<hnRoadDiseaseInfo>();
-		 }
-		 QVector<hnRoadDiseaseInfo> allDiseaseInfos;
-	
-		 
-		 QString standard = HnProjectEnums::roadTypeEnumToQString(m_project->getBaseStandard());
-		 if (PROJECT_TYPE::PROJECT_23D_TYPE == m_project->getProjectType() ||
-			 PROJECT_TYPE::PROJECT_2D_TYPE == m_project->getProjectType())
-		 {
-	
-			 // 二三维病害
-	
-			 QVector<hnMile> miles = m_project->getCurrentMileVector();
-			 auto setinfo = m_project->getCurProSetInfo();
-			 if (setinfo.nDrawType == 2)
-			 {
-				m_project->getDB()->
-					 m_diseaseTable.readDesignDiseases(standard, 0, m_project->getCurProSetInfo().dEndEnclMile, allDiseaseInfos);
-			 }
-			 else
-			 {
-				 m_project->getCurDB()->m_diseaseTable.readRoadDiseaseData(setinfo, miles, allDiseaseInfos, m_project->getCurrentMarkVector(), m_project->getRoadSpace());
-			 }
-		 }
-		 else
-		 {
-			 std::vector<hnRoadDiseaseInfo> diseases3d;
-			 // 纯三维病害
-			 const double projectBeginEncoderMile = 0;
-			 const double projectEndEncoderMile = m_project->getCurProSetInfo().dEndEnclMile;
-			 auto xxx = m_project->getCurProSetInfo();
-	
-			 if (m_project->getCurProSetInfo().nDrawType == 2)
-			 {
-				 m_project->getDB()->
-					 m_diseaseTable.readDesignDiseases(standard, 0, m_project->getCurProSetInfo().dEndEnclMile, allDiseaseInfos);
-			 }
-			 else
-			 {
-				 m_project->getCurDB()
-					 ->m_diseaseTable.read3dRoadDiseaseData(standard, projectBeginEncoderMile, projectEndEncoderMile, diseases3d);
-				 allDiseaseInfos = QVector<hnRoadDiseaseInfo>::fromStdVector(diseases3d);
-			 }
-		 }
-	
-		 return allDiseaseInfos;
+	//获取所有病害
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	{
+		return  QVector<hnRoadDiseaseInfo>();
+	}
+	QVector<hnRoadDiseaseInfo> allDiseaseInfos;
+
+	if (m_project == 0)
+	{
+		return allDiseaseInfos;
+	}
+
+	QString standard = HnProjectEnums::roadTypeEnumToQString(m_project->getBaseStandard());
+
+	if (PROJECT_TYPE::PROJECT_23D_TYPE == m_project->getProjectType() ||
+		PROJECT_TYPE::PROJECT_2D_TYPE == m_project->getProjectType())
+	{
+
+		// 二三维病害
+
+		QVector<hnMile> miles = m_project->getCurrentMileVector();
+		auto setinfo = m_project->getCurProSetInfo();
+		if (setinfo.nDrawType == 2)
+		{
+			m_project->getDB()->
+				getDiseaseTable()->readDesignDiseases_Service(standard,
+					0,
+					m_project->getCurProSetInfo().dEndEnclMile,
+					allDiseaseInfos);
+		}
+		else
+		{
+			hnDBSqlite * db = m_project->getCurDB();
+			/*qDebug() << "[DiseaseService before  read]"
+				<< "project" << m_project
+				<< "db:" << db
+				<< "dieaseTabel:" << &(db->getDiseaseTable()->)
+				<< "table sqlite ptr:" << db->getDiseaseTable()->debugDbPtr()
+				<< "sizeof(hnDBSqlite)" << sizeof(hnDBSqlite);
+
+			db->getDiseaseTable()->debugIsDBOpen();*/
+
+			db->getDiseaseTable()->readRoadDiseaseData_Service(setinfo,
+				miles,
+				allDiseaseInfos,
+				m_project->getCurrentMarkVector(),
+				m_project->getRoadSpace());
+		}
+		//景观病害
+		QVector<hnRoadDiseaseInfo> streetDiseases;
+		m_project->getCurDB()->getDiseaseTable()->
+			readStreetData_Service(standard, miles, streetDiseases, m_project->getCurProSetInfo().nLineType, m_project->getRoadSpace());
+
+		allDiseaseInfos += streetDiseases;
+	}
+	else
+	{
+		std::vector<hnRoadDiseaseInfo> diseases3d;
+		// 纯三维病害
+		const double projectBeginEncoderMile = 0;
+		const double projectEndEncoderMile = m_project->getCurProSetInfo().dEndEnclMile;
+		auto xxx = m_project->getCurProSetInfo();
+
+		if (m_project->getCurProSetInfo().nDrawType == 2)
+		{
+			m_project->getDB()->
+				getDiseaseTable()->readDesignDiseases_Service(standard,
+					0,
+					m_project->getCurProSetInfo().dEndEnclMile,
+					allDiseaseInfos);
+		}
+		else
+		{
+			m_project->getCurDB()
+				->getDiseaseTable()->read3dRoadDiseaseData_Service(standard, projectBeginEncoderMile, projectEndEncoderMile, diseases3d);
+			allDiseaseInfos = QVector<hnRoadDiseaseInfo>::fromStdVector(diseases3d);
+		}
+	}
+
+	return allDiseaseInfos;
 }
 
+ QVector<hnCommon::hnRoadDiseaseInfo> hnDiseaseService::getAllTypeDiseases(bool isRoad)
+{
+	ensureAllDiseaseCache();
+	QVector<hnCommon::hnRoadDiseaseInfo> diss;
+	for (int i = 0; i < m_allDiseaseCache.size(); ++i)
+	{
+		hnCommon::hnRoadDiseaseInfo& dis = m_allDiseaseCache[i];
+		if (isRoad&& dis.ndiseaseType == 0)
+		{
+			diss.push_back(dis);
+
+		}
+		if (!isRoad&& dis.ndiseaseType != 0)
+		{
+			diss.push_back(dis);
+
+		}
+
+	}
+	return diss;
+}
+
+ bool hnDiseaseService::isSameDisease(const hnCommon::hnRoadDiseaseInfo& a, const hnCommon::hnRoadDiseaseInfo& b) const
+ {
+	 return a.nID == b.nID && std::strcmp(a.strDiseaseTableName, b.strDiseaseTableName) == 0;
+ }
+
+ int hnDiseaseService::findDiseaseIndexInCache(const hnCommon::hnRoadDiseaseInfo& disease) const
+ {
+	 for (int i = 0 ; i < m_allDiseaseCache.size() ;++i)
+	 {
+		 if (isSameDisease(m_allDiseaseCache.at(i),disease))
+		 {
+			 return i;
+		 }
+	 }
+	 return -1;
+ }
+
 bool hnDiseaseService::addDisease(
-	const hnCommon::hnProjectSetInfo& projectInfo,
 	hnCommon::hnRoadDiseaseInfo& disease)
 {
 	if (m_project == 0)
 	{
 		return false;
 	}
-
-	bool ok = m_project->getDB()->m_diseaseTable.writeSingleDatas(
+	const hnCommon::hnProjectSetInfo& projectInfo = m_project->getCurProSetInfo();
+	//注意看看这个方法 会不会回填ID
+	bool ok = m_project->getDB()->getDiseaseTable()->writeSingleDatas_Service(
 		projectInfo,
 		disease
 	);
-
-	if (ok)
+	if (!ok)
 	{
-		invalidateCache();
-		emit diseaseChanged();
+		return false;
 	}
+	if (m_allDiseaseCacheValid)
+	{
+		if (disease.nID>0)
+		{
+			int index = findDiseaseIndexInCache(disease);
+			if (index <0)
+			{
+				//m_allDiseaseCache.push_back(disease);
 
-	return ok;
+				auto it = std::lower_bound(m_allDiseaseCache.begin(), m_allDiseaseCache.end(), disease);
+				m_allDiseaseCache.insert(it, disease);
+
+			}
+			else
+			{
+				invalidateCache();
+			}
+		}
+	}
+	emit diseaseAdded(disease);
+	emit diseaseChanged();
+	return true;
 }
 
-bool hnDiseaseService::deleteDisease( hnCommon::hnRoadDiseaseInfo& disease)
+bool hnDiseaseService::addDataAffairs(QString tableName, bool write, QVector<hnCommon::hnRoadDiseaseInfo>& diseases)
+{
+	if (m_project == 0)
+	{
+		return false;
+	}
+	//注意看看这个方法 会不会回填ID
+	bool ok = m_project->getDB()->getDiseaseTable()->writeDataAffairs_Service(
+		tableName.toLocal8Bit().data(), write,diseases.toStdVector() 
+	);
+	if (!ok)
+	{
+		return false;
+	}
+	if (m_allDiseaseCacheValid)
+	{
+		invalidateCache();
+	}
+	emit diseaseReset();
+	return true;
+}
+
+bool hnDiseaseService::deleteOneDisease(hnCommon::hnRoadDiseaseInfo& disease)
 {
 	if (m_project == 0)
 	{
 		return false;
 	}
 
-	bool ok = m_project->getDB()->m_diseaseTable.deleteDisease(disease);
-
-	if (ok)
+	bool ok = m_project->getDB()->getDiseaseTable()->deleteDisease_Service(disease);
+	if (!ok)
 	{
-		invalidateCache();
-		emit diseaseChanged();
+		return false;
+	}
+	if (m_allDiseaseCacheValid)
+	{
+		for (int i = m_allDiseaseCache.size() -1; i>=0; --i)
+		{
+			if (isSameDisease(m_allDiseaseCache.at(i),disease))
+			{
+				m_allDiseaseCache.remove(i);
+				break;
+			}
+		}
 	}
 
+	emit diseaseDeleted(disease);
+	emit diseaseChanged();
+
+	return ok;
+}
+
+bool hnDiseaseService::deleteAllTargetTypeDisease(QString stand, int drawType)
+{
+	if (m_project == 0)
+	{
+		return false;
+	}
+
+	bool ok = m_project->getDB()->getDiseaseTable()->deleteAllTargetDrawTypeDisease_Service(stand,drawType);
+	if (!ok)
+	{
+		return false;
+	}
+	if (m_allDiseaseCacheValid)
+	{
+		invalidateCache();
+	}
+
+	emit diseaseReset(); 
+	emit diseaseChanged();
+	return ok;
+}
+
+bool hnDiseaseService::deleteAllDiseases()
+{
+	if (m_project == 0)
+	{
+		return false;
+	}
+
+	bool ok = m_project->getDB()->getDiseaseTable()->deleteAllDisease_Service();
+	if (!ok)
+	{
+		return false;
+	}
+	if (m_allDiseaseCacheValid)
+	{
+		invalidateCache();
+	}
+
+	emit diseaseReset();
+	emit diseaseChanged();
 	return ok;
 }
 
 bool hnDiseaseService::updateDisease(
-	const hnCommon::hnProjectSetInfo& projectInfo,
+	 
 	hnCommon::hnRoadDiseaseInfo& disease)
 {
 	if (m_project == 0)
@@ -237,14 +442,26 @@ bool hnDiseaseService::updateDisease(
 		return false;
 	}
 
-	bool ok = m_project->getDB()->m_diseaseTable.updaetSingleDataInfo( disease);
-
-    
-	if (ok)
+	bool ok = m_project->getDB()->getDiseaseTable()->updaetSingleDataInfo_Service(disease);
+	if (!ok)
 	{
-		invalidateCache();
-		emit diseaseChanged();
+		return false;
 	}
+
+	 if (m_allDiseaseCacheValid)
+	 {
+		 int index = findDiseaseIndexInCache(disease);
+		 if (index >=0)
+		 {
+			 m_allDiseaseCache[index] = disease;
+		 }
+		 else
+		 {
+			 invalidateCache();
+		 }
+	 }
+	 emit diseaseUpdated(disease);
+	 emit diseaseChanged();
 
 	return ok;
 }

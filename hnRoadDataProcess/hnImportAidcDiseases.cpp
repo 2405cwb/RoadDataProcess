@@ -1,9 +1,11 @@
 #include "hnImportAidcDiseases.h"
 #include <QTime>
 #include <QDebug>
+#include <QVector>
 #include "mergeAidcDiseases.h"
 
 #include "../hnQtCommon/MyCommonMethods.h"
+#include "../hnApplication/hnDiseaseService.h"
 hnImportAidcDiseases::hnImportAidcDiseases(const int frameType, QWidget *parent)
 	: QObject(parent)
 {
@@ -696,9 +698,8 @@ void hnImportAidcDiseases::writeDb(QMap<QString, std::vector<hnCommon::hnRoadDis
 
 	for (auto iter = diseases.begin(); iter != diseases.end(); iter++)
 	{
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->m_diseaseTable.
-			writeDataAffairs(iter.key().toLocal8Bit().data(), true, iter.value());
-
+		hnApp::hnDataManager::getDataManager()-> getDiseaseService()->addDataAffairs(iter.key(), true,QVector<hnCommon::hnRoadDiseaseInfo>::fromStdVector( iter.value()));
+		
 		//hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurretDiseaseVector()
 
 		//更新进度条
@@ -753,7 +754,7 @@ QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> hnImportAidcDiseases::tr
 
 		QString tableName = singleTableDiseases.key();
 		int firstID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->
-			m_diseaseTable.getMaxID(tableName.toStdString());
+			getDiseaseTable()->getMaxID(tableName.toStdString());
 
 		int idCount = firstID;
 		//转换每个表中的病害
@@ -904,7 +905,7 @@ QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>>  hnImportAidcDiseases::t
 
 		QString tableName = singleTableDiseases.key();
 		int firstID = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->
-			m_diseaseTable.getMaxID(tableName.toStdString());
+			getDiseaseTable()->getMaxID(tableName.toStdString());
 
 		int idCount = firstID;
 		//转换每个表中的病害

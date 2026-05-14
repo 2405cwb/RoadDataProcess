@@ -90,5 +90,19 @@
     <ClCompile Include="MapGPSMile.cpp">
       <Filter>GpsTools</Filter>
     </ClCompile>
+    <ClCompile Include="hnCenterToast.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BusyLoadingDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnCenterToast.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="BusyLoadingDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
 </Project>
