@@ -112,6 +112,47 @@ protected:
 	//判断临时病害面积是否有效  
 	virtual bool isTmpDiseaseAreaValid(const hnCommon::hnRoadDiseaseInfo& disease) = 0;
 
+
+protected:
+	// 当前是否正在小框自动化绘制
+	bool isDrawingLittleFrameDisease() const;
+
+	// 程序自动移动鼠标后，子类 mouseMoveEvent 里调用；
+	// 返回 true 表示本次 mouseMove 已处理，子类应该直接 return。
+	bool ignoreMouseMoveAfterAutoCursorMove(QMouseEvent* event);
+
+	// 翻页后延迟把鼠标移动到最佳续画点
+	void scheduleMoveCursorToBestContinuePointAfterBrowse(bool up, bool is2D);
+
+	// 真正执行鼠标复位
+	bool moveCursorToBestContinuePointAfterBrowse(bool up, bool is2D);
+
+	// 当前可见图像区域，默认认为图片铺满 widget
+	virtual QRect visibleImageWidgetRect() const;
+
+	// 子类实现：把一个病害点转换成当前 widget 坐标
+	// 注意：widgetPoint 可以在可见区域外，基类会 clamp 到最近可见点。
+	virtual bool diseasePointToWidgetPointAfterBrowse(
+		const pixImagePoint& point,
+		bool up,
+		QPoint& widgetPoint)  = 0;
+
+	// 当前 widget 点转病害点，基类用 screenToSingleImagePoint 统一处理
+	bool widgetPointToDiseasePoint(const QPoint& widgetPoint, pixImagePoint& point);
+
+	// 把续画锚点同步到临时绘制数据
+	void syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint);
+
+	// 重建 m_litteBigImagePoints
+	void rebuildLittleFrameBigImagePoints();
+
+	// 小框绘制翻页时，不再暂停，而是复位鼠标
+	virtual void onLittleFrameBrowseMoved(bool up, bool is2D);
+
+protected:
+	// 程序自动 setPos 后，下一次 mouseMove 不参与绘制
+	bool m_ignoreNextMouseMoveAfterAutoCursorMove = false;
+
 protected:
 	// 添加线状病害
 	void addLineDisease(const QPoint &widgetPoint);

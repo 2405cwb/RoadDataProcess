@@ -106,18 +106,22 @@ void hn2d3dPixBaseWidget::slot_deleteDisease(const hnRoadDiseaseInfo &disease)
 
 void hn2d3dPixBaseWidget::slot_moveMouse(bool up, bool is2D)
 {
-	//用户按下上下键后 需要先移动图片 然后控制鼠标纵向移动一定范围 
-	//在滚轮滚动的时候，允许画病害图片
 	this->m_isAllowDrawPix = true;
-	if (this->m_workMode == WorkMode::ADD_MODE&&
-		this->m_isDrawingDisease
-		&& this->m_frameMode == FrameMode::LITTLE_FRAME)
+	if (!isDrawingLittleFrameDisease())
 	{
-		//小框的绘制临时停止绘制策略
-		isSuspended = true;
-
+		return;
 	}
-	//moveMouse(up, is2D);
+	 
+	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
+
+	//if (this->m_workMode == WorkMode::ADD_MODE &&
+	//	this->m_isDrawingDisease &&
+	//	this->m_frameMode == FrameMode::LITTLE_FRAME)
+	//{
+	//	isSuspended = false;
+	//	onLittleFrameBrowseMoved(up, is2D);
+	//}
+
 }
 
 
@@ -807,4 +811,228 @@ void hn2d3dPixBaseWidget::CalculateDiseaseSize(const QVector<QRect>&diseaseRects
 }
 
  
+bool hn2d3dPixBaseWidget::isDrawingLittleFrameDisease() const
+{
+	return this->m_workMode == WorkMode::ADD_MODE
+		&& this->m_isDrawingDisease
+		&& this->m_frameMode == FrameMode::LITTLE_FRAME
+		&& !this->addLineDiseType;
+}
 
+
+bool hn2d3dPixBaseWidget::ignoreMouseMoveAfterAutoCursorMove(QMouseEvent* event)
+{
+	if (!m_ignoreNextMouseMoveAfterAutoCursorMove)
+	{
+		return false;
+	}
+
+	m_ignoreNextMouseMoveAfterAutoCursorMove = false;
+	
+
+	this->m_isAllowDrawPix = true;
+	rebuildLittleFrameBigImagePoints();
+	this->update();
+	if (event)
+	{
+		event->accept();
+	}
+
+	return true;
+}
+
+
+QRect hn2d3dPixBaseWidget::visibleImageWidgetRect() const
+{
+	// 如果以后图片不是铺满 widget，比如有黑边、边距，再由子类 override
+	return this->rect().adjusted(2, 2, -2, -2);
+}
+
+bool hn2d3dPixBaseWidget::widgetPointToDiseasePoint(const QPoint& widgetPoint, pixImagePoint& point)
+{
+	QString pixName;
+	QPoint pixPoint = this->screenToSingleImagePoint(widgetPoint, pixName);
+
+	if (pixName.isEmpty())
+	{
+		return false;
+	}
+
+	if (pixPoint.x() < 0 || pixPoint.y() < 0)
+	{
+		return false;
+	}
+
+	point.pixName = pixName;
+	point.pixPoint = pixPoint;
+	return true;
+}
+
+
+void hn2d3dPixBaseWidget::rebuildLittleFrameBigImagePoints()
+{
+	m_litteBigImagePoints.clear();
+
+	for (const auto& point : qAsConst(m_littleSingleImagePoints))
+	{
+		QPoint bigImagePoint = singleImagePointToBigImagePoint(point.pixPoint, point.pixName);
+		m_litteBigImagePoints.append(bigImagePoint);
+	}
+}
+
+
+void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint)
+{
+	pixImagePoint anchorPoint;
+	if (!widgetPointToDiseasePoint(targetWidgetPoint, anchorPoint))
+	{
+		return;
+	}
+
+	// 三维 23D 项目里，x 需要限制到有效路面范围
+	if (m_widgetType == WIDGET_3D &&
+		hnDataManager::getDataManager()->getCurrentProject() &&
+		PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
+	{
+		int x = anchorPoint.pixPoint.x();
+		this->autoCorrectXIn3dView(x);
+		anchorPoint.pixPoint.setX(x);
+	}
+
+	m_diseaseEndPoint = anchorPoint;
+
+	// D 键拉框模式：翻页后必须把拉框起点也改成续画点
+	// 否则会从旧图起点拉到新图点，形成巨大错误矩形。
+	if (littleDrawRectType)
+	{
+		m_diseaseStartPoint = anchorPoint;
+	}
+
+	// 如果最后一个点和 anchor 非常接近，不重复追加
+	if (!m_littleSingleImagePoints.isEmpty())
+	{
+		const pixImagePoint lastPoint = m_littleSingleImagePoints.last();
+
+		if (lastPoint.pixName == anchorPoint.pixName &&
+			QLineF(lastPoint.pixPoint, anchorPoint.pixPoint).length() <= 2.0)
+		{
+			rebuildLittleFrameBigImagePoints();
+			return;
+		}
+	}
+
+	// 这里追加 anchor 的目的：
+	// 防止下一次用户轻微移动时，直接从翻页前的旧点连到新的鼠标点。
+	// 这样后续绘制会从“最佳续画点”开始。
+	m_littleSingleImagePoints.append(anchorPoint);
+	rebuildLittleFrameBigImagePoints();
+}
+
+
+bool hn2d3dPixBaseWidget::moveCursorToBestContinuePointAfterBrowse(bool up, bool is2D)
+{
+	Q_UNUSED(is2D);
+
+	if (!isDrawingLittleFrameDisease())
+	{
+		return false;
+	}
+
+	if (m_littleSingleImagePoints.isEmpty())
+	{
+		return false;
+	}
+
+	 
+
+	const pixImagePoint lastPoint = m_littleSingleImagePoints.last();
+
+	QPoint lastWidgetPoint;
+	bool ok = diseasePointToWidgetPointAfterBrowse(lastPoint, up, lastWidgetPoint);
+
+	QRect visibleRect = visibleImageWidgetRect();
+
+	if (!visibleRect.isValid() || visibleRect.isEmpty())
+	{
+		return false;
+	}
+
+	const int margin = 4;
+	QRect safeRect = visibleRect.adjusted(margin, margin, -margin, -margin);
+
+	QPoint targetPoint;
+
+	if (ok)
+	{
+		// 这就是“当前可见区域内，距离 lastPoint 最近的点”
+		targetPoint.setX(qBound(safeRect.left(), lastWidgetPoint.x(), safeRect.right()));
+		targetPoint.setY(qBound(safeRect.top(), lastWidgetPoint.y(), safeRect.bottom()));
+	}
+	else
+	{
+		// 坐标转换失败时，用方向兜底
+		QPoint currentWidgetPoint = this->mapFromGlobal(QCursor::pos());
+
+		targetPoint.setX(qBound(safeRect.left(), currentWidgetPoint.x(), safeRect.right()));
+
+		if (up)
+		{
+			// 向上翻 / 往前看：最后点大概率在当前视图下方
+			targetPoint.setY(safeRect.bottom());
+		}
+		else
+		{
+			// 向下翻 / 往后看：最后点大概率在当前视图上方
+			targetPoint.setY(safeRect.top());
+		}
+	}
+
+	// 同步绘制锚点，防止下一次 mouseMove 从旧点连到错误点
+	syncLittleFrameContinueAnchor(targetPoint);
+
+	this->m_isAllowDrawPix = true;
+
+	rebuildLittleFrameBigImagePoints();
+
+	// 程序自动移动鼠标这一下不能参与绘制
+	m_ignoreNextMouseMoveAfterAutoCursorMove = true;
+
+	//移动鼠标到最佳续画点
+	QCursor::setPos(this->mapToGlobal(targetPoint));
+
+	this->setCursor(Qt::CrossCursor);
+	this->update();
+
+	return true;
+}
+
+void hn2d3dPixBaseWidget::scheduleMoveCursorToBestContinuePointAfterBrowse(bool up, bool is2D)
+{
+	if (!isDrawingLittleFrameDisease())
+	{
+		return;
+	}
+
+	QTimer::singleShot(20, this, [this, up, is2D]()
+	{
+		if (!this->isVisible())
+		{
+			return;
+		}
+
+		this->moveCursorToBestContinuePointAfterBrowse(up, is2D);
+	});
+}
+
+
+
+
+void hn2d3dPixBaseWidget::onLittleFrameBrowseMoved(bool up, bool is2D)
+{
+	if (!isDrawingLittleFrameDisease())
+	{
+		return;
+	}
+	 
+	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
+}

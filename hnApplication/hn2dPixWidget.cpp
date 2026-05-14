@@ -299,7 +299,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 				{
 					this->m_isDrawingDisease = true;
 					this->m_isAllowDrawPix = false;
-					this->m_isAllowDrawDashLine = true;		//允许画最后点击点与鼠标位置连线（虚线）
+				 
 
 															//修改是否联动
 					this->m_isAllowLinked = false;
@@ -333,7 +333,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 							return;
 						}
 					}
-					isSuspended = false;
+				 
 					this->m_isDrawingDisease = !this->m_isDrawingDisease;
 					this->m_isAllowDrawPix = !this->m_isDrawingDisease;
 					//修改是否联动
@@ -383,7 +383,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 				{
 					this->m_isEndAddPoint = true;
 					this->m_tempPoints.clear();
-					this->m_isAllowDrawDashLine = false;
+					 
 
 					if (m_littleSingleImagePoints.size() > 1)
 					{
@@ -601,9 +601,7 @@ void hn2dPixWidget::mouseReleaseEvent(QMouseEvent * event)
 }
 
 void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
-{
-	 
-	//currentMousePos = event->pos();
+{ 
 	currentMousePos = event->screenPos().toPoint();				// 记录鼠标在屏幕的位置
 
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
@@ -615,6 +613,13 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	{
 		return;
 	}
+	// 程序翻页后自动移动鼠标，这一次 mouseMove 不允许参与绘制
+	if (ignoreMouseMoveAfterAutoCursorMove(event))
+	{
+		return;
+	}
+
+
 	double dDiseaseLon,  dDiseaseLat, dDiseaseH;
 	//获取鼠标位置
 	if (m_xrSetting->showGpsInfo&&!this->m_isDrawingDisease)
@@ -696,7 +701,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	}
 
 	//2025.11.3 新增最后一个左键点击点与鼠标位置之间的连线（虚线）
-	if (this->m_isDrawingDisease && this->addLineDiseType && this->m_isAllowDrawDashLine && !m_tmpPaintLineDiseasePoints.empty())
+	if (this->m_isDrawingDisease && this->addLineDiseType && !m_tmpPaintLineDiseasePoints.empty())
 	{
 		QPoint pos = event->pos();
 		pixImagePoint endPoint;
@@ -724,50 +729,15 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 		//记录单张图片的点到折线数组中
 		if (this->m_frameMode == FrameMode::LITTLE_FRAME	&& this->m_workMode == WorkMode::ADD_MODE)
 		{
-			if (!isSuspended)
+			this->setCursor(Qt::CrossCursor);
+			m_littleSingleImagePoints.append(m_diseaseEndPoint);
+			//转化单张图片的点数组到拼接图片的点数组
+			m_litteBigImagePoints.clear();
+			for (auto point : qAsConst(m_littleSingleImagePoints))
 			{
-				this->setCursor(Qt::CrossCursor);
-				m_littleSingleImagePoints.append(m_diseaseEndPoint);
-				//转化单张图片的点数组到拼接图片的点数组
-				m_litteBigImagePoints.clear();
-				for (auto point : qAsConst(m_littleSingleImagePoints))
-				{
-					QPoint bigImagePoint = singleImagePointToBigImagePoint(point.pixPoint, point.pixName);
-					m_litteBigImagePoints.append(bigImagePoint);
-				}
-
+				QPoint bigImagePoint = singleImagePointToBigImagePoint(point.pixPoint, point.pixName);
+				m_litteBigImagePoints.append(bigImagePoint);
 			}
-			else
-			{
-				if (m_littleSingleImagePoints.size()<=0)
-				{
-					return;
-				}
-				pixImagePoint  lastPointWithImage = m_littleSingleImagePoints.last();
-				//在最后一个点和当前位置之间绘制虚线
-				QPoint lastPoint = singleImagePointToBigImagePoint(lastPointWithImage.pixPoint, lastPointWithImage.pixName);
-				pixImagePoint currentEndPoint; 
-				currentEndPoint.pixName = m_diseaseEndPoint.pixName;
-				  currentEndPoint.pixPoint = 	this->screenToSingleImagePoint(event->pos(), m_diseaseEndPoint.pixName);
-				  QPoint currentBigImagePoint = singleImagePointToBigImagePoint(currentEndPoint.pixPoint, currentEndPoint.pixName);
-				  double distance = QLineF(lastPoint, currentBigImagePoint).length();
-
-				   lastPoint_Suspending = lastPoint ;
-				   current_Suspending = currentBigImagePoint;
-				   m_litteBigImagePoints.clear();
-				   for (auto point : qAsConst(m_littleSingleImagePoints))
-				   {
-					   QPoint bigImagePoint = singleImagePointToBigImagePoint(point.pixPoint, point.pixName);
-					   m_litteBigImagePoints.append(bigImagePoint);
-				   } 
-				   this->setCursor(Qt::OpenHandCursor);
-					if (distance<=80)
-					{
-						isSuspended = false;
-						 
-					}
-			 
-			} 
 		
 		}
 
@@ -817,36 +787,54 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 
 
 
+//void hn2dPixWidget::wheelEvent(QWheelEvent * event)
+//{
+//	//在滚轮滚动的时候，允许画病害图片
+//	this->m_isAllowDrawPix = true;
+//	// 延时发送事件，避免出问题
+//	QTimer::singleShot(5, [this, event]() {
+//		//触发鼠标移动事件
+//		QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseMove, this->mapFromGlobal(QCursor().pos()),
+//			Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+//		QApplication::sendEvent(this, mouseEvent);
+//		delete mouseEvent;
+//
+//	});
+//	bool up = event->delta() > 0 ? true : false;
+//	if (this->m_workMode == WorkMode::ADD_MODE&&
+//		this->m_isDrawingDisease
+//		&& this->m_frameMode == FrameMode::LITTLE_FRAME)
+//	{
+//		//小框的绘制临时停止绘制策略
+//		isSuspended = true;
+//
+//	}
+//	moveMouse(up, true);
+//
+//
+//	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+//	{
+//		return;
+//	}
+//}
+
+
 void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 {
-	//在滚轮滚动的时候，允许画病害图片
 	this->m_isAllowDrawPix = true;
-	// 延时发送事件，避免出问题
-	QTimer::singleShot(5, [this, event]() {
-		//触发鼠标移动事件
-		QMouseEvent *mouseEvent = new QMouseEvent(QEvent::MouseMove, this->mapFromGlobal(QCursor().pos()),
-			Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-		QApplication::sendEvent(this, mouseEvent);
-		delete mouseEvent;
 
-	});
-	bool up = event->delta() > 0 ? true : false;
-	if (this->m_workMode == WorkMode::ADD_MODE&&
-		this->m_isDrawingDisease
-		&& this->m_frameMode == FrameMode::LITTLE_FRAME)
+	const bool up = event->delta() > 0;
+	 
+	if (isDrawingLittleFrameDisease())
 	{
-		//小框的绘制临时停止绘制策略
-		isSuspended = true;
+	 
 
+		scheduleMoveCursorToBestContinuePointAfterBrowse(up, true);
 	}
-	moveMouse(up, true);
-
-
-	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
-	{
-		return;
-	}
+	event->ignore();
 }
+
+
 
 void hn2dPixWidget::leaveEvent(QEvent * event)
 {
@@ -901,7 +889,7 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 
 		this->m_isEndAddPoint = true;
 		this->m_tempPoints.clear();
-		this->m_isAllowDrawDashLine = false;
+		//this->m_isAllowDrawDashLine = false;
 
 		if (m_littleSingleImagePoints.size() > 1)
 		{
@@ -1458,7 +1446,7 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 	{
 		this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
 	}
-	qDebug() << "PERF drawLittleFrameDisease" << timer.elapsed() << "ms";
+	//qDebug() << "PERF drawLittleFrameDisease" << timer.elapsed() << "ms";
 	//绘制设计模式面状病害
 	if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
 	{
@@ -1583,28 +1571,10 @@ void hn2dPixWidget::drawTmpData(QImage & image)
 						}
 					}
 
-					//2025.11.3 新增最后一个鼠标左键点击点与鼠标位置连线（虚线）
-					if (m_tempPoints.size() == 2 && m_isAllowDrawDashLine)
-					{
-						this->drawTempDashLine(image);
-
-					}
+			 
 				}
 				else  //画自动跟踪鼠标移动轨迹模式下病害自动化模式
-				{
-					if (isSuspended)
-					{
-					//	double distance = QLineF(lastPoint_Suspending, current_Suspending).length();
-
-					 	QLine line(lastPoint_Suspending, current_Suspending);
-						QPainter painter(&image);
-						QPen pen;
-						pen.setColor(Qt::yellow);
-						pen.setWidth(10);
-						pen.setStyle(Qt::DashLine);
-						painter.setPen(pen);
-						painter.drawLine(line); 
-					}
+				{ 
 					//创造自动化模式鼠标移动轨迹经过的自动化模式数组
 					m_currentLittleFrameRects = this->createLittleFrameRects(m_littleSingleImagePoints);
 				
@@ -3650,5 +3620,51 @@ void hn2dPixWidget::slotDiseaseChanged()
 {
 	this->m_currentWidgetDiseases.clear();
 	this->update();
+}
+
+bool hn2dPixWidget::diseasePointToWidgetPointAfterBrowse(
+	const pixImagePoint& point,
+	bool up,
+	QPoint& widgetPoint) 
+{
+	Q_UNUSED(up);
+
+	if (point.pixName.isEmpty())
+	{
+		return false;
+	}
+
+	if (point.pixPoint.x() < 0 || point.pixPoint.y() < 0)
+	{
+		return false;
+	}
+
+	if (m_tmpPixImageWithoutDisease.isNull())
+	{
+		return false;
+	}
+
+	QPoint bigImagePoint =singleImagePointToBigImagePoint(point.pixPoint, point.pixName);
+
+	if (bigImagePoint.x() < 0 || bigImagePoint.y() < 0)
+	{
+		return false;
+	}
+
+	const double scaleX = this->width() * 1.0 / m_tmpPixImageWithoutDisease.width();
+	const double scaleY = this->height() * 1.0 / m_tmpPixImageWithoutDisease.height();
+
+	widgetPoint = QPoint(
+		qRound(bigImagePoint.x() * scaleX),
+		qRound(bigImagePoint.y() * scaleY)
+	);
+	/*
+	如果你实际显示区域不是整个 widget，而是某个 imageRect，就改成：
+
+widgetPoint = QPoint(
+	imageRect.left() + qRound(bigImagePoint.x() * scaleX),
+	imageRect.top()  + qRound(bigImagePoint.y() * scaleY)
+	*/
+	return true;
 }
 

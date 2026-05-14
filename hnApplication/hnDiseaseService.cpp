@@ -133,10 +133,7 @@ void hnDiseaseService::getStreetDiseaseInRange(double beginMile, double endMile,
 		}
 	}
 
-	qDebug() << "[DiseaseService] filter StreetDiseases:"
-		<< timer.elapsed()
-		<< "ms, result:"
-		<< result.size();
+ 
 }
 
 bool hnDiseaseService::isDiseaseInMileRange(

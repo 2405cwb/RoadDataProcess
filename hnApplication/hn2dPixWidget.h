@@ -185,6 +185,11 @@ private:
 	//计算线状病害属性
 	hnRoadDiseaseInfo caculateLineDiseaseInfo(QVector<pixImagePoint> lineDiseasePoints, hnDiseaseSetInfo diseaseSetInfo) override;
 
+protected:
+	bool diseasePointToWidgetPointAfterBrowse(
+		const pixImagePoint& point,
+		bool up,
+		QPoint& widgetPoint)  override;
 private:
 	//画自动化模式的流程
 	bool littleFrameProcess();

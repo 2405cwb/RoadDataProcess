@@ -92,6 +92,11 @@ private:
 
 	private slots:
 	void slotDiseaseChanged();
+protected:
+	bool diseasePointToWidgetPointAfterBrowse(
+		const pixImagePoint& point,
+		bool up,
+		QPoint& widgetPoint)  override;
 private:
 	//画人工模式病害
 	void drawBigFrameDisease(const vector<hnRoadDiseaseInfo> &diseases, QImage &image);

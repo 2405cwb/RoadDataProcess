@@ -72,18 +72,33 @@ void hn3dPixScrollWidget::keyPressEvent(QKeyEvent *event)
 
 	if (event->key() == Qt::Key_Up || event->key() == Qt::Key_W)
 	{
-		emit signal_moveMouse(true,false);
-		this->m_scrollbar->setValue(m_scrollbar->value() - 1);
+		const bool up = true;
+		const int step = getBrowStep(true);
+		this->m_scrollbar->setValue(m_scrollbar->value() - step); 
 
+		QTimer::singleShot(0, this, [this, up]
+		{
+			emit signal_moveMouse(up, false);
+		});
+		event->accept();
+		return;
+		
 
 		//QCoreApplication::processEvents();
 	}
 	else if (event->key() == Qt::Key_Down || event->key() == Qt::Key_S)
 	{
-		emit signal_moveMouse(false, false);
-		this->m_scrollbar->setValue(m_scrollbar->value() + 1);
+		const bool up = false;
 
-		//QCoreApplication::processEvents();
+		const int step = getBrowStep(true);
+		this->m_scrollbar->setValue(m_scrollbar->value() + step);
+
+		QTimer::singleShot(0, this, [this, up]
+		{
+			emit signal_moveMouse(up, false);
+		});
+		event->accept();
+		return;
 
 	}
 	QWidget::keyPressEvent(event);
