@@ -18,7 +18,7 @@ double drawDiseases::getEncoderMile()
 	return m_encoderMile;
 }
 
-void drawDiseases::drawRectsOnImage(QImage & image, const QVector<QRect> rects , int boarderWidth, const QColor &rectColor, Qt::PenStyle style)
+void drawDiseases::drawRectsOnImage(QImage & image, const QVector<QRect>&rects , int boarderWidth, const QColor &rectColor, Qt::PenStyle style)
 {
 	QPainter painter(&image);
 	  

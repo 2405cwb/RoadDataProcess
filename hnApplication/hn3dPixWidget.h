@@ -299,7 +299,7 @@ private:
 	QVector<QRect> createSingleImageLittleFrameRect();
 
 	//创造给定点的自动化模式数组 这里的自动化模式是针对大的image的
-	QVector<QRect> createLittleFrameRects(QVector<pixImagePoint> pixImagePoints);
+	QVector<QRect> createLittleFrameRects(const QVector<pixImagePoint>& pixImagePoints);
 
 private:
 	// 添加控制点

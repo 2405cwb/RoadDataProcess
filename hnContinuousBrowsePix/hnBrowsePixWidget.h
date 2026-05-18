@@ -43,6 +43,7 @@
 #include "../hnConfigService/HnXRSettings.h"
 #include <QSize>
 #include <QResizeEvent>
+#include <QFuture>
 #pragma endregion
 
 
@@ -280,9 +281,13 @@ protected:
 
 private:
 	//多线程  根据底部帧序号更新imagemap 
-	void updateImageMapBasedOnBottomFrameIdx();
+	//void updateImageMapBasedOnBottomFrameIdx();
 
 	bool ensureImageLoaded( const int frameIdx);
+
+
+	void schedulePreloadImages(int bottomFrameIdx);
+	void updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx);
 protected:
 	//往图片上画东西， 供子类重载
 	virtual void drawSomeThingOnImage(QImage &image);
@@ -395,6 +400,9 @@ protected:
 private:
 	//上次的时间
 	QDateTime m_lastTime;
+
+	QFuture<void> m_preloadFuture;
+	int m_lastPreloadBottomFrameIdx = -1;
 	 
 public:
 	//获取是否允许联动

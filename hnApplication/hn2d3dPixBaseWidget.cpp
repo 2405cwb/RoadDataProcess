@@ -104,6 +104,7 @@ int hn2d3dPixBaseWidget::diseaseImagePixels(const QImage &image, int screenPixel
 
 void hn2d3dPixBaseWidget::slot_cancelDrawDiseases()
 {
+	clearLittleRectDrawSelection();
 	this->m_isDrawingDisease = false;
 	this->m_isAllowDrawPix = true;
 	this->m_isAllowLinked = true;
@@ -257,6 +258,44 @@ void hn2d3dPixBaseWidget::lineDiseaseAddDisease()
 	this->slot_cancelDrawDiseases();
 
 	return;
+}
+
+void hn2d3dPixBaseWidget::appendLittleFrameDrawingPoint(const pixImagePoint& point)
+{
+	if (point.pixName.isEmpty() || point.pixPoint.x() < 0 || point.pixPoint.y() < 0)
+	{
+		return;
+	}
+
+	if (littleDrawRectType)
+	{
+		return;
+	}
+
+	if (!m_littleSingleImagePoints.isEmpty())
+	{
+		const pixImagePoint lastPoint = m_littleSingleImagePoints.last();
+		if (lastPoint.pixName == point.pixName &&
+			QLineF(lastPoint.pixPoint, point.pixPoint).length() <= 2.0)
+		{
+			return;
+		}
+	}
+
+	m_littleSingleImagePoints.append(point);
+}
+
+bool hn2d3dPixBaseWidget::hasLittleFramePointInPix(const QString& pixName) const
+{
+	for (const auto& point : qAsConst(m_littleSingleImagePoints))
+	{
+		if (point.pixName == pixName)
+		{
+			return true;
+		}
+	}
+	return false;
+	
 }
 
 void hn2d3dPixBaseWidget::drawLineDiseases(const vector<hnRoadDiseaseInfo>& diseases, QImage &image)
@@ -792,14 +831,13 @@ QPoint hn2d3dPixBaseWidget::pixImagePointToBigImagePoint(const pixImagePoint & p
 }
 
 void hn2d3dPixBaseWidget::setLittleDiseaseSize(const QVector<QRect>& diseaseRects, hnRoadDiseaseInfo& disease)
-{ 
-	QVector<QRect>rects = QVector<QRect>::fromList(diseaseRects.toList());
+{  
 	QRect boundingRect;
-	if (!rects.isEmpty())
+	if (!diseaseRects.isEmpty())
 	{
-		int rectHeight = qAbs(rects[0].height());
-		int rectWidth = qAbs(rects[0].width());
-		for (const QRect& rect : rects)
+		int rectHeight = qAbs(diseaseRects[0].height());
+		int rectWidth = qAbs(diseaseRects[0].width());
+		for (const QRect& rect : diseaseRects)
 		{
 			boundingRect = boundingRect.united(rect);
 		}
@@ -854,7 +892,8 @@ bool hn2d3dPixBaseWidget::isDrawingLittleFrameDisease() const
 	return this->m_workMode == WorkMode::ADD_MODE
 		&& this->m_isDrawingDisease
 		&& this->m_frameMode == FrameMode::LITTLE_FRAME
-		&& !this->addLineDiseType;
+		&& !this->addLineDiseType
+		&& !this->littleDrawRectType;
 }
 
 
@@ -919,6 +958,63 @@ void hn2d3dPixBaseWidget::rebuildLittleFrameBigImagePoints()
 }
 
 
+void hn2d3dPixBaseWidget::commitCurrentLittleRectDrawSelection()
+{
+	if (!this->m_isDrawingDisease ||
+		this->m_frameMode != FrameMode::LITTLE_FRAME ||
+		!this->littleDrawRectType)
+	{
+		return;
+	}
+
+	for (const QRect& rect : qAsConst(m_tmpLittleFrameDiseaseRects))
+	{
+		if (!m_committedLittleFrameDiseaseRects.contains(rect))
+		{
+			m_committedLittleFrameDiseaseRects.append(rect);
+		}
+	}
+}
+
+void hn2d3dPixBaseWidget::clearLittleRectDrawSelection()
+{
+	m_keepLittleFrameRectsAfterBrowse = false;
+	m_committedLittleFrameDiseaseRects.clear();
+	m_tmpLittleFrameDiseaseRects.clear();
+}
+
+void hn2d3dPixBaseWidget::resetLittleRectDrawAnchorToCurrentCursor()
+{
+	if (!this->m_isDrawingDisease ||
+		this->m_frameMode != FrameMode::LITTLE_FRAME ||
+		!this->littleDrawRectType)
+	{
+		return;
+	}
+
+	QPoint widgetPoint = this->mapFromGlobal(QCursor::pos());
+
+	pixImagePoint anchorPoint;
+	if (!widgetPointToDiseasePoint(widgetPoint, anchorPoint))
+	{
+		return;
+	}
+
+	if (m_widgetType == WIDGET_3D &&
+		hnDataManager::getDataManager()->getCurrentProject() &&
+		PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
+	{
+		int x = anchorPoint.pixPoint.x();
+		this->autoCorrectXIn3dView(x);
+		anchorPoint.pixPoint.setX(x);
+	}
+
+	m_diseaseStartPoint = anchorPoint;
+	m_diseaseEndPoint = anchorPoint;
+	m_tmpLittleFrameDiseaseRects = m_committedLittleFrameDiseaseRects;
+	this->update();
+}
+
 void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint)
 {
 	pixImagePoint anchorPoint;
@@ -943,6 +1039,7 @@ void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidg
 	// 否则会从旧图起点拉到新图点，形成巨大错误矩形。
 	if (littleDrawRectType)
 	{
+		m_keepLittleFrameRectsAfterBrowse = true;
 		m_diseaseStartPoint = anchorPoint;
 	}
 
@@ -976,17 +1073,27 @@ bool hn2d3dPixBaseWidget::moveCursorToBestContinuePointAfterBrowse(bool up, bool
 		return false;
 	}
 
-	if (m_littleSingleImagePoints.isEmpty())
+
+	pixImagePoint lastPoint;
+	if (littleDrawRectType&&
+		!m_diseaseEndPoint.pixName.isEmpty()&&
+		m_diseaseEndPoint.pixPoint.x() >=0 &&
+		m_diseaseEndPoint.pixPoint.y() >=0)
 	{
-		return false;
+		lastPoint = m_diseaseEndPoint;
 	}
-
-	 
-
-	const pixImagePoint lastPoint = m_littleSingleImagePoints.last();
-
+	else
+	{
+		if (m_littleSingleImagePoints.isEmpty())
+		{
+			return false;
+		}
+		lastPoint = m_littleSingleImagePoints.last();
+	}
 	QPoint lastWidgetPoint;
+
 	bool ok = diseasePointToWidgetPointAfterBrowse(lastPoint, up, lastWidgetPoint);
+	 
 
 	QRect visibleRect = visibleImageWidgetRect();
 

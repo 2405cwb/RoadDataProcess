@@ -82,7 +82,7 @@ protected:
 
 protected:
 	//往图片上画矩形数组里面的所有矩形
-	void drawRectsOnImage(QImage &image, const QVector<QRect> rects,int boarderWidth, const QColor &rectColor,Qt::PenStyle style);
+	void drawRectsOnImage(QImage &image, const QVector<QRect>& rects,int boarderWidth, const QColor &rectColor,Qt::PenStyle style);
 
 	void drawRectOnImageByStyle(
 		QImage &image,

@@ -499,73 +499,128 @@ void hnBrowsePixWidget::setPixResolution(const int width, const int height)
 }
 
 //这个函数要丢到多线程去
-void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx()
+void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 {
-	this->m_imageMapMutex.lock();
-	int btmIdx = m_buttomFrameIdx;
+	//this->m_imageMapMutex.lock();
+	//int btmIdx = m_buttomFrameIdx;
+	//const int LOAD_NUM = this->m_loadFrameNum;
+
+	//// 加载底部帧序号前后各LOAD_NUM张，注意不要重复添加了，如果imagemap中有，就不添加了
+	//for (auto idx = btmIdx - LOAD_NUM; idx < btmIdx + LOAD_NUM + 1; idx++)
+	//{
+	//	if (idx < 1)
+	//	{
+	//		continue;
+	//	}
+	//	auto iter = m_imageMap.find(idx);
+	//	//如果从imagemap中找不到图片，就加载
+	//	if (iter == m_imageMap.end() && idx < m_pixNameMap.size() + 1) //这里要加1，因为帧数是从1开始的
+	//	{
+	//		auto fileNameIter = this->m_pixNameMap.find(idx);
+	//		if (fileNameIter != this->m_pixNameMap.end())
+	//		{
+	//			QString fileName = m_pixNameMap.find(idx).value();
+	//			QImage image(fileName);
+
+	//			//镜像
+	//			image = image.mirrored(m_isHMirrored, m_isVMirrored);
+
+	//			this->m_imageMap.insert(idx, image);
+	//		}		
+	//	}
+	//}
+	//m_imageMapMaxFrameIdx  = btmIdx + LOAD_NUM + 1;
+
+	////对下面图片的处理（向上滑的时候）：如果大于0，删除所有下面的图片，只保留9张
+	//for (auto idx = btmIdx - LOAD_NUM; idx > 0; idx--)
+	//{
+	//	auto iter = m_imageMap.find(idx);
+	//	if (iter == m_imageMap.end())
+	//	{
+	//		continue;
+	//	}
+	//	else
+	//	{
+	//		m_imageMap.remove(idx);
+	//	}	
+	//}
+
+	////对上面图片的处理（向下滑的时候）： 删除最大帧序号上面的十张
+	//for (auto idx = m_imageMapMaxFrameIdx; idx < m_imageMapMaxFrameIdx + LOAD_NUM  + 1; idx++)
+	//{
+	//	auto iter = m_imageMap.find(idx);
+	//	if (iter == m_imageMap.end())
+	//	{
+	//		continue;
+	//	}
+	//	else
+	//	{
+	//		m_imageMap.remove(idx);
+	//	}
+	//}
+
+	////异常处理，如果图片大于100张，直接清空
+	//if (m_imageMap.size() > 50)
+	//{
+	//	m_imageMap.clear();
+	//}
+
+	//this->m_imageMapMutex.unlock();
+
+	const int btmIdx = bottomFrameIdx;
 	const int LOAD_NUM = this->m_loadFrameNum;
+	const int minKeep = qMax(1, btmIdx - LOAD_NUM);
+	const int maxKeep = qMin(m_pixNameMap.size(), btmIdx + LOAD_NUM);
 
-	// 加载底部帧序号前后各LOAD_NUM张，注意不要重复添加了，如果imagemap中有，就不添加了
-	for (auto idx = btmIdx - LOAD_NUM; idx < btmIdx + LOAD_NUM + 1; idx++)
+	for (int idx = minKeep; idx <= maxKeep; ++idx)
 	{
-		if (idx < 1)
 		{
-			continue;
-		}
-		auto iter = m_imageMap.find(idx);
-		//如果从imagemap中找不到图片，就加载
-		if (iter == m_imageMap.end() && idx < m_pixNameMap.size() + 1) //这里要加1，因为帧数是从1开始的
-		{
-			auto fileNameIter = this->m_pixNameMap.find(idx);
-			if (fileNameIter != this->m_pixNameMap.end())
+			QMutexLocker locker(&m_imageMapMutex);
+			if (m_imageMap.contains(idx))
 			{
-				QString fileName = m_pixNameMap.find(idx).value();
-				QImage image(fileName);
-
-				//镜像
-				image = image.mirrored(m_isHMirrored, m_isVMirrored);
-
-				this->m_imageMap.insert(idx, image);
-			}		
+				continue;
+			}
 		}
-	}
-	m_imageMapMaxFrameIdx  = btmIdx + LOAD_NUM + 1;
 
-	//对下面图片的处理（向上滑的时候）：如果大于0，删除所有下面的图片，只保留9张
-	for (auto idx = btmIdx - LOAD_NUM; idx > 0; idx--)
-	{
-		auto iter = m_imageMap.find(idx);
-		if (iter == m_imageMap.end())
+		const QString fileName = m_pixNameMap.value(idx);
+		if (fileName.isEmpty())
 		{
 			continue;
 		}
-		else
-		{
-			m_imageMap.remove(idx);
-		}	
-	}
 
-	//对上面图片的处理（向下滑的时候）： 删除最大帧序号上面的十张
-	for (auto idx = m_imageMapMaxFrameIdx; idx < m_imageMapMaxFrameIdx + LOAD_NUM  + 1; idx++)
-	{
-		auto iter = m_imageMap.find(idx);
-		if (iter == m_imageMap.end())
+		QImage image(fileName);
+		if (image.isNull())
 		{
 			continue;
 		}
-		else
+
+		image = image.mirrored(m_isHMirrored, m_isVMirrored);
+
 		{
-			m_imageMap.remove(idx);
+			QMutexLocker locker(&m_imageMapMutex);
+			if (!m_imageMap.contains(idx))
+			{
+				m_imageMap.insert(idx, image);
+			}
 		}
 	}
 
-	//异常处理，如果图片大于100张，直接清空
-	if (m_imageMap.size() > 50)
+	QVector<int> removeKeys;
 	{
-		m_imageMap.clear();
-	}
+		QMutexLocker locker(&m_imageMapMutex);
+		for (auto it = m_imageMap.constBegin(); it != m_imageMap.constEnd(); ++it)
+		{
+			if (it.key() < minKeep || it.key() > maxKeep)
+			{
+				removeKeys.append(it.key());
+			}
+		}
 
-	this->m_imageMapMutex.unlock();
+		for (int key : qAsConst(removeKeys))
+		{
+			m_imageMap.remove(key);
+		}
+	}
 }
 
 bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
@@ -596,6 +651,27 @@ bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 	m_imageMap.insert(frameIdx, image);
 	return true;
 
+}
+
+void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
+{
+	if (bottomFrameIdx <= 0)
+	{
+		return;
+	}
+
+	if (m_preloadFuture.isRunning())
+	{
+		return;
+	}
+
+	if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
+	{
+		return;
+	}
+
+	m_lastPreloadBottomFrameIdx = bottomFrameIdx;
+	m_preloadFuture = QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx, bottomFrameIdx);
 }
 
 void hnBrowsePixWidget::drawSomeThingOnImage(QImage & image)
@@ -981,8 +1057,8 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		//底部帧序号赋值
 		this->m_buttomFrameIdx = frameIdx;
 
-		QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx);
-
+		//QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx);
+		schedulePreloadImages(static_cast<int>(frameIdx));
 		//计算开始里程
 		this->m_beginEncoderMile = (m_buttomFrameIdx - 1) * heightScale * m_pixHeight;
 
@@ -1040,7 +1116,8 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		//底部帧序号赋值
 		this->m_buttomFrameIdx = frameIdx;
 
-		QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx);
+	//	QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx);
+		schedulePreloadImages(static_cast<int>(frameIdx));
 		//计算开始里程
 		this->m_beginEncoderMile = (m_buttomFrameIdx - 1) * heightScale * m_pixHeight;
 
