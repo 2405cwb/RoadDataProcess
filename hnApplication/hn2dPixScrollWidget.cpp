@@ -22,16 +22,7 @@ void hn2dPixScrollWidget::initConnect()
 }
 
 void hn2dPixScrollWidget::keyPressEvent(QKeyEvent *event)
-{
-
-	//auto function = [this]() {
-	//	while (this->m_autoPlay)
-	//	{
-	//		std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-	//		this->m_scrollbar->setValue(m_scrollbar->value() - 1);			// 滚动条从下向上滚动
-	//		std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-	//	}
-	//};
+{ 
 	// 按空格键修改滚动条的值
 	if (event->key() == Qt::Key_Space)
 	{
@@ -58,34 +49,37 @@ void hn2dPixScrollWidget::keyPressEvent(QKeyEvent *event)
 	{
 		const bool up = true;
 		const int step = getBrowStep(false); 
+		emit signal_moveMouse(up, true);
+
 		this->m_scrollbar->setValue(m_scrollbar->value() - step);
-
-
-		QTimer::singleShot(0, this, [this, up]
-		{ 
-			emit signal_moveMouse(up, true);
-		});
+		 
 		event->accept();
-		return;
-		//QCoreApplication::processEvents();
+		return; 
 	}
 	else if (event->key() == Qt::Key_Down || event->key() == Qt::Key_S)
 	{
 		const bool up = false;
 		const int step = getBrowStep(false);
 
-	 
-		this->m_scrollbar->setValue(m_scrollbar->value() + step);
+		emit signal_moveMouse(up, true);
 
-		QTimer::singleShot(0, this, [this, up]
-		{
-			emit signal_moveMouse(up, true);
-		});
+		this->m_scrollbar->setValue(m_scrollbar->value() + step);
+	 
 		event->accept();
 		return;
 
 	}
 	QWidget::keyPressEvent(event);
+}
+
+int hn2dPixScrollWidget::browseStep() const
+{
+	return getBrowStep(false);
+}
+
+bool hn2dPixScrollWidget::is2DView() const
+{
+	return true;
 }
 
 void hn2dPixScrollWidget::slot_BlockValueChanged(int value)

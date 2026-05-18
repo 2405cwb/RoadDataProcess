@@ -482,11 +482,31 @@ void hn3dPixWidget::mousePressEvent(QMouseEvent * event)
 			}
 			else
 			{
-				// 修改标志，记录按下的位置
+
+
 				this->m_isRightDeleteMouseDown = true;
 				m_RightDeleteMousePoint = event->pos();
-				// 右键按下不拖拽时也删除自动化模式
-				this->littleFrameRightButtonDragDelete(event->pos());
+
+
+				m_pendingRightClickDeletePoint = event->pos();
+				const int serial = ++m_pendingRightClcikDeleteSerial;
+				QTimer::singleShot(QApplication::doubleClickInterval(), this, [this, serial]()
+				{
+					if (serial != m_pendingRightClcikDeleteSerial)
+					{
+						return;
+					}
+					if (m_pendingRightClickDeletePoint.x() < 0 || m_pendingRightClickDeletePoint.y() < 0)
+					{
+						return;
+					}
+
+
+
+					this->littleFrameRightButtonDragDelete(m_pendingRightClickDeletePoint);
+					m_pendingRightClickDeletePoint = QPoint(-1, -1);
+
+				});
 			}
 		}
 	}
@@ -709,6 +729,8 @@ void hn3dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	// 删除鼠标移动路径上的自动化模式
 	if (this->m_isRightDeleteMouseDown)
 	{
+		++m_pendingRightClcikDeleteSerial;
+		m_pendingRightClickDeletePoint = QPoint(-1,-1);
 		this->littleFrameRightButtonDragDelete(event->pos());
 	}
 
@@ -977,7 +999,7 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 
 				//画出自动化模式
 				const QColor rectColor = Qt::red;
-				this->drawRectsOnImage(image, QVector<QRect>::fromList(this->m_tmpLittleFrameDiseaseRects.toList()), 10, rectColor, Qt::SolidLine);
+				this->drawRectsOnImage(image, QVector<QRect>::fromList(this->m_tmpLittleFrameDiseaseRects.toList()),   diseaseImagePixels(image,m_diseaseDrawStyle.tempRectWidth), rectColor, Qt::SolidLine);
 			}
 			else
 			{
@@ -998,7 +1020,7 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 							QPainter painter(&image);
 							QPen pen;
 							pen.setColor(Qt::yellow);
-							pen.setWidth(10);
+							pen.setWidth(m_diseaseDrawStyle.tempRectWidth);
 							pen.setStyle(Qt::DashLine);
 							painter.setPen(pen);
 							painter.drawLine(line);
@@ -1009,7 +1031,7 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 
 							//画出自动化模式
 							const QColor rectColor = Qt::red;
-							this->drawRectsOnImage(image, QVector<QRect>::fromList(tmpDiseaseRects.toList()), 10, rectColor, Qt::SolidLine);
+							this->drawRectsOnImage(image, QVector<QRect>::fromList(tmpDiseaseRects.toList()), diseaseImagePixels(image,m_diseaseDrawStyle.tempRectWidth), rectColor, Qt::SolidLine);
 						}
 					}
 
@@ -1026,7 +1048,7 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 
 					//画出自动化模式
 					const QColor rectColor = Qt::red;
-					this->drawRectsOnImage(image, QVector<QRect>::fromList(this->m_tmpLittleFrameDiseaseRects.toList()), 12, rectColor, Qt::SolidLine);
+					this->drawRectsOnImage(image, QVector<QRect>::fromList(this->m_tmpLittleFrameDiseaseRects.toList()), diseaseImagePixels(image,m_diseaseDrawStyle.tempRectWidth), rectColor, Qt::SolidLine);
 
 				}
 
@@ -1149,9 +1171,8 @@ bool hn3dPixWidget::isTmpDiseaseRoadTypeValid(const int & frameType)
 	return false;
 }
 
-void hn3dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& diseases, QImage & image)
+void hn3dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& diseases, QImage &image)
 {
-	QVector<QRect> rects;
 	for (auto disease : diseases)
 	{
 		if (disease.vec3dRect.empty() || disease.nDrawType == 1)
@@ -1160,47 +1181,49 @@ void hn3dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& disease
 		}
 
 		hn3dRectI hnRect = disease.vec3dRect.at(0);
-
 		QRect diseaseRect = hn3dRectToBigImageQtRect(hnRect);
 
-		hnImagePainter imagePainter;
-		const int fontSize = m_fontSize;
-		imagePainter.setFontPixelSize(70);
-		imagePainter.setBoardWidth(12);  
-		int mile = qRound(hnApp::hnDataManager::getDataManager()->getCurrentProject()->enclToTrueMile(disease.dMileage)); //cwb 20240522修改
-	//	int mile = qRound(this->encoderMileToTrueMile( disease.dMileage));
+		const bool selected = selectedDiseaseId == disease.nID;
+		const bool mergeSelected = isSeclectedMergeDisease(disease);
 
-		int qian = mile / 1000;
-		int bai = mile - qian * 1000;
-		QString mileStr = QStringLiteral("桩号：") + "K" + QString::number(qian) + "+" + QString::number(bai).rightJustified(3, '0');
+		QColor rectColor = m_diseaseDrawStyle.bigFrameRectColor;
+		Qt::PenStyle penStyle = Qt::SolidLine;
 
-		QString diseaseInfo = QString::fromLocal8Bit(disease.strDisName) + "_" + QString::number(disease.nID) + "\n" 
-			+ mileStr + "\n" 
-		    + QStringLiteral("计算长度：") + QString::number(disease.dRealLen, 'f', 2) + "\n" 
-			+ QStringLiteral("计算宽度：") + QString::number(disease.dReaWidth, 'f', 2)+"\n"
-			+ QStringLiteral("计算面积：") + QString::number(disease.dArea, 'f', 2);
-		QString mark = QString::fromLocal8Bit(disease.strRemark);
-		if (!mark.isEmpty())
+		if (selected)
 		{
-			diseaseInfo += "\n" + QStringLiteral("病害备注：") + mark;
+			rectColor = m_diseaseDrawStyle.selectedRectColor;
+			penStyle = Qt::DashDotDotLine;
 		}
-		QColor rectColor(144, 238, 144);
-		//QColor rectColor = Qt::red; 
-		QColor textColor = Qt::blue;
-		if (selectedDiseaseId == disease.nID)
+		else if (mergeSelected)
 		{
-			rectColor = Qt::yellow;
-		}
-		if (this->isSeclectedMergeDisease(disease) )
-		{
-			rectColor = Qt::yellow;
+			rectColor = m_diseaseDrawStyle.mergedRectColor;
 		}
 
-		imagePainter.drawRectOnImage(image, diseaseRect, diseaseInfo, Qt::red, Qt::yellow);
+		const int rectWidth = selected
+			? m_diseaseDrawStyle.selectedRectWidth
+			: m_diseaseDrawStyle.bigFrameRectWidth;
+
+		const int fontSize = selected
+			? m_diseaseDrawStyle.selectedLabelFontSize
+			: m_diseaseDrawStyle.normalLabelFontSize;
+
+		const QString diseaseInfo = buildFrameDiseaseLabel(
+			disease,
+			selected,
+			true,
+			true);
+
+		drawDiseaseRectWithCallout(
+			image,
+			diseaseRect,
+			diseaseInfo,
+			diseaseImagePixels(image, rectWidth),
+			rectColor,
+			penStyle,
+			diseaseImagePixels(image, fontSize)
+			);
 	}
-
 }
-
 void hn3dPixWidget::bigFrameAddDisease(const QPoint & mousePoint)
 {
 	//检测点是否有效
@@ -2307,22 +2330,29 @@ bool hn3dPixWidget::drawBigFrameProcess()
 	  
 	return true;
 }
+ 
 
-void hn3dPixWidget::drawTmpLargeFrameDisease(QImage & image)
+void hn3dPixWidget::drawTmpLargeFrameDisease(QImage &image)
 {
-	//把单张图片的坐标转成大张图片的坐标
-	QPoint bigImageStart = this->singleImagePointToBigImagePoint(m_diseaseStartPoint.pixPoint, m_diseaseStartPoint.pixName);
-	QPoint bigImageEnd = this->singleImagePointToBigImagePoint(m_diseaseEndPoint.pixPoint, m_diseaseEndPoint.pixName);
+	QPoint bigImageStart = singleImagePointToBigImagePoint(
+		m_diseaseStartPoint.pixPoint,
+		m_diseaseStartPoint.pixName);
 
+	QPoint bigImageEnd = singleImagePointToBigImagePoint(
+		m_diseaseEndPoint.pixPoint,
+		m_diseaseEndPoint.pixName);
 
 	QRect rect(bigImageStart, bigImageEnd);
 	rect = rect.normalized();
 
-	hnImagePainter imagePainter;
-	imagePainter.setBoardWidth(12);
-	imagePainter.setFontPixelSize(120);
-	imagePainter.drawRectOnImage(image, rect, QString::fromLocal8Bit(""), Qt::blue, Qt::black);
+	drawRectOnImageByStyle(
+		image,
+		rect,
+		m_diseaseDrawStyle.tempRectWidth,
+		m_diseaseDrawStyle.tempRectColor,
+		Qt::SolidLine);
 }
+
 
 hnCommon::hnRoadDiseaseInfo hn3dPixWidget::caculateBigFrameDiseaseAttribute(const QRect & diseaseRect, const hnDiseaseSetInfo & diseaseSetInfo, const QString& diseaseInfo)
 {
@@ -2971,13 +3001,10 @@ QVector<QRect> hn3dPixWidget::caculateLittleFrameRects(QVector<hnRoadDiseaseInfo
 
 	return resultRects;
 }
-
-void hn3dPixWidget::drawLittleFrameDisease(const vector<hnRoadDiseaseInfo>& diseases, QImage & image)
+void hn3dPixWidget::drawLittleFrameDisease(const vector<hnRoadDiseaseInfo>& diseases, QImage &image)
 {
 	for (auto disease : diseases)
 	{
-	 
-
 #ifdef  ALL_LITTLE_DRAW
 		if (disease.vec2dRect.empty())
 		{
@@ -2990,59 +3017,64 @@ void hn3dPixWidget::drawLittleFrameDisease(const vector<hnRoadDiseaseInfo>& dise
 		{
 			continue;
 		}
-#endif 
-		QVector<QRect> rects;
-		QRect diseaseRect;
-		if (disease.vec3dRect.size()<=0)
+#endif
+
+		if (disease.vec3dRect.empty())
 		{
 			continue;
 		}
+
+		QVector<QRect> rects;
 		for (const hn3dRectI &hnRect : qAsConst(disease.vec3dRect))
 		{
-			diseaseRect = this->hn3dRectToBigImageQtRect(hnRect);
-			rects.push_back(diseaseRect);
-		} 
-
-		hnImagePainter imagePainter;
-		const int fontSize = m_fontSize;
-		imagePainter.setFontPixelSize(70);
-
-		int mile = qRound(hnApp::hnDataManager::getDataManager()->getCurrentProject()->enclToTrueMile(disease.dMileage));
-
-		int qian = mile / 1000;
-		int bai = mile - qian * 1000;
-		QString mileStr = QStringLiteral("桩号：") + "K" + QString::number(qian) + "+" + QString::number(bai).rightJustified(3, '0');
-		QString deepStr = disease.dDepth == 0 ? "" : "\n" + QStringLiteral("深度：") + QString::number(disease.dDepth);
-		QString diseaseInfo = QString::fromLocal8Bit(disease.strDisName) +"_" + QString::number(disease.nID) +
-			+ "\n" + mileStr 
-			+ "\n" + QStringLiteral("长度：") + QString::number(disease.dLength)
-			+ "\n" + QStringLiteral("宽度：") + QString::number(disease.dWidth)
-			+ "\n" + QStringLiteral("面积：") + QString::number(disease.dArea) 
-			+ deepStr;
-	
-		QColor rectColor(Qt::red);
-		Qt::PenStyle pen(Qt::SolidLine);
-		if (selectedDiseaseId == disease.nID)
-		{
-			pen = Qt::DashDotDotLine;
-		}
-		else	if (isSeclectedMergeDisease(disease))
-		{
-			rectColor = Qt::yellow;
-		}
-		else
-		{
-			rectColor = Qt::red;
+			rects.push_back(hn3dRectToBigImageQtRect(hnRect));
 		}
 
-		//画自动化模式
-		this->drawRectsOnImage(image, rects, 10, rectColor, pen);
-		//画文字
-		QPoint textPos = this->findMinPoint(rects);
-		imagePainter.drawTextOnImage(image, diseaseInfo, Qt::yellow, textPos);
+		const bool selected = selectedDiseaseId == disease.nID;
+		const bool mergeSelected = isSeclectedMergeDisease(disease);
+
+		QColor rectColor = m_diseaseDrawStyle.littleFrameRectColor;
+		Qt::PenStyle penStyle = Qt::SolidLine;
+
+		if (selected)
+		{
+			rectColor = m_diseaseDrawStyle.selectedRectColor;
+			penStyle = Qt::DashDotDotLine;
+		}
+		else if (mergeSelected)
+		{
+			rectColor = m_diseaseDrawStyle.mergedRectColor;
+		}
+
+		const int rectWidth = selected
+			? m_diseaseDrawStyle.selectedRectWidth
+			: m_diseaseDrawStyle.littleFrameRectWidth;
+
+		this->drawRectsOnImage(image, rects, diseaseImagePixels(image, rectWidth), rectColor, penStyle);
+
+		const int fontSize = selected
+			? m_diseaseDrawStyle.selectedLabelFontSize
+			: m_diseaseDrawStyle.normalLabelFontSize;
+
+		const QString diseaseInfo = buildFrameDiseaseLabel(
+			disease,
+			selected,
+			false,
+			true);
+
+	 
+
+
+		drawDiseaseCalloutLabel(
+			image,
+			unitedRectOfRects(rects),
+			diseaseInfo,
+			diseaseImagePixels(image,fontSize),
+			m_diseaseDrawStyle.labelTextColor,
+			m_diseaseDrawStyle.calloutLineColor);
+		}
+
 	}
-}
-
 QVector<QRect> hn3dPixWidget::caculateLittleFrameBigImageRects(const hnRoadDiseaseInfo & disease)
 {
 	QVector<QRect> rects;
@@ -3643,7 +3675,13 @@ void hn3dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 		}
 		if (event->button() == Qt::RightButton)
 		{
-			this->bigFrameEditProcess(event->pos());
+			++m_pendingRightClcikDeleteSerial;
+			m_pendingRightClickDeletePoint = QPoint(-1,-1);
+			m_isRightDeleteMouseDown = false;
+			m_RightDeleteMousePoint = QPoint(-1, -1);
+			this->selectDisease(event->pos());
+			event->accept();
+			return;
 		}
 	}
 }
@@ -3757,8 +3795,11 @@ void hn3dPixWidget::selectDisease(const QPoint & mousePoint)
 	auto disease = getMousePosDisease(mousePoint);
 	if (disease.isValid())
 	{
-		emit	signal_selectDisease(disease);
-
+		selectedDiseaseId = disease.nID;
+		m_seclectedDiseases.clear();
+		m_seclectedDiseases.append(disease);
+		emit	signal_selectDisease(disease); 
+		update();
 	}
 }
 

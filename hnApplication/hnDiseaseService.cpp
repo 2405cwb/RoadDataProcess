@@ -108,10 +108,10 @@ void hnDiseaseService::getRoadDiseasesInRange(
 		}
 	}
 
-	qDebug() << "[DiseaseService] filterRoad diseases:"
+	/*qDebug() << "[DiseaseService] filterRoad diseases:"
 		<< timer.elapsed()
 		<< "ms, result:"
-		<< result.size();
+		<< result.size();*/
 }
 
 void hnDiseaseService::getStreetDiseaseInRange(double beginMile, double endMile, QVector<hnCommon::hnRoadDiseaseInfo>& result)

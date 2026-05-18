@@ -198,6 +198,9 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	showGpsBtn->setMaximumWidth(110);
 	showGpsBtn->setChecked(xrSetting->showGpsInfo);
 	showGpsBtn->setToolTip(QStringLiteral("仅支持具备高精度定位模块的设备数据!"));
+
+
+
 	//diseaseRectShowBtn = new QPushButton;
 	//if (xrSetting->diseaseRectShow)
 	//{
@@ -224,6 +227,7 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	toolBarLayout->addWidget(markBtn);
 	toolBarLayout->addWidget(showGpsBtn);
 
+	addWheelScrollStepOption(toolBarLayout);
 //	toolBarLayout->addWidget(diseaseRectShowBtn);
 
 	toolBarLayout->addSpacerItem(new QSpacerItem(20, 10, QSizePolicy::Fixed, QSizePolicy::Minimum));
@@ -395,6 +399,25 @@ void hnContinuouslyBrowsePixWidget::initSigSlot()
 	 
 }
 
+void hnContinuouslyBrowsePixWidget::addWheelScrollStepOption(QHBoxLayout* toolBarLayout)
+{
+	if (!toolBarLayout || !xrSetting)
+	{
+		return;
+	}
+	wheelOneImageChechBox = new QCheckBox(QStringLiteral("按张翻页"));
+	wheelOneImageChechBox->setMaximumWidth(85); 
+	wheelOneImageChechBox->setChecked(xrSetting->wheelScrollOneImage);
+	toolBarLayout->addWidget(wheelOneImageChechBox);
+
+	connect(wheelOneImageChechBox, &QCheckBox::stateChanged, this, [this](int state)
+	{
+
+		xrSetting->wheelScrollOneImage = (state == Qt::Checked);
+		xrSetting->writeData();
+	});
+}
+
 hnBrowsePixWidget * hnContinuouslyBrowsePixWidget::getShowPixLabel()
 {
 	return this->m_browsePixWidget;
@@ -443,15 +466,22 @@ void hnContinuouslyBrowsePixWidget::loadPix(const QStringList & pixNames)
 
 void hnContinuouslyBrowsePixWidget::wheelEvent(QWheelEvent * event)
 {
+	if (!m_scrollbar)
+	{
+		QWidget::wheelEvent(event);
+		return;
+	}
+	const int step = browseStep();
 	if (event->delta() > 0)// 当滚轮远离使用者时
 	{
 
-		this->m_scrollbar->setValue(m_scrollbar->value() - 1);
+		this->m_scrollbar->setValue(m_scrollbar->value() - step);
 	}
 	else// 当滚轮向使用者方向旋转时
 	{
-		this->m_scrollbar->setValue(m_scrollbar->value() + 1);
+		this->m_scrollbar->setValue(m_scrollbar->value() + step);
 	}
+	event->accept();
 }
 
 
@@ -479,5 +509,18 @@ void hnContinuouslyBrowsePixWidget::playThePicture()
 			std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
 		}
 		;
+}
+
+int hnContinuouslyBrowsePixWidget::getBrowStep(bool is3d) const
+{
+	if (is3d)
+	{
+		return 1;
+	}
+	else
+	{
+		return (xrSetting && xrSetting->wheelScrollOneImage) ? 2 : 1;
+
+	}
 }
 

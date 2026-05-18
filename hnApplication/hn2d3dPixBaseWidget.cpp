@@ -83,6 +83,25 @@ void hn2d3dPixBaseWidget::mousePressEvent(QMouseEvent *event)
 	QWidget::mousePressEvent(event);
 }
 
+int hn2d3dPixBaseWidget::diseaseImagePixels(const QImage &image, int screenPixels) const
+{
+	if (screenPixels <=0)
+	{
+		return 1;
+	}
+
+	if (image.isNull()||width()<= 0 ||height()<=0)
+	{
+		return screenPixels;
+	}
+
+	const double xScale = image.width() *1.0 / width();
+	const double yScale = image.height() *1.0 / height();
+	const double scale = qMax(xScale, yScale);
+
+	return qMax(1, qCeil(screenPixels * scale));
+}
+
 void hn2d3dPixBaseWidget::slot_cancelDrawDiseases()
 {
 	this->m_isDrawingDisease = false;
@@ -106,22 +125,14 @@ void hn2d3dPixBaseWidget::slot_deleteDisease(const hnRoadDiseaseInfo &disease)
 
 void hn2d3dPixBaseWidget::slot_moveMouse(bool up, bool is2D)
 {
-	this->m_isAllowDrawPix = true;
+	m_isAllowDrawPix = true;
 	if (!isDrawingLittleFrameDisease())
 	{
+	
 		return;
-	}
-	 
+	} 
 	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
-
-	//if (this->m_workMode == WorkMode::ADD_MODE &&
-	//	this->m_isDrawingDisease &&
-	//	this->m_frameMode == FrameMode::LITTLE_FRAME)
-	//{
-	//	isSuspended = false;
-	//	onLittleFrameBrowseMoved(up, is2D);
-	//}
-
+	 
 }
 
 
@@ -248,56 +259,78 @@ void hn2d3dPixBaseWidget::lineDiseaseAddDisease()
 	return;
 }
 
-void hn2d3dPixBaseWidget::drawLineDiseases(const vector<hnRoadDiseaseInfo>& diseases, QImage & image)
+void hn2d3dPixBaseWidget::drawLineDiseases(const vector<hnRoadDiseaseInfo>& diseases, QImage &image)
 {
-	if (true == diseases.empty())
+	if (diseases.empty())
 	{
 		return;
 	}
 
 	QPainter painter(&image);
 	QPen pen;
-	pen.setWidth(m_lineWidth);
-	pen.setColor(Qt::red);
-
+	pen.setWidth(m_diseaseDrawStyle.lineDiseaseWidth);
+	pen.setColor(m_diseaseDrawStyle.lineDiseaseColor);
 	painter.setPen(pen);
 
-	QFont font = painter.font();
-	font.setBold(true);
-	font.setPixelSize(m_fontSize);
-	painter.setFont(font);
 	for (auto disease : qAsConst(diseases))
 	{
 		if (3 != disease.nDrawType)
 		{
 			continue;
 		}
-		if (true == isSeclectedMergeDisease(disease))
+
+		const bool selected = selectedDiseaseId == disease.nID;
+		const bool mergeSelected = isSeclectedMergeDisease(disease);
+
+		if (selected)
 		{
-			pen.setColor(Qt::yellow);
-			painter.setPen(pen);
+			pen.setColor(m_diseaseDrawStyle.selectedRectColor);
+			pen.setStyle(Qt::DashDotDotLine);
+		}
+		else if (mergeSelected)
+		{
+			pen.setColor(m_diseaseDrawStyle.mergedRectColor);
+			pen.setStyle(Qt::SolidLine);
 		}
 		else
 		{
-			pen.setColor(Qt::red);
-			painter.setPen(pen);
+			pen.setColor(m_diseaseDrawStyle.lineDiseaseColor);
+			pen.setStyle(Qt::SolidLine);
 		}
 
-		QVector<QPoint> points;
-		points = this->createBrokenLinePoints(disease);
+		pen.setWidth(selected
+			? m_diseaseDrawStyle.selectedRectWidth
+			: m_diseaseDrawStyle.lineDiseaseWidth);
+
+		painter.setPen(pen);
+
+		QVector<QPoint> points = createBrokenLinePoints(disease);
+		if (points.size() < 2)
+		{
+			continue;
+		}
 
 		for (int i = 0; i < points.size() - 1; i++)
 		{
 			QLine line(points.at(i), points.at(i + 1));
 			painter.drawLine(line);
-
-			if (0 == i)
-			{
-				QString diseaseInfo = QString::fromLocal8Bit(disease.strDisName)
-					+ "_" + QString::number(disease.nID)+"_"+QString::number(disease.dArea,'f',2);
-				painter.drawText(points.at(i), diseaseInfo);
-			}
 		}
+
+		const int fontSize = selected
+			? m_diseaseDrawStyle.selectedLabelFontSize
+			: m_diseaseDrawStyle.lineLabelFontSize;
+
+		const QString diseaseInfo = selected
+			? buildLittleFrameDiseaseDetailLabel(disease, false)
+			: buildLineDiseaseLabel(disease);
+
+		drawDiseaseCalloutLabel(
+			image,
+			unitedRectOfPoints(points),
+			diseaseInfo,
+			fontSize,
+			m_diseaseDrawStyle.labelTextColor,
+			m_diseaseDrawStyle.calloutLineColor);
 	}
 }
 
@@ -307,47 +340,52 @@ void hn2d3dPixBaseWidget::drawTmpLineDiseases(QImage &image)
 	{
 		return;
 	}
+
 	QPainter painter(&image);
 	QPen pen;
-	pen.setWidth(m_lineWidth);
+	pen.setWidth(m_diseaseDrawStyle.tempLineDiseaseWidth);
 	pen.setStyle(Qt::DashLine);
-	pen.setColor(Qt::red);
+	pen.setColor(m_diseaseDrawStyle.tempLineDiseaseColor);
 	painter.setPen(pen);
-
-	QFont font = painter.font();
-	font.setPixelSize(m_fontSize);
-	painter.setFont(font);
 
 	for (int i = 0; i < m_tmpPaintLineDiseasePoints.size() - 1; i++)
 	{
-		QPoint begin = this->singleImagePointToBigImagePoint(
-			m_tmpPaintLineDiseasePoints.at(i).pixPoint, m_tmpPaintLineDiseasePoints.at(i).pixName);
-		QPoint end = this->singleImagePointToBigImagePoint(
-			m_tmpPaintLineDiseasePoints.at(i + 1).pixPoint, m_tmpPaintLineDiseasePoints.at(i + 1).pixName);
-		QLine line(begin, end);
-		painter.drawLine(line);
+		QPoint begin = singleImagePointToBigImagePoint(
+			m_tmpPaintLineDiseasePoints.at(i).pixPoint,
+			m_tmpPaintLineDiseasePoints.at(i).pixName);
+
+		QPoint end = singleImagePointToBigImagePoint(
+			m_tmpPaintLineDiseasePoints.at(i + 1).pixPoint,
+			m_tmpPaintLineDiseasePoints.at(i + 1).pixName);
+
+		painter.drawLine(QLine(begin, end));
 	}
-	 
 }
 
 //2025.11.3 新增绘制最后一个点与鼠标连线（虚线）
 void hn2d3dPixBaseWidget::drawTempDashLine(QImage &image)
 {
+	if (m_tempPoints.size() < 2)
+	{
+		return;
+	}
+
 	QPainter painter(&image);
 	QPen pen;
-	pen.setWidth(15);
+	pen.setWidth(m_diseaseDrawStyle.tempLineDiseaseWidth);
 	pen.setStyle(Qt::DashLine);
-	pen.setColor(Qt::yellow);
+	pen.setColor(m_diseaseDrawStyle.tempDashLineColor);
 	painter.setPen(pen);
 
-	QFont font = painter.font();
-	font.setPixelSize(m_fontSize);
-	painter.setFont(font);
+	QPoint startPoint = singleImagePointToBigImagePoint(
+		m_tempPoints[0].pixPoint,
+		m_tempPoints[0].pixName);
 
-	QPoint startPoint = singleImagePointToBigImagePoint(m_tempPoints[0].pixPoint, m_tempPoints[0].pixName);
-	QPoint endPoint = singleImagePointToBigImagePoint(m_tempPoints[1].pixPoint, m_tempPoints[1].pixName);
-	QLine line(startPoint, endPoint);
-	painter.drawLine(line);
+	QPoint endPoint = singleImagePointToBigImagePoint(
+		m_tempPoints[1].pixPoint,
+		m_tempPoints[1].pixName);
+
+	painter.drawLine(QLine(startPoint, endPoint));
 }
 
 

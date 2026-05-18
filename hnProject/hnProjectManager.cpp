@@ -15,7 +15,7 @@ namespace hnPro
 	}
 
 	// 添加工程
-	bool hnProjectManager::addProject(vector<hnProjectDataInfo> vecProject, QProgressDialog& progress)
+	bool hnProjectManager::addProject(vector<hnProjectDataInfo> vecProject)
 	{
 		if (vecProject.size() <= 0)
 		{
@@ -29,21 +29,10 @@ namespace hnPro
 			{
 				delete newProject;
 				newProject = NULL;
-				progress.hide();
+				
 				return false;
 			}
-			if (newProject->getProjectType()== PROJECT_TYPE::PROJECT_23D_TYPE|| newProject->getProjectType()== PROJECT_TYPE::PROJECT_2D_TYPE)
-			{
-				progress.setLabelText(QString::fromLocal8Bit("当前加载工程:%1").arg(newProject->get2DProName()));
-			}
-			else
-			{
-				progress.setLabelText(QString::fromLocal8Bit("当前加载工程:%1").arg(newProject->get3DProName()));
-
-			}
-			progress.show();
-			progress.setValue(i + 1);
-			QApplication::processEvents();
+			
 			m_vecProject.push_back(newProject);
 			//setCurProject(newProject->get2DProName());
 		}

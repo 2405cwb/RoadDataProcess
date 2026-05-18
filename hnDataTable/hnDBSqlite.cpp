@@ -199,6 +199,16 @@ using namespace std;
 	}
 
 
+	hnRoadDiseaseTable* hnDBSqlite::getDiseaseTable()
+	{
+		return &m_diseaseTable;
+	}
+
+	CtrlPointTable* hnDBSqlite::getCtrlPointTable()
+	{
+		return &m_ctrlPointTable;
+	}
+
 	//ÊÇ·ñÎª¿Õ
 	bool hnDBSqlite::isOpen()
 	{

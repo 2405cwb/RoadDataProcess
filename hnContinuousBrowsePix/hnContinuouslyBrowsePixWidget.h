@@ -91,6 +91,9 @@ private:
 	//信号槽初始化
 	void initSigSlot();
 
+	//添加滚轮滚动方式选项
+	void addWheelScrollStepOption(QHBoxLayout* toolBarLayout);
+
 //信号
 signals:
 	//信号：发送等比例显示窗口image
@@ -131,6 +134,12 @@ protected:
 
 	void playThePicture();
 
+	int getBrowStep(bool is3d ) const;
+
+	virtual int browseStep() const = 0;
+
+	virtual bool is2DView()  const = 0;
+
 signals:
 	void signal_enterWidget();
 	void signal_moveMouse(bool up,bool is2D);
@@ -161,6 +170,8 @@ protected:
 
 	//是否显示高精度定位
 	QCheckBox * showGpsBtn;
+
+	QCheckBox* wheelOneImageChechBox = nullptr;
 
 	//开启矩形框
 	QPushButton * diseaseRectShowBtn;

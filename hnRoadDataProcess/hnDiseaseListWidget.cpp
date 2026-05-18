@@ -87,26 +87,44 @@ void hnDiseaseListWidget::updateAllDiseases()
 	{
 		return;
 	}
+	const DiseaseSelectionKey  oldSelection = currentDiseaseSelectionKey();
+	int oldFilterIndex = 0;
+	if (filterComboBox)
+	{
+		oldFilterIndex = filterComboBox->currentIndex();
+	}
+
 
 	this->m_model->clear();												//清理表			
 	this->initTableHeader(this->m_model);								//初始化表头
 	//QVector<hnRoadDiseaseInfo> allDiseaseInfos = this->getAllDisease();	//获取所有病害
 	 
 	QVector<hnRoadDiseaseInfo> allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
+
 	this->addDiseaseToTable(allDiseaseInfos, this->m_model);			//遍历病害，添加到表上
 
 	 if (sortDiseaseTypeModel)
-    {
-        sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
-        sortDiseaseTypeModel->invalidate();
+	 {
+		 sortDiseaseTypeModel->setFilterKeyColumn(m_diseaseTypeColumn);
     }
 	 if (filterComboBox)
 	 {
+		 if (oldFilterIndex <0 ||oldFilterIndex>= filterComboBox->count())
+		 {
+			 oldFilterIndex = 0; 
+		 }
 		 filterComboBox->blockSignals(true);
-		 filterComboBox->setCurrentIndex(0);
+		 filterComboBox->setCurrentIndex(oldFilterIndex);
 		 filterComboBox->blockSignals(false);
 
+		 slot_selectDiseaseTypeIndexChanged(oldFilterIndex);
 	 }
+	 else
+	 {
+
+		 sortDiseaseTypeModel->invalidate();
+	 }
+	 selectDiseaseByKey(oldSelection);
 }
 
 void hnDiseaseListWidget::addDisease(const hnRoadDiseaseInfo & disease,bool modify)
@@ -206,6 +224,62 @@ QStandardItem* hnDiseaseListWidget::createNumericItem(const QString &text)
 		item->setData(QVariant(number), Qt::EditRole);
 	}
 	return item;
+}
+
+hnDiseaseListWidget::DiseaseSelectionKey hnDiseaseListWidget::currentDiseaseSelectionKey() const
+{
+	DiseaseSelectionKey key;
+	if (!m_view || !sortDiseaseTypeModel)
+	{
+		return key;
+	}
+	QModelIndex currentIndex = m_view->currentIndex();
+
+	if (!currentIndex.isValid())
+	{
+		return key;
+	}
+	QModelIndex idIndex = currentIndex.sibling(currentIndex.row(), m_idColumn);
+	QModelIndex tableNameIdx = currentIndex.sibling(currentIndex.row(), m_tableNameColumn
+	);
+
+	if (!idIndex.isValid() ||!tableNameIdx.isValid())
+	{
+		return key;
+	}
+
+	key.id = idIndex.data().toInt();
+	key.tableName = tableNameIdx.data().toString();
+	return key;
+}
+
+bool hnDiseaseListWidget::selectDiseaseByKey(const DiseaseSelectionKey&key)
+{
+	if (!key.isValid() ||!m_view ||!sortDiseaseTypeModel)
+	{
+		return false;
+	}
+	const int rowCount = sortDiseaseTypeModel->rowCount();
+	for ( int row =  0 ; row <rowCount ; ++row)
+	{
+		QModelIndex  idIndex = sortDiseaseTypeModel->index(row, m_idColumn);
+		QModelIndex nameIdex = sortDiseaseTypeModel->index(row, m_tableNameColumn);
+
+		if (!idIndex .isValid()||!nameIdex.isValid())
+		{
+			continue;
+		}
+		const int id = idIndex.data().toInt();
+		const QString tableName = nameIdex.data().toString();
+		if (id==key.id && tableName == key.tableName)
+		{
+			QModelIndex selectIndex = sortDiseaseTypeModel->index(row, 0);
+			MoveScrollBar(m_view, selectIndex);
+			return true;
+		}
+	
+	}
+	return false;
 }
 
 void hnDiseaseListWidget::slot_itemDoubleClicked(const QModelIndex & index)
@@ -443,14 +517,10 @@ void hnDiseaseListWidget::slot_selectDisease(const hnRoadDiseaseInfo& disease)
 		return;
 	}
 
-
-	//选中病害，获取病害位置
-	QModelIndex selectIndex = 	getUserSelectIndex(sortDiseaseTypeModel, disease);
-	if (!selectIndex.isValid())
-	{
-		return;
-	}
-	MoveScrollBar(m_view, selectIndex);
+	DiseaseSelectionKey key;
+	key.id = disease.nID;
+	key.tableName = QString::fromLocal8Bit(disease.strDiseaseTableName);
+	selectDiseaseByKey(key);  
 
 }
 
@@ -798,18 +868,7 @@ QModelIndex hnDiseaseListWidget::getUserSelectIndex(QSortFilterProxyModel * prox
 	if (!sourceModel)
 	{
 		return QModelIndex();
-	}
-
-
-
-
-	//QModelIndexList  matches = sourceModel->match(
-	//	sourceModel->index(0, searchCol),
-	//	role,
-	//	QVariant::fromValue(disease),
-	//	1,
-	//	Qt::MatchExactly | Qt::MatchRecursive //精准匹配
-	//);
+	} 
 	int rowCount = sourceModel->rowCount();
 	QModelIndexList matches;
 	for (int i = 0;  i < rowCount; ++i)

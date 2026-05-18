@@ -301,29 +301,42 @@ QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelIm
 
 QPoint hnBrowsePixWidget::screenPointToBigImagePoint(const QPoint & point)
 {
-	QPoint dstPoint;
+	const QSize imageSize = currentPaintImageSize();
 
-	double scale = this->m_tmpPixImageWithoutDisease.width() / (this->width()*1.0);
+	const double xScale = imageSize.width() * 1.0 / qMax(1, this->width());
+	const double yScale = imageSize.height() *1.0 / qMax(1, this->height());
 
-	double ySacle = this->m_tmpPixImageWithoutDisease.height() / this->height() * 1.0;
-
-	dstPoint.setX(point.x() * 1.0 * scale);
-	dstPoint.setY(point.y() * 1.0 * ySacle);
-
-	return dstPoint;
+	return QPoint(qRound(point.x()*xScale), qRound(point.y()*yScale));
+	 
 }
 
 QPoint hnBrowsePixWidget::bigImagePointToScreenPoint(const QPoint & point)
 {
-	QPoint dstPoint;
+	const QSize imageSize = currentPaintImageSize();
 
-	double xScale = this->m_tmpPixImageWithoutDisease.width() / this->width() * 1.0;
-	double ySacle = this->m_tmpPixImageWithoutDisease.height() / this->height() * 1.0;
+	const double xScale = imageSize.width() * 1.0 / qMax(1, this->width());
+	const double yScale = imageSize.height() *1.0 / qMax(1, this->height());
 
-	dstPoint.setX(point.x() * 1.0 / xScale);
-	dstPoint.setY(point.y() * 1.0 / ySacle);
+	return QPoint(qRound(point.x()/xScale), qRound(point.y()/yScale));
+}
 
-	return dstPoint;
+
+QSize hnBrowsePixWidget::currentPaintImageSize() const
+{
+	const int widgetWidth = qMax(1, this->width());
+	const int widgetHeight = qMax(1, this->height());
+
+	if (m_pixWidth <=0)
+	{
+		if (!m_tmpPixImageWithoutDisease.isNull())
+		{
+			return m_tmpPixImageWithoutDisease.size();
+		}
+		return QSize(widgetWidth, widgetHeight);
+	}
+	const double imageScale = m_pixWidth *1.0 / widgetWidth;
+	const int imageHeight = qMax(1, qCeil(widgetHeight * imageScale));
+	return QSize(m_pixWidth, imageHeight);
 }
 
 int hnBrowsePixWidget::getCurrentMousePosFrameIdx()
@@ -443,8 +456,7 @@ void hnBrowsePixWidget::init()
 	//是否允许画图片
 	this->m_isAllowDrawPix = true;
 
-	//是否允许画最后点击点与鼠标位置连线（虚线）
-	this->m_isAllowDrawDashLine = false;
+	 
 
 	//是否允许联动
 	m_isAllowLinked = true;
@@ -556,6 +568,36 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx()
 	this->m_imageMapMutex.unlock();
 }
 
+bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
+{
+	if (frameIdx <1 || frameIdx >m_pixNameMap.size())
+	{
+		return false;
+	}
+
+	QMutexLocker locker(&m_imageMapMutex);
+	if (m_imageMap.contains(frameIdx))
+	{
+		return true;
+	}
+
+	const QString fileName = m_pixNameMap.value(frameIdx);
+	if (fileName.isEmpty())
+	{
+		return false;
+	}
+	QImage image(fileName);
+	if (image.isNull()
+		)
+	{
+		return false;
+	}
+	image = image.mirrored(m_isHMirrored, m_isVMirrored);
+	m_imageMap.insert(frameIdx, image);
+	return true;
+
+}
+
 void hnBrowsePixWidget::drawSomeThingOnImage(QImage & image)
 {
 }
@@ -599,20 +641,21 @@ void hnBrowsePixWidget::slot_updateCurrentScrollBar(const int scrollBarValue)
 	//倒转滚动条的值
 	int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
 
-	if (qAbs(tmpScrollBarValue - m_currentScrollBarValue) < 5 && qAbs(intervalTimeMS) > 70)
-	{
-		this->update();
-	}
-	//否则，延时进行更新，延时500ms
-	else
-	{
-		QTimer::singleShot(500, [=]() {
-			this->update();
-		});
-	}
+	//if (qAbs(tmpScrollBarValue - m_currentScrollBarValue) < 5 && qAbs(intervalTimeMS) > 70)
+	//{
+	//	this->update();
+	//}
+	////否则，延时进行更新，延时500ms
+	//else
+	//{
+	//	QTimer::singleShot(500, [=]() {
+	//		this->update();
+	//	});
+	//}
+	//m_currentScrollBarValue = tmpScrollBarValue;
 	m_currentScrollBarValue = tmpScrollBarValue;
-
-	
+	this->update();
+	//
 }
 
 void hnBrowsePixWidget::slot_moveMouse(bool up,bool is2D)
@@ -963,6 +1006,7 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 			int cnt;
 			cnt = frameNum - num;
 
+			ensureImageLoaded(frameIdx);
 			//从内存中读取
 			auto iter = this->m_imageMap.find(frameIdx);
 			if (iter == m_imageMap.end())
@@ -1002,7 +1046,7 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 
 		frameIdx = frameIdx - 0.5;
 
-
+		ensureImageLoaded(frameIdx);
 		//从内存中读取
 		auto iter = this->m_imageMap.find(frameIdx);
 		if (iter == m_imageMap.end())
@@ -1051,11 +1095,12 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		{
 			int cnt;
 			cnt = frameNum - num;
-
+			ensureImageLoaded(frameIdx);
 			//从内存中读取
 			auto iter = this->m_imageMap.find(frameIdx);
 			if (iter == m_imageMap.end())
 			{
+				this->delayReupdate();
 				return;
 			}
 			auto image = iter.value();
@@ -1095,8 +1140,27 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 	int tempH = this->height();
 	int tempw = this->width();
 	int tempValue = this->height()*(m_pixWidth / this->width());
-	QImage image(this->m_pixWidth, this->height()*(m_pixWidth / this->width()), QImage::Format_RGB888);
-	 
+
+	//QImage image(this->m_pixWidth, this->height()*(m_pixWidth / this->width()), QImage::Format_RGB888);
+
+ 
+
+	const QSize  imageSize = currentPaintImageSize();
+
+	QImage image(imageSize, QImage::Format_RGB888);
+
+
+	
+	if (!m_tmpPixImageWithoutDisease.isNull()&&
+		m_tmpPixImageWithoutDisease.size() == image.size())
+	{
+		image = m_tmpPixImageWithoutDisease.copy();
+	}
+	else
+	{
+		image.fill(Qt::black);
+	}
+
 	//允许画图片，就画上去
 	if (this->m_isAllowDrawPix)
 	{
@@ -1119,11 +1183,20 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 	this->m_lastScrollBarValue = this->m_currentScrollBarValue;
 }
 
+void hnBrowsePixWidget::resizeEvent(QResizeEvent* event)
+{
+	m_isAllowDrawPix = true;
+	m_tmpContectImage = QImage();
+	m_tmpPixImageWithoutDisease = QImage();
+	QWidget::resizeEvent(event);
+	update();
+}
+
 void hnBrowsePixWidget::delayReupdate()
 {
-	const int delayTime = 500;
+	const int delayTime = 30;
 
-	QTimer::singleShot(delayTime, [=]()
+	QTimer::singleShot(delayTime,this,[this]()
 	{
 		m_isAllowDrawPix = true;
 		this->update();

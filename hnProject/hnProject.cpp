@@ -18,6 +18,7 @@
 #include <QHostInfo>
 #include "../hnQtCommon/BaseException.h"
 #include <QMessageBox>
+#include <QElapsedTimer>
 namespace hnPro
 {
 	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0)

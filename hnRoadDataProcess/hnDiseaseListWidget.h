@@ -66,6 +66,21 @@ private:
 	void modelDeleteDisease(QStandardItemModel &model, const hnRoadDiseaseInfo &disease);
 
 	QStandardItem* createNumericItem(const QString &text);
+
+	struct DiseaseSelectionKey
+	{
+		int id = -1;
+		QString tableName;
+		bool isValid()const
+		{
+			return id >= 0 && !tableName.isEmpty();
+		}
+
+	};
+
+	DiseaseSelectionKey currentDiseaseSelectionKey()const;
+
+	bool selectDiseaseByKey(const DiseaseSelectionKey&key);
 signals:
 	void signal_road2dFrameIdxChanged(int frameNum);
 

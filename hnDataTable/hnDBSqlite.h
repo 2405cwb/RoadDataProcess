@@ -57,6 +57,16 @@ private:
 	vector<string> m_vecDiseaseTable;
 
 public:
+	hnRoadDiseaseTable* getDiseaseTable();
+	CtrlPointTable* getCtrlPointTable();
+
+private:
+	// 病害数据库
+	hnRoadDiseaseTable m_diseaseTable;
+
+	// 控制点表
+	CtrlPointTable m_ctrlPointTable;
+public:
 	// 工程信息设置表
 	hnProjectSetInfoTable m_projectSetTable;
 
@@ -66,11 +76,8 @@ public:
 	// 里程校桩表
 	hnMilePileTable m_milePileTable;
 
-	// 病害数据库
-	hnRoadDiseaseTable m_diseaseTable;
 
-	// 控制点表
-	CtrlPointTable m_ctrlPointTable;
+	
 
 	//桩号表
 	hnMileTable m_mileInfoTable;

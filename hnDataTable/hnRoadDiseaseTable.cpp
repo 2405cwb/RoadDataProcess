@@ -20,13 +20,25 @@ hnRoadDiseaseTable::~hnRoadDiseaseTable()
 {
 }
 
+void hnRoadDiseaseTable::debugIsDBOpen()
+{
+	qDebug() << "[hnRoadDiseaseTable]"
+		<<   ( m_sqliteDB.IsOpen() == true ? "true" : "false");
+	 
+}
+
+void * hnRoadDiseaseTable::debugDbPtr()
+{
+	return m_sqliteDB.getDb();
+}
+
 // 设置病害表名称列表
 void hnRoadDiseaseTable::setDiseaseTableName(vector<string>& vecDiseaseTableName)
 {
 	m_vecDiseaseTableName = vecDiseaseTableName;
 }
 
-bool hnRoadDiseaseTable::readRoadDiseaseData(const hnProjectSetInfo& setInfo , const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance)
+bool hnRoadDiseaseTable::readRoadDiseaseData_Service(const hnProjectSetInfo& setInfo , const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance)
 {
 	int line = setInfo.nLineType;
 	roadYDistance = qRound(roadYDistance * 100) / 100.0;//保留两位小数
@@ -204,7 +216,7 @@ bool hnRoadDiseaseTable::readRoadDiseaseData(const hnProjectSetInfo& setInfo , c
 	return true;
 }
 
-bool hnRoadDiseaseTable::readRoadDiseaseData(const hnProjectSetInfo& setInfo, double dmiStart, double dmiEnd, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance)
+bool hnRoadDiseaseTable::readRoadDiseaseData_Service(const hnProjectSetInfo& setInfo, double dmiStart, double dmiEnd, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance)
 {
 	int line = setInfo.nLineType;
 	roadYDistance = qRound(roadYDistance * 100) / 100.0;//保留两位小数
@@ -372,7 +384,7 @@ bool hnRoadDiseaseTable::readRoadDiseaseData(const hnProjectSetInfo& setInfo, do
 	return true;
 }
 
-bool hnRoadDiseaseTable::read3dRoadDiseaseData(const QString& standard, double dmiStart, double dmiEnd, vector<hnRoadDiseaseInfo>&vecData)
+bool hnRoadDiseaseTable::read3dRoadDiseaseData_Service(const QString& standard, double dmiStart, double dmiEnd, vector<hnRoadDiseaseInfo>&vecData)
 {
 	// 判断数据库是否连接成功
 	if (!m_sqliteDB.IsOpen())
@@ -522,7 +534,7 @@ bool hnRoadDiseaseTable::read3dRoadDiseaseData(const QString& standard, double d
 	return true;
 }
 
-bool hnRoadDiseaseTable::readStreetData(const QString& standard, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, int line, double roadYDistance)
+bool hnRoadDiseaseTable::readStreetData_Service(const QString& standard, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, int line, double roadYDistance)
 {
 	roadYDistance = qRound(roadYDistance * 100) / 100.0;//保留两位小数
 														// 判断数据库是否连接成功
@@ -676,7 +688,7 @@ bool hnRoadDiseaseTable::readStreetData(const QString& standard, const QVector<h
 }
 
   
-void hnRoadDiseaseTable::readDesignDiseases(const QString& standard, double beginEncoderMile, double endEncoderMile, QVector<hnRoadDiseaseInfo>&result)
+void hnRoadDiseaseTable::readDesignDiseases_Service(const QString& standard, double beginEncoderMile, double endEncoderMile, QVector<hnRoadDiseaseInfo>&result)
 {
 	 
 	// 判断数据库是否连接成功
@@ -809,16 +821,16 @@ void hnRoadDiseaseTable::readDesignDiseases(const QString& standard, double begi
 }
  
 
-bool hnRoadDiseaseTable::deleteDiseases(vector<hnRoadDiseaseInfo> &vecData)
+bool hnRoadDiseaseTable::deleteDiseases_Service(vector<hnRoadDiseaseInfo> &vecData)
 {
 	for each (hnRoadDiseaseInfo dis in vecData)
 	{
-		deleteDisease(dis);
+		deleteDisease_Service(dis);
 	}
 	return true;
 }
 
-bool hnRoadDiseaseTable::deleteDisease(hnRoadDiseaseInfo &inData)
+bool hnRoadDiseaseTable::deleteDisease_Service( hnRoadDiseaseInfo &inData)
 {
 	char strQuery[SQL_QUERY_LEN];
 	memset(strQuery, 0, SQL_QUERY_LEN);
@@ -947,7 +959,7 @@ bool hnRoadDiseaseTable::deleteDisease(hnRoadDiseaseInfo &inData)
 	return true;
 }
 
-bool hnRoadDiseaseTable::deleteAllDisease()
+bool hnRoadDiseaseTable::deleteAllDisease_Service()
 {
 	////进度条
 	QProgressDialog progressDialog;
@@ -986,7 +998,7 @@ bool hnRoadDiseaseTable::deleteAllDisease()
 	return true;
 }
 
-bool hnRoadDiseaseTable::deleteAllDisease(vector<string> allDiseaseTables)
+bool hnRoadDiseaseTable::deleteAllDisease_Service(vector<string> allDiseaseTables)
 {
 	////进度条
 	QProgressDialog progressDialog;
@@ -1025,7 +1037,7 @@ bool hnRoadDiseaseTable::deleteAllDisease(vector<string> allDiseaseTables)
 	return true;
 }
 
-bool hnRoadDiseaseTable::readAllDiseases(const hnProjectSetInfo& setInfo, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo)
+bool hnRoadDiseaseTable::readAllDiseases_Service(const hnProjectSetInfo& setInfo, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo)
 {
 	int line = setInfo.nLineType;
 
@@ -1227,18 +1239,18 @@ int hnRoadDiseaseTable::getMaxID(const string& strTableName)
 }
 
 
-bool hnRoadDiseaseTable::writeDatas(const hnProjectSetInfo& projectConfig, vector<hnRoadDiseaseInfo>& vecData)
+bool hnRoadDiseaseTable::writeDatas_Service(const hnProjectSetInfo& projectConfig, vector<hnRoadDiseaseInfo>& vecData)
 {
 	for (int i = 0; i < vecData.size(); i++)
 	{
-		writeSingleDatas(projectConfig, vecData[i]);
+		writeSingleDatas_Service(projectConfig, vecData[i]);
 	}
 
 	return true;
 }
 
 
-bool hnRoadDiseaseTable::writeDataAffairs(const char* strTableName, bool bWrite, vector<hnRoadDiseaseInfo>& vecData, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle)/* = NULL*/)
+bool hnRoadDiseaseTable::writeDataAffairs_Service(const char* strTableName, bool bWrite, vector<hnRoadDiseaseInfo>& vecData, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle)/* = NULL*/)
 { 
 	// 判断数据库是否连接
 	if (!m_sqliteDB.IsOpen())
@@ -1466,7 +1478,7 @@ bool hnRoadDiseaseTable::writeDataAffairs(const char* strTableName, bool bWrite,
 }
 
 
-bool hnRoadDiseaseTable::writeSingleDatas(const hnProjectSetInfo& projectConfig, hnRoadDiseaseInfo& inData)
+bool hnRoadDiseaseTable::writeSingleDatas_Service(const hnProjectSetInfo& projectConfig, hnRoadDiseaseInfo& inData)
 { 
 	setAddDisease(inData);
 	// 判断数据库是否连接
@@ -1705,7 +1717,7 @@ bool hnRoadDiseaseTable::writeSingleDatas(const hnProjectSetInfo& projectConfig,
 	return true;
 }
 
-bool hnRoadDiseaseTable::updaetSingleDataInfo(hnRoadDiseaseInfo& inData)
+bool hnRoadDiseaseTable::updaetSingleDataInfo_Service(hnRoadDiseaseInfo& inData)
 {
 	// 判断数据库是否连接
 	if (!m_sqliteDB.IsOpen())
@@ -1837,7 +1849,7 @@ bool hnRoadDiseaseTable::updaetSingleDataInfo(hnRoadDiseaseInfo& inData)
 	return true;
 }
 
-bool hnRoadDiseaseTable::mergeDatas(const hnProjectSetInfo& projectConfig, QVector<hnRoadDiseaseInfo>& newDiseases, QVector<hnRoadDiseaseInfo>& oldDiseases)
+bool hnRoadDiseaseTable::mergeDatas_Service(const hnProjectSetInfo& projectConfig, QVector<hnRoadDiseaseInfo>& newDiseases, QVector<hnRoadDiseaseInfo>& oldDiseases)
 {
 	//获取新增病害
 	QVector<hnRoadDiseaseInfo> realNewDiseases;
@@ -1848,7 +1860,7 @@ bool hnRoadDiseaseTable::mergeDatas(const hnProjectSetInfo& projectConfig, QVect
 		if (std::find(oldDiseases.constBegin(),oldDiseases.constEnd(),item) == oldDiseases.constEnd())
 		{
 			item.nID = getMaxID(item.strDiseaseTableName); 
-			ok =  writeSingleDatas(projectConfig,item); 
+			ok =  writeSingleDatas_Service(projectConfig,item);
 		}
 
 	}
@@ -1860,7 +1872,7 @@ bool hnRoadDiseaseTable::mergeDatas(const hnProjectSetInfo& projectConfig, QVect
 }
 
 //删除表数据
-bool hnRoadDiseaseTable::deleteFormData(const char* strTableName)
+bool hnRoadDiseaseTable::deleteFormData_Service(const char* strTableName)
 {
 	char strQuery[SQL_QUERY_LEN];
 	memset(strQuery, 0, SQL_QUERY_LEN);
@@ -1935,7 +1947,7 @@ bool hnRoadDiseaseTable::checkDiseaseExist(QString standard, int diseaseType)
 	}
 }
  
-bool hnRoadDiseaseTable::deleteAllTargetDrawTypeDisease( QString standard,int drawType)
+bool hnRoadDiseaseTable::deleteAllTargetDrawTypeDisease_Service( QString standard,int drawType)
 {
 	// 判断数据库是否连接成功
 	if (!m_sqliteDB.IsOpen())
@@ -2047,7 +2059,7 @@ void hnRoadDiseaseTable::FilterOutDisrase(const vector<hnRoadDiseaseInfo>& allDi
 	std::sort(returnDisease.begin(), returnDisease.end());
 }
 
-void hnRoadDiseaseTable::setDeleteDisease(hnRoadDiseaseInfo& dis)
+void hnRoadDiseaseTable::setDeleteDisease( hnRoadDiseaseInfo& dis)
 {
 	QString diseaseAtt = QString::fromLocal8Bit(dis.strAddFile4);
 	if (diseaseAtt.isEmpty() || diseaseAtt == "0")

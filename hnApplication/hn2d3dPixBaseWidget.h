@@ -58,6 +58,7 @@ protected:
 	
 	void mousePressEvent(QMouseEvent *event) override;
  
+	int diseaseImagePixels(const QImage &image,int screenPixels) const;
 public slots:
 	//取消画病害
 	void slot_cancelDrawDiseases();
@@ -217,6 +218,8 @@ protected:
 	// 右键拖拽删除病害时只记录按下时自动化模式位置，鼠标滑动的位置不处理，不然会卡
 	QPoint m_RightDeleteMousePoint;
 
+	int m_pendingRightClcikDeleteSerial = 0;
+	QPoint m_pendingRightClickDeletePoint = QPoint(-1,-1);
 	
 	//重新计算病害尺寸或 重新计算病后尺寸后写入数据库  
 	//save为false为适配以前版本，为自动化模式外接矩形计算长度和宽度,不写入数据库

@@ -12,36 +12,37 @@ class HNDATATABLE_EXPORT hnRoadDiseaseTable : public hnDBTable
 public:
 	hnRoadDiseaseTable();
 	virtual ~hnRoadDiseaseTable();
-
+	void debugIsDBOpen();
+	void * debugDbPtr();
 public:
 	// 设置病害表名称列表
 	void setDiseaseTableName(vector<string>& vecDiseaseTableName);
 	//删除病害
-	bool deleteDiseases(vector<hnRoadDiseaseInfo> &vecData);
-	bool deleteDisease(hnRoadDiseaseInfo &vecData);
+	bool deleteDiseases_Service(vector<hnRoadDiseaseInfo> &vecData);
+	bool deleteDisease_Service( hnRoadDiseaseInfo &vecData);
 
 	//清空所有病害
-	bool deleteAllDisease();
-	bool deleteAllDisease(vector<string> allDiseaseTables);
+	bool deleteAllDisease_Service();
+	bool deleteAllDisease_Service(vector<string> allDiseaseTables);
 
 	// 读取所有病害数据信息
 	//bool readAllData(QVector<hnRoadDiseaseInfo>& vecData, char* strQuery = NULL);
 public:
 	//获取工程中所有符合打标,及工程属性的病害（包括景观病害）
-	bool readAllDiseases(const hnProjectSetInfo& setInfo, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo);
+	bool readAllDiseases_Service(const hnProjectSetInfo& setInfo, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo);
 
 	//供单独三维工程调用  
-	bool read3dRoadDiseaseData(const QString& standard, double dmiStart,double dmiEnd ,  vector<hnRoadDiseaseInfo>&vecData);
+	bool read3dRoadDiseaseData_Service(const QString& standard, double dmiStart,double dmiEnd ,  vector<hnRoadDiseaseInfo>&vecData);
 
 	// 获得路面病害   miels::桩号表  vecData 返回病害表 line 上下行  roadYDistance：纵向距离  注意获得的病害面积并没有乘以权重
-	bool readRoadDiseaseData(const hnProjectSetInfo& setInfo, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance);
-	bool readRoadDiseaseData(const hnProjectSetInfo& setInfo, double dmiStart, double dmiEnd, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance);
+	bool readRoadDiseaseData_Service(const hnProjectSetInfo& setInfo, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance);
+	bool readRoadDiseaseData_Service(const hnProjectSetInfo& setInfo, double dmiStart, double dmiEnd, QVector<hnRoadDiseaseInfo>&vecData, const QVector<hnMarkInfo>& markinfo, double roadYDistance);
 
 	//获得区间内景观病害
-	bool readStreetData(const QString& standard, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, int line, double roadYDistance);
+	bool readStreetData_Service(const QString& standard, const QVector<hnMile>& miles, QVector<hnRoadDiseaseInfo>&vecData, int line, double roadYDistance);
 
 	// 读取设计模式病害
-	void readDesignDiseases(const QString& standard, double beginEncoderMile, double endEncoderMile, QVector<hnRoadDiseaseInfo>&data);
+	void readDesignDiseases_Service(const QString& standard, double beginEncoderMile, double endEncoderMile, QVector<hnRoadDiseaseInfo>&data);
 	
 		
 	// 读取指定表的病害数据
@@ -55,22 +56,22 @@ public:
 	int getMaxID(const string& strTableName);
 
 	// 批量写入病害数据信息
-	bool writeDatas(const hnProjectSetInfo& projectConfig, vector<hnRoadDiseaseInfo>& vecData);
+	bool writeDatas_Service(const hnProjectSetInfo& projectConfig, vector<hnRoadDiseaseInfo>& vecData);
 
 	// 批量病害数据信息
-	bool writeDataAffairs(const char* strTableName, bool bWrite, vector<hnRoadDiseaseInfo>& vecData, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle) = NULL);
+	bool writeDataAffairs_Service(const char* strTableName, bool bWrite, vector<hnRoadDiseaseInfo>& vecData, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle) = NULL);
 
 	// 写入病害数据信息
-	bool writeSingleDatas(const hnProjectSetInfo& projectConfig, hnRoadDiseaseInfo& inData);
+	bool writeSingleDatas_Service(const hnProjectSetInfo& projectConfig, hnRoadDiseaseInfo& inData);
 
 	//更新病害
-	bool updaetSingleDataInfo(hnRoadDiseaseInfo& inData);
+	bool updaetSingleDataInfo_Service(hnRoadDiseaseInfo& inData);
 
 	//合并病害   将新病害添加到旧病害库，过滤掉相同病害
-	bool mergeDatas(const hnProjectSetInfo& projectConfig, QVector<hnRoadDiseaseInfo>& newDiseases, QVector<hnRoadDiseaseInfo>& oldDiseases);
+	bool mergeDatas_Service(const hnProjectSetInfo& projectConfig, QVector<hnRoadDiseaseInfo>& newDiseases, QVector<hnRoadDiseaseInfo>& oldDiseases);
 
 	//删除表数据
-	bool deleteFormData(const char* strTableName);
+	bool deleteFormData_Service(const char* strTableName);
 
 	//检查数据库是否有传入的数据类型
 	//0 人工模式
@@ -79,7 +80,7 @@ public:
 	bool checkDiseaseExist(QString standard ,  int diseaseType);
 
 	//删除所有 相应绘制类型的病害
-	bool deleteAllTargetDrawTypeDisease(QString standard,int drawType);
+	bool deleteAllTargetDrawTypeDisease_Service(QString standard,int drawType);
 
 public: 
 	vector<string> GetAllDiseaseTableNames() { return m_vecDiseaseTableName; }

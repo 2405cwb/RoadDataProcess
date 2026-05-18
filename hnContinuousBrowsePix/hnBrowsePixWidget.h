@@ -41,6 +41,8 @@
 #include <QCache>
 #include "hncontinuousbrowsepix_global.h"
 #include "../hnConfigService/HnXRSettings.h"
+#include <QSize>
+#include <QResizeEvent>
 #pragma endregion
 
 
@@ -128,6 +130,10 @@ public:
 	*返回值：转换完成后label中的坐标，以label为坐标系
 	*/
 	QPoint bigImagePointToScreenPoint(const QPoint & point);
+
+
+	QSize currentPaintImageSize() const;
+
 
 	/*
 	*接口名称：screenToSingleImagePoint
@@ -276,6 +282,7 @@ private:
 	//多线程  根据底部帧序号更新imagemap 
 	void updateImageMapBasedOnBottomFrameIdx();
 
+	bool ensureImageLoaded( const int frameIdx);
 protected:
 	//往图片上画东西， 供子类重载
 	virtual void drawSomeThingOnImage(QImage &image);
@@ -286,6 +293,8 @@ protected:
 protected:
 	//绘图事件
 	void paintEvent(QPaintEvent * event) override final;
+
+	void resizeEvent(QResizeEvent* event) override;
 private:
 	//延迟再次刷新界面
 	void delayReupdate();
@@ -368,16 +377,7 @@ protected:
 	//是否允许画路面图片
 	bool m_isAllowDrawPix;
 
-
-	//画小框过程中是是否进行了翻页操作
-	bool isSuspended = false;
-
-	QPoint lastPoint_Suspending;
-	QPoint current_Suspending;
-
-	//2025.11.3 是否允许画最后点击点与鼠标位置连线（虚线）
-	bool m_isAllowDrawDashLine;
-
+	 
 	//临时内容画板
 	QImage m_tmpContectImage;
 

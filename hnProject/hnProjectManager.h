@@ -18,7 +18,7 @@ namespace hnPro
 		~hnProjectManager();
 
 		// 添加工程
-		bool addProject(vector<hnProjectDataInfo> vecProject, QProgressDialog& progress);
+		bool addProject(vector<hnProjectDataInfo> vecProject);
 
 		// 设置当前工程
 		bool setCurProject(QString strProjectName);

@@ -9,6 +9,7 @@
 #include "../hnConfigService/HnXRSettings.h"
 #include <QImage>
 #include <QImageReader>
+#include<QElapsedTimer>
 namespace hnPro
 {
 	hn2DProject::hn2DProject()
@@ -25,6 +26,8 @@ namespace hnPro
 	//配置必须文件   缺少必须文件返回false  二维工程初始化失败
 	bool hn2DProject::init(QString strProjectPath, QString strProjectName, hnProjectSetInfo projectInfo,PROJECT_TYPE type)
 	{
+		QElapsedTimer timer;
+		timer.restart();
 		m_projectInfo = projectInfo;
 		QString proPath;
 		switch (type)
@@ -111,6 +114,8 @@ namespace hnPro
 		initEquipmentBasePath(proPath);
 		initRoadInfo(proPath);
 		initGpsInfos();
+
+		qDebug() << "hn2dProject.cpp init:" << timer.elapsed() << "ms";
 		////初始化桩号文件 
 		//vector<hnMilePile>;
 		//hnMilePile mile;

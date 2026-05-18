@@ -10,10 +10,51 @@
 #include "../hnCommon/hnRoadStruct.h"
 #include <vector>
 #include "pixImagePoint.h" 
+#include <QColor>
+#include <QSize>
 using namespace hnCommon;
 using namespace std;
+ 
+
+struct HNAPPLICATION_EXPORT DiseaseDrawStyle
+{
+
+	//修改框粗细
+	int bigFrameRectWidth = 3;
+	int littleFrameRectWidth = 2;
+	int selectedRectWidth = 3;
+	int tempRectWidth = 4; 
+	int lineDiseaseWidth = 3;
+	int tempLineDiseaseWidth =3;
 
 
+	int calloutLineWidth = 2;
+
+
+	//修改文字大小
+	int normalLabelFontSize = 12;
+	int selectedLabelFontSize =14;
+	int lineLabelFontSize = 12;
+
+	QColor bigFrameRectColor = QColor(144, 238, 144);
+	QColor littleFrameRectColor = Qt::red;
+	QColor selectedRectColor = QColor(0, 255, 255);
+	QColor mergedRectColor = Qt::yellow;
+
+	QColor tempRectColor = Qt::blue;
+	QColor lineDiseaseColor = Qt::red;
+	QColor tempLineDiseaseColor = Qt::red;
+	QColor tempDashLineColor = Qt::yellow;
+
+	QColor labelTextColor = Qt::yellow;
+	QColor calloutLineColor = Qt::yellow;
+
+	 
+	int calloutGap = 25;
+	//普通病害不显示文字，只选中显示
+	bool showNormalDiseaseLabel = true;
+	bool showSelectedDiseaseDetail = true;
+};
 class HNAPPLICATION_EXPORT drawDiseases
 {
 public:
@@ -42,6 +83,66 @@ protected:
 protected:
 	//往图片上画矩形数组里面的所有矩形
 	void drawRectsOnImage(QImage &image, const QVector<QRect> rects,int boarderWidth, const QColor &rectColor,Qt::PenStyle style);
+
+	void drawRectOnImageByStyle(
+		QImage &image,
+		const QRect &rect,
+		int borderWidth,
+		const QColor &rectColor,
+		Qt::PenStyle style);
+
+	QRect unitedRectOfRects(const QVector<QRect> &rects) const;
+
+	QRect unitedRectOfPoints(const QVector<QPoint> &points) const;
+
+	QString buildShortDiseaseLabel(const hnRoadDiseaseInfo &disease) const;
+
+	QString buildDiseaseMileLabel(const hnRoadDiseaseInfo &disease) const;
+
+	QString buildBigFrameDiseaseDetailLabel(
+		const hnRoadDiseaseInfo &disease,
+		bool includeDepth) const;
+
+	QString buildLittleFrameDiseaseDetailLabel(
+		const hnRoadDiseaseInfo &disease,
+		bool includeDepth) const;
+
+	QString buildFrameDiseaseLabel(
+		const hnRoadDiseaseInfo &disease,
+		bool selected,
+		bool bigFrame,
+		bool includeDepth) const;
+
+	QString buildLineDiseaseLabel(const hnRoadDiseaseInfo &disease) const;
+
+	void drawDiseaseCalloutLabel(
+		QImage &image,
+		const QRect &diseaseRect,
+		const QString &text,
+		int fontSize,
+		const QColor &textColor,
+		const QColor &lineColor) const;
+
+	void drawDiseaseRectWithCallout(
+		QImage &image,
+		const QRect &diseaseRect,
+		const QString &text,
+		int borderWidth,
+		const QColor &rectColor,
+		Qt::PenStyle style,
+		int fontSize);
+
+
+ 
+
+	 
+
+	QString buildLittleFrameDiseaseDetailLabel(
+		const hnRoadDiseaseInfo& disease,
+		const QString& mileStr,
+		bool includeDepth) const;
+
+	 
 
 protected:
 	// 获取某个点的编码器里程
@@ -79,6 +180,7 @@ protected:
 	//当前视图的病害
 	std::vector<hnRoadDiseaseInfo> m_currentWidgetDiseases;
 
+	DiseaseDrawStyle m_diseaseDrawStyle;
 protected:
 	//病害起始点
 	pixImagePoint m_diseaseStartPoint;
