@@ -193,6 +193,9 @@ namespace hnPro
 
 		//人工操作  重写较桩数据库
 		void updataMilePileDatabase();
+
+		//手动导出内业修正后的外业文本，不覆盖外业原始文件
+		void exportCorrectedFieldTextFiles();
 	private: //cwb
 		bool saveMarksToResultDb();
 		bool saveMileagePilesToResultDb();
@@ -213,8 +216,6 @@ namespace hnPro
 		double m_current3dDmi;
 		//更新数据库
 		void updatePorjectDb();
-
-		void updatePorjectXml();
 
 		void updatePorjectText();
 		//更新  打标  较桩  工程配置   相关的 所有 文本，xml，数据库记录

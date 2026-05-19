@@ -559,6 +559,17 @@ namespace hnPro
 					{
 						m_bNeedImportFieldMilePilesToResultDb = true;
 					}
+					if (m_bNeedImportFieldMarksToResultDb || m_bNeedImportFieldMilePilesToResultDb)
+					{
+						int ret = QMessageBox::question(QApplication::activeWindow(), QStringLiteral("旧成果库迁移"),
+							QStringLiteral("当前成果库没有外业导入标记，是否从外业 Dmi2Mile.txt / RoadStatuMarkInfo.txt 补充缺失的较桩或打标工作副本？\n选择否将保留当前成果库内容。"),
+							QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+						if (ret != QMessageBox::Yes)
+						{
+							m_bNeedImportFieldMarksToResultDb = false;
+							m_bNeedImportFieldMilePilesToResultDb = false;
+						}
+					}
 					if (!m_bNeedImportFieldMarksToResultDb && !m_bNeedImportFieldMilePilesToResultDb)
 					{
 						QFile importFlag(importFlagPath);
@@ -862,12 +873,17 @@ namespace hnPro
 		{
 			return -2;
 		}
-		QString pictureName = infolist.at(1).absoluteFilePath();
+		QString pictureName = infolist.first().absoluteFilePath();
 		QImage image(pictureName);
+		if (image.isNull() || image.width() <= 0 || image.height() <= 0)
+		{
+			return -3;
+		}
 		m_projectInfo.picPixelX = image.width();
 		m_projectInfo.picPixelY = image.height();
 		m_projectInfo.dRadioX = m_projectInfo.dRoadWidth / m_projectInfo.picPixelX;
 		m_projectInfo.dRadioY = m_projectInfo.dRoadLength / m_projectInfo.picPixelY;
+		return 0;
 	}
 
 	
@@ -945,6 +961,9 @@ namespace hnPro
 			return;
 		}
 		m_vecMile.clear();
+		currentMileVec.clear();
+		currentLeftStreetMileVec.clear();
+		currentRightStreetMileVec.clear();
 		/*for (int i = 0 ; i<m_vecMarkInfo.size();++i)
 		{
 			hnMarkInfo& mark = m_vecMarkInfo[i];
@@ -965,59 +984,101 @@ namespace hnPro
 
 		if (imgnum < 7)
 		{
-			//可能是简易工程
-			m_pDbSqlite->m_mileInfoTable.readData(m_vecMile);
+			// 可能是简易工程；如果成果库没有里程表，则按工程长度生成无图片里程。
+			if (m_pDbSqlite)
+			{
+				m_pDbSqlite->m_mileInfoTable.readData(m_vecMile);
+			}
 			 
 			if (m_vecMile.size() > 0)
 			{
 				m_currentMile = m_vecMile.at(0);
-			}
-			return;
-		}
-		double tdmi = 0, tmile = 0;
-
-		for (int i = 0; i < imgnum; ++i)
-		{
-			hnMile mile;
-			tdmi = m_roadSpace*i;
-			tmile = enclToTrueMile(tdmi);
-			if (tmile <= 0 && m_projectInfo.nLineType < 0
-				|| tmile >= eMile && m_projectInfo.nLineType > 0)
-			{
-				break;
+				return;
 			}
 
-			mile.dTrueMile = qRound(tmile);
-			mile.dEnclMile = tdmi;
-			mile.nDMi = m_projectInfo.nFrequency*tdmi / m_projectInfo.dWheelPerimeter;
-			mile.roadGradStr = QString::fromLocal8Bit(m_projectInfo.strRoadLevel);
-			mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(QString::fromLocal8Bit(m_projectInfo.strRoadStandard));
-			mile.drawType = (hnCommon::ROAD_WORK_TYPE) m_projectInfo.nDrawType;
-			mile.roadWidth = m_projectInfo.dRoadWidth;
-			if (picPathList.count() > i)
+			double totalDmi = m_projectInfo.dEndEnclMile;
+			if (totalDmi <= 0)
 			{
-				QFileInfo leftPicFile(picPathList.at(i));
-				mile.picturePath = leftPicFile.fileName();
-				mile.roadType = (hnCommon::ROAD_SURFACE_TYPE) m_projectInfo.nRSurfaceType;
-			 
+				totalDmi = m_projectInfo.dLength;
+			}
+			if (totalDmi <= 0)
+			{
+				totalDmi = qAbs(m_projectInfo.dEndMile - m_projectInfo.dBegMile);
+			}
+
+			for (int i = 0; ; ++i)
+			{
+				double tdmi = m_roadSpace * i;
+				if (totalDmi > 0 && tdmi > totalDmi)
+				{
+					break;
+				}
+
+				hnMile mile;
+				double tmile = enclToTrueMile(tdmi);
+				mile.dTrueMile = qRound(tmile);
+				mile.dEnclMile = tdmi;
+				mile.nDMi = m_projectInfo.dWheelPerimeter == 0 ? 0 : m_projectInfo.nFrequency * tdmi / m_projectInfo.dWheelPerimeter;
+				mile.roadGradStr = QString::fromLocal8Bit(m_projectInfo.strRoadLevel);
+				mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(QString::fromLocal8Bit(m_projectInfo.strRoadStandard));
+				mile.drawType = (hnCommon::ROAD_WORK_TYPE)m_projectInfo.nDrawType;
+				mile.roadWidth = m_projectInfo.dRoadWidth;
+				mile.roadType = (hnCommon::ROAD_SURFACE_TYPE)m_projectInfo.nRSurfaceType;
 				mile.roadGrad = mile.GradStrToGrad(QString::fromLocal8Bit(m_projectInfo.strRoadLevel));
-			 
-			}
-			int leftStreetIndex = i / (m_leftStreetSpce / m_roadSpace);
-			if (streetPicPathList0.count() > leftStreetIndex)
-			{
-				QFileInfo leftPicFile(streetPicPathList0.at(leftStreetIndex));
+				mile.nID = i;
+				miles.push_back(mile);
 
-				mile.leftStreetPicPath = leftPicFile.fileName();
+				if (totalDmi <= 0)
+				{
+					break;
+				}
 			}
-			int rightStreetIndex = i / (m_rightStreetSpce / m_roadSpace);
-			if (streetPicPathList1.count() > rightStreetIndex)
+		}
+		else
+		{
+			double tdmi = 0, tmile = 0;
+
+			for (int i = 0; i < imgnum; ++i)
 			{
-				QFileInfo rightPicFile(streetPicPathList1.at(rightStreetIndex));
-				mile.rightStreetPicPath = rightPicFile.fileName();
+				hnMile mile;
+				tdmi = m_roadSpace*i;
+				tmile = enclToTrueMile(tdmi);
+				if ((m_projectInfo.nLineType < 0 && tmile <= eMile)
+					|| (m_projectInfo.nLineType > 0 && tmile >= eMile))
+				{
+					break;
+				}
+
+				mile.dTrueMile = qRound(tmile);
+				mile.dEnclMile = tdmi;
+				mile.nDMi = m_projectInfo.dWheelPerimeter == 0 ? 0 : m_projectInfo.nFrequency*tdmi / m_projectInfo.dWheelPerimeter;
+				mile.roadGradStr = QString::fromLocal8Bit(m_projectInfo.strRoadLevel);
+				mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(QString::fromLocal8Bit(m_projectInfo.strRoadStandard));
+				mile.drawType = (hnCommon::ROAD_WORK_TYPE) m_projectInfo.nDrawType;
+				mile.roadWidth = m_projectInfo.dRoadWidth;
+				mile.roadType = (hnCommon::ROAD_SURFACE_TYPE) m_projectInfo.nRSurfaceType;
+				mile.roadGrad = mile.GradStrToGrad(QString::fromLocal8Bit(m_projectInfo.strRoadLevel));
+				if (picPathList.count() > i)
+				{
+					QFileInfo leftPicFile(picPathList.at(i));
+					mile.picturePath = leftPicFile.fileName();
+				}
+				int leftStreetIndex = i / (m_leftStreetSpce / m_roadSpace);
+				if (streetPicPathList0.count() > leftStreetIndex)
+				{
+					QFileInfo leftPicFile(streetPicPathList0.at(leftStreetIndex));
+
+					mile.leftStreetPicPath = leftPicFile.fileName();
+				}
+				int rightStreetIndex = i / (m_rightStreetSpce / m_roadSpace);
+				if (streetPicPathList1.count() > rightStreetIndex)
+				{
+					QFileInfo rightPicFile(streetPicPathList1.at(rightStreetIndex));
+					mile.rightStreetPicPath = rightPicFile.fileName();
+				}
+				mile.nID = i;
+				miles.push_back(mile);
 			}
-			mile.nID = i;
-			miles.push_back(mile);
 		}
 		
 		//根据打标文件将 miles 的路面类型 道路标准 等进行重新赋值
@@ -1031,7 +1092,10 @@ namespace hnPro
 			int dirNum = picIndex  / 1000;
 			QString dirName = QString("%1").arg(dirNum, 4, 10, QChar('0'));
 			QString basePath = m_p2DProject->getBasePath() + "/RoadImg/Camera0/Image_" + dirName;
-			mile.picturePath = basePath + "/" + mile.picturePath;
+			if (!mile.picturePath.isEmpty())
+			{
+				mile.picturePath = basePath + "/" + mile.picturePath;
+			}
 			picIndex++;
 		}
 
@@ -1428,17 +1492,40 @@ namespace hnPro
 			return;
 		}
 
+		bool importSuccess = true;
 		if (m_bNeedImportFieldMilePilesToResultDb)
 		{
-			m_p2DProject->add2dMilePile(m_vecMileagePile);
-			sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-			saveMileagePilesToResultDb();
+			QFileInfo milePileFileInfo(m_p2DProject->getMilePilePath());
+			if (milePileFileInfo.exists())
+			{
+				m_p2DProject->add2dMilePile(m_vecMileagePile);
+				sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
+				importSuccess = saveMileagePilesToResultDb() && importSuccess;
+			}
+			else
+			{
+				importSuccess = false;
+			}
 		}
 		if (m_bNeedImportFieldMarksToResultDb)
 		{
-			m_p2DProject->add2dMarkInfo(m_vecMarkInfo, this);
-			saveMarksToResultDb();
+			QFileInfo markFileInfo(m_p2DProject->getMarkFilePath());
+			if (markFileInfo.exists())
+			{
+				m_p2DProject->add2dMarkInfo(m_vecMarkInfo, this);
+				importSuccess = saveMarksToResultDb() && importSuccess;
+			}
+			else
+			{
+				importSuccess = false;
+			}
 		}
+
+		if (!importSuccess)
+		{
+			return;
+		}
+
 		QFile importFlag(m_strDbDirPath + "/FieldSourceImported.flag");
 		if (importFlag.open(QIODevice::WriteOnly | QIODevice::Text))
 		{
@@ -1447,7 +1534,6 @@ namespace hnPro
 		m_bNeedImportFieldMilePilesToResultDb = false;
 		m_bNeedImportFieldMarksToResultDb = false;
 	}
-
 
 
  bool hnProject::AddDisease()
@@ -1694,7 +1780,7 @@ namespace hnPro
 	}
 
 
-	void hnProject::updatePorjectXml()
+	void hnProject::exportCorrectedFieldTextFiles()
 	{
 		if (this->get2DProject()==NULL)
 		{

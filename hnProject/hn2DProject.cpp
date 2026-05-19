@@ -299,7 +299,7 @@ namespace hnPro
 	}
 
 	// 分析二维工程中的打标信息  添加到vecMarkInfo
-	QVector<hnMarkInfo>&  hn2DProject::add2dMarkInfo(vector<hnMarkInfo>& vecMarkInfo, hnProject * pro)
+	QVector<hnMarkInfo>  hn2DProject::add2dMarkInfo(vector<hnMarkInfo>& vecMarkInfo, hnProject * pro)
 	{
 		QVector<hnMarkInfo> newMarks;
 		int lastMarkId = 0;
@@ -671,11 +671,11 @@ namespace hnPro
 		}
 		if (dir.exists(roadPath))
 		{
-			m_EquipmentBasePath.insert(HnProjectEnums::EquipMentEnum::RUT, roadPath);
+			m_EquipmentBasePath.insert(HnProjectEnums::EquipMentEnum::ROAD, roadPath);
 		}
 		if (dir.exists(streetPath))
 		{
-			m_EquipmentBasePath.insert(HnProjectEnums::EquipMentEnum::RUT, streetPath);
+			m_EquipmentBasePath.insert(HnProjectEnums::EquipMentEnum::STREET, streetPath);
 		}
 
 		QString str1;
@@ -769,6 +769,12 @@ namespace hnPro
 		_PanoImgDis = settings->value("PanoDis").toInt();
 		settings->endGroup();
 		delete settings;
+
+		// 模块化采集时，Setting.ini 可能保留了图像模块开关，但实际工程没有对应数据。
+		// 这里按实际可用数据修正状态，避免打开工程和数据检查被缺失图像阻断。
+		_IsRoad = _IsRoad && !m_vecRoadPicMilePath.isEmpty();
+		_IsStreet = _IsStreet && !m_vecRoadLeftStreetPicMilePath.isEmpty();
+		_IsDStreet = _IsDStreet && !m_vecRoadRightStreetPicMilePath.isEmpty();
 	}
 
 	void hn2DProject::initGpsInfos()

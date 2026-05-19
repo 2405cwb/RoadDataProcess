@@ -46,7 +46,7 @@ namespace hnPro
 		void add2dMilePile(vector<hnMilePile>& vecMilePile);
 
 		// 获取打标数据  如果返回值大于1 代表从二维打标文本中找到了新增打标数据
-		QVector<hnCommon::hnMarkInfo>& add2dMarkInfo(vector<hnMarkInfo>& vecMarkInfo,hnProject * pro);
+		QVector<hnCommon::hnMarkInfo> add2dMarkInfo(vector<hnMarkInfo>& vecMarkInfo,hnProject * pro);
 
 		// 获取平整度路径
 		QString getIRIPath() { return m_strIRIPath; }

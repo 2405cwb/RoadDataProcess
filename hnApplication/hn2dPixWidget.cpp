@@ -95,6 +95,10 @@ void hn2dPixWidget::loadRoadPicture()
 	QStringList pixNames;
 	for (auto mile : m_hnMileVector)
 	{
+		if (mile.picturePath.isEmpty())
+		{
+			continue;
+		}
 		pixNames.append(mile.picturePath);
 		this->m_pixNameHnMileMap.insert(mile.picturePath, mile);
 		this->m_milePixNameMap.insert(mile.dEnclMile, mile.picturePath);
