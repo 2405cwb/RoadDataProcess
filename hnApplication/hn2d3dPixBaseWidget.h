@@ -145,11 +145,12 @@ protected:
 	// 把续画锚点同步到临时绘制数据
 	void syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint);
 
-	// D-rectangle mode does not move cursor after browse; reset the rectangle anchor instead.
-	void resetLittleRectDrawAnchorToCurrentCursor();
 
 	// Commit current D-rectangle selection before browsing to another page.
 	void commitCurrentLittleRectDrawSelection();
+
+	// Append committed D-rectangle cells converted back to current big-image coordinates.
+	void appendCommittedLittleRectDrawSelection(QVector<QRect>& rects);
 
 	// Clear all temporary D-rectangle selection state.
 	void clearLittleRectDrawSelection();
@@ -161,10 +162,24 @@ protected:
 	virtual void onLittleFrameBrowseMoved(bool up, bool is2D);
 
 protected:
+	struct LittleFrameSingleRectSelection
+	{
+		QString pixName;
+		QRect singleRect;
+
+		bool operator==(const LittleFrameSingleRectSelection& other) const
+		{
+			return pixName == other.pixName && singleRect == other.singleRect;
+		}
+	};
+
+	virtual QRect bigImageRectToSingleImageRect(const QRect& bigImageRect, QString* imageName) = 0;
+	virtual QRect singleImageRectToBigImageRect(const QRect& singleImageRect, const QString& imageName) = 0;
+
 	// 程序自动 setPos 后，下一次 mouseMove 不参与绘制
 	bool m_ignoreNextMouseMoveAfterAutoCursorMove = false;
 	bool m_keepLittleFrameRectsAfterBrowse = false;
-	QVector<QRect> m_committedLittleFrameDiseaseRects;
+	QVector<LittleFrameSingleRectSelection> m_committedLittleFrameDiseaseRects;
 protected:
 	// 添加线状病害
 	void addLineDisease(const QPoint &widgetPoint);

@@ -127,15 +127,25 @@ void hn2d3dPixBaseWidget::slot_deleteDisease(const hnRoadDiseaseInfo &disease)
 void hn2d3dPixBaseWidget::slot_moveMouse(bool up, bool is2D)
 {
 	m_isAllowDrawPix = true;
+	if (this->m_isDrawingDisease &&
+		this->m_frameMode == FrameMode::LITTLE_FRAME &&
+		this->littleDrawRectType)
+	{
+		this->commitCurrentLittleRectDrawSelection();
+		QTimer::singleShot(20, this, [this]()
+		{
+			this->update();
+		});
+		return;
+	}
+
 	if (!isDrawingLittleFrameDisease())
 	{
-	
 		return;
-	} 
-	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
-	 
-}
+	}
 
+	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
+}
 
 QStringList hn2d3dPixBaseWidget::getDiseaseTypes()
 {
@@ -967,11 +977,33 @@ void hn2d3dPixBaseWidget::commitCurrentLittleRectDrawSelection()
 		return;
 	}
 
-	for (const QRect& rect : qAsConst(m_tmpLittleFrameDiseaseRects))
+	for (const QRect& bigRect : qAsConst(m_tmpLittleFrameDiseaseRects))
 	{
-		if (!m_committedLittleFrameDiseaseRects.contains(rect))
+		QString pixName;
+		QRect singleRect = this->bigImageRectToSingleImageRect(bigRect, &pixName).normalized();
+		if (pixName.isEmpty())
 		{
-			m_committedLittleFrameDiseaseRects.append(rect);
+			continue;
+		}
+
+		LittleFrameSingleRectSelection selection;
+		selection.pixName = pixName;
+		selection.singleRect = singleRect;
+		if (!m_committedLittleFrameDiseaseRects.contains(selection))
+		{
+			m_committedLittleFrameDiseaseRects.append(selection);
+		}
+	}
+}
+
+void hn2d3dPixBaseWidget::appendCommittedLittleRectDrawSelection(QVector<QRect>& rects)
+{
+	for (const LittleFrameSingleRectSelection& selection : qAsConst(m_committedLittleFrameDiseaseRects))
+	{
+		QRect bigRect = this->singleImageRectToBigImageRect(selection.singleRect, selection.pixName).normalized();
+		if (!rects.contains(bigRect))
+		{
+			rects.append(bigRect);
 		}
 	}
 }
@@ -981,38 +1013,6 @@ void hn2d3dPixBaseWidget::clearLittleRectDrawSelection()
 	m_keepLittleFrameRectsAfterBrowse = false;
 	m_committedLittleFrameDiseaseRects.clear();
 	m_tmpLittleFrameDiseaseRects.clear();
-}
-
-void hn2d3dPixBaseWidget::resetLittleRectDrawAnchorToCurrentCursor()
-{
-	if (!this->m_isDrawingDisease ||
-		this->m_frameMode != FrameMode::LITTLE_FRAME ||
-		!this->littleDrawRectType)
-	{
-		return;
-	}
-
-	QPoint widgetPoint = this->mapFromGlobal(QCursor::pos());
-
-	pixImagePoint anchorPoint;
-	if (!widgetPointToDiseasePoint(widgetPoint, anchorPoint))
-	{
-		return;
-	}
-
-	if (m_widgetType == WIDGET_3D &&
-		hnDataManager::getDataManager()->getCurrentProject() &&
-		PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
-	{
-		int x = anchorPoint.pixPoint.x();
-		this->autoCorrectXIn3dView(x);
-		anchorPoint.pixPoint.setX(x);
-	}
-
-	m_diseaseStartPoint = anchorPoint;
-	m_diseaseEndPoint = anchorPoint;
-	m_tmpLittleFrameDiseaseRects = m_committedLittleFrameDiseaseRects;
-	this->update();
 }
 
 void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint)
@@ -1035,13 +1035,6 @@ void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidg
 
 	m_diseaseEndPoint = anchorPoint;
 
-	// D 键拉框模式：翻页后必须把拉框起点也改成续画点
-	// 否则会从旧图起点拉到新图点，形成巨大错误矩形。
-	if (littleDrawRectType)
-	{
-		m_keepLittleFrameRectsAfterBrowse = true;
-		m_diseaseStartPoint = anchorPoint;
-	}
 
 	// 如果最后一个点和 anchor 非常接近，不重复追加
 	if (!m_littleSingleImagePoints.isEmpty())

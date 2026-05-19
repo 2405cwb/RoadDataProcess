@@ -865,7 +865,7 @@ void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 		this->commitCurrentLittleRectDrawSelection();
 		QTimer::singleShot(20, this, [this]()
 		{
-			this->resetLittleRectDrawAnchorToCurrentCursor();
+			this->update();
 		});
 	}
 	event->ignore();
@@ -1548,7 +1548,8 @@ void hn2dPixWidget::drawTmpData(QImage & image)
 
 			hn2d3dCoordinates tool;
 			QVector<QRect> currentRects = tool.crossRectOver(bigRect, this->m_currentLittleFrameRects);
-			this->m_tmpLittleFrameDiseaseRects = m_committedLittleFrameDiseaseRects;
+			this->m_tmpLittleFrameDiseaseRects.clear();
+			this->appendCommittedLittleRectDrawSelection(this->m_tmpLittleFrameDiseaseRects);
 			for (const QRect& rect : qAsConst(currentRects))
 			{
 				if (!this->m_tmpLittleFrameDiseaseRects.contains(rect))
