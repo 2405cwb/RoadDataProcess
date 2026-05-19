@@ -838,7 +838,6 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 //		isSuspended = true;
 //
 //	}
-//	moveMouse(up, true);
 //
 //
 //	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())

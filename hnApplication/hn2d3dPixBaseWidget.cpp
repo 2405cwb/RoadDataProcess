@@ -783,54 +783,6 @@ void hn2d3dPixBaseWidget::autoCorrectXIn3dView(int & x)
 
 
 
-void hn2d3dPixBaseWidget::moveMouse(bool up, bool is2D)
-{
-
-	//if (this->m_workMode == WorkMode::ADD_MODE&&this->m_isDrawingDisease)
-	//{
-	//	// 修改鼠标位置
-	//	int moveImagePixel = this->m_pixHeight / 2;
-	//	int moveScreenPixel = round((moveImagePixel*this->width()*1.0) / this->m_pixWidth);
-	//	QPointF dst;
-	//	if (up)
-	//	{
-	//		dst = currentMousePos;
-	//		dst.ry() += moveScreenPixel;
-	//	}
-	//	else
-	//	{
-	//		dst = currentMousePos;
-	//		dst.ry() -= moveScreenPixel;
-	//	}
-
-	//	// 计算窗口在屏幕的坐标范围
-	//	QPointF w_topLeftAtScreen = this->mapToGlobal(QPoint(0, 0));
-	//	QPointF w_bottomRightAtScreen = this->mapToGlobal(QPoint(this->width(), this->height()));
-	//	if (dst.rx() > w_topLeftAtScreen.rx() &&
-	//		dst.rx() < w_bottomRightAtScreen.rx() &&
-	//		dst.ry() > w_topLeftAtScreen.ry() &&
-	//		dst.ry() < w_bottomRightAtScreen.ry())
-	//	{
-	//		QCursor::setPos(dst.toPoint());				// 不超过窗口区域，就进行移动
-	//	}
-
-	//	//2025.11.7 延时刷新画病害（等待底图先更新）
-	//	QTimer::singleShot(15, [this]() {
-	//		if (this->addLineDiseType && this->m_isDrawingDisease && !this->m_isEndAddPoint)
-	//		{
-	//			this->m_isAllowDrawPix = false;
-	//			this->update();
-	//		}
-	//	});
-
-	//	//QCursor::setPos(dst.toPoint());
-	//}
-
-	//return;
-
-	
-}
-
 QPoint hn2d3dPixBaseWidget::pixImagePointToBigImagePoint(const pixImagePoint & point)
 {
 	QPoint result;
@@ -1010,7 +962,6 @@ void hn2d3dPixBaseWidget::appendCommittedLittleRectDrawSelection(QVector<QRect>&
 
 void hn2d3dPixBaseWidget::clearLittleRectDrawSelection()
 {
-	m_keepLittleFrameRectsAfterBrowse = false;
 	m_committedLittleFrameDiseaseRects.clear();
 	m_tmpLittleFrameDiseaseRects.clear();
 }
@@ -1160,17 +1111,4 @@ void hn2d3dPixBaseWidget::scheduleMoveCursorToBestContinuePointAfterBrowse(bool 
 
 		this->moveCursorToBestContinuePointAfterBrowse(up, is2D);
 	});
-}
-
-
-
-
-void hn2d3dPixBaseWidget::onLittleFrameBrowseMoved(bool up, bool is2D)
-{
-	if (!isDrawingLittleFrameDisease())
-	{
-		return;
-	}
-	 
-	scheduleMoveCursorToBestContinuePointAfterBrowse(up, is2D);
 }

@@ -781,7 +781,6 @@ void hn3dPixWidget::mouseMoveEvent(QMouseEvent * event)
 //		isSuspended = true;
 //
 //	}
-//	moveMouse(up, false);
 //
 //	//QTimer::singleShot(20, [this, event]() {
 //	//	if (this->addLineDiseType && this->m_isDrawingDisease && !this->m_isEndAddPoint)

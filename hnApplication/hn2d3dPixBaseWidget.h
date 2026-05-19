@@ -158,8 +158,6 @@ protected:
 	// 重建 m_litteBigImagePoints
 	void rebuildLittleFrameBigImagePoints();
 
-	// 小框绘制翻页时，不再暂停，而是复位鼠标
-	virtual void onLittleFrameBrowseMoved(bool up, bool is2D);
 
 protected:
 	struct LittleFrameSingleRectSelection
@@ -178,7 +176,6 @@ protected:
 
 	// 程序自动 setPos 后，下一次 mouseMove 不参与绘制
 	bool m_ignoreNextMouseMoveAfterAutoCursorMove = false;
-	bool m_keepLittleFrameRectsAfterBrowse = false;
 	QVector<LittleFrameSingleRectSelection> m_committedLittleFrameDiseaseRects;
 protected:
 	// 添加线状病害
@@ -210,8 +207,6 @@ protected:
 	//自动纠正三维视图的x坐标
 	void autoCorrectXIn3dView(int &x);
 
-	//当用户滚动滚轮或者 按下上下键  (绘制病害情况下)  退回鼠标
-	void moveMouse(bool up,bool is2D);
 
 	QPoint currentMousePos;
 protected:
