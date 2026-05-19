@@ -285,7 +285,7 @@ namespace hnPro
 		}
 		std::sort(vecMilePile.begin(), vecMilePile.end(), [=](const hnMilePile&a, const hnMilePile& b)
 		{
-			if (line > 1)
+			if (line < 0)
 			{
 				return a.dEnclMile > b.dEnclMile;
 			}
@@ -385,7 +385,12 @@ namespace hnPro
 
 		if (vecMarkInfo.size() == 0 )
 		{
-			vecMarkInfo.insert(vecMarkInfo.end(), marksFromTxt.begin(), marksFromTxt.end());
+			for (auto& item : marksFromTxt)
+			{
+				item.nID = lastMarkId++;
+				vecMarkInfo.push_back(item);
+				newMarks.push_back(item);
+			}
 		}
 		else
 		{

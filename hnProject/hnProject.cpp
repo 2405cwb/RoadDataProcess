@@ -21,7 +21,7 @@
 #include <QElapsedTimer>
 namespace hnPro
 {
-	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0)
+	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0), m_bNeedImportFieldMilePilesToResultDb(false), m_bNeedImportFieldMarksToResultDb(false)
 	{
 	}
 
@@ -34,6 +34,8 @@ namespace hnPro
 	bool hnProject::openProject(hnProjectDataInfo& curProDataInfo)
 	{
 		m_roadSpace = 2;
+		m_bNeedImportFieldMilePilesToResultDb = false;
+		m_bNeedImportFieldMarksToResultDb = false;
 		//景观图像间距
 		m_leftStreetSpce = 10;
 		m_rightStreetSpce = 10;
@@ -174,13 +176,12 @@ namespace hnPro
 				{
 					//
 				}
-
 				if (m_p2DProject)
 				{
-					//每次打开当前工程需要处理的步骤有  
-					//判断一下是否已经处理过了
+					//首次创建成果库时，将外业文本导入成果库；后续打开以成果库为准。
+					import2DFieldDataToResultDb();
 					initMileList();
-				} 
+				}
 			}
 			else
 			{
@@ -256,8 +257,8 @@ namespace hnPro
 	{
 		if (m_p2DProject)
 		{
-			//每次打开当前工程需要处理的步骤有  
-			//判断一下是否已经处理过了
+			//首次创建成果库时，将外业文本导入成果库；后续打开以成果库为准。
+			import2DFieldDataToResultDb();
 			initMileList();
 		}
 
@@ -267,8 +268,6 @@ namespace hnPro
 		}
 		
 	}
-
-
 
 	QString hnProject::getAbsulotelyPath()
 	{
@@ -502,6 +501,8 @@ namespace hnPro
 			//成果db
 			if (getResultDB(dbDirPath, dbFilePath, false))
 			{
+				const QString importFlagPath = dbDirPath + "/FieldSourceImported.flag";
+				const bool hasImportFlag = QFile::exists(importFlagPath);
 				strTemp = dbFilePath.toLocal8Bit();
 
 				// 读取数据库
@@ -537,7 +538,8 @@ namespace hnPro
 
 				}
 
-				if (!m_pDbSqlite->m_milePileTable.readData(m_vecMileagePile))
+				bool milePileLoadedFromDb = m_pDbSqlite->m_milePileTable.readData(m_vecMileagePile);
+				if (!milePileLoadedFromDb)
 				{
 					//如果db文件存在但是找不到有效工程信息 则重新写入一次
 					m_pDbSqlite->m_milePileTable.clearData();
@@ -547,7 +549,25 @@ namespace hnPro
 						return false;
 					}
 				}
-
+				if (!hasImportFlag)
+				{
+					if (m_vecMarkInfo.empty())
+					{
+						m_bNeedImportFieldMarksToResultDb = true;
+					}
+					if (!milePileLoadedFromDb)
+					{
+						m_bNeedImportFieldMilePilesToResultDb = true;
+					}
+					if (!m_bNeedImportFieldMarksToResultDb && !m_bNeedImportFieldMilePilesToResultDb)
+					{
+						QFile importFlag(importFlagPath);
+						if (importFlag.open(QIODevice::WriteOnly | QIODevice::Text))
+						{
+							importFlag.close();
+						}
+					}
+				}
 				/*	if (!m_pDbSqlite->m_diseaseTable.readAllData(m_vecDisData))
 				{
 				return false;
@@ -601,14 +621,11 @@ namespace hnPro
 
 				m_pDbSqlite->m_projectSetTable.writeData(curProDataInfo.proSetInfo);
 				m_projectInfo = curProDataInfo.proSetInfo;
-
-				if (!m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo))
-				{
-					return false;
-				}
+				m_bNeedImportFieldMilePilesToResultDb = true;
+				m_bNeedImportFieldMarksToResultDb = true;
 				std::sort(curProDataInfo.vecMilePile.begin(), curProDataInfo.vecMilePile.end(), [=](const hnMilePile&a, const hnMilePile& b)
 				{
-					if (curProDataInfo.proSetInfo.nLineType>1)
+					if (curProDataInfo.proSetInfo.nLineType < 0)
 					{
 						return a.dEnclMile > b.dEnclMile;
 					}
@@ -928,31 +945,12 @@ namespace hnPro
 			return;
 		}
 		m_vecMile.clear();
-	 
-		
-		
-
-
-	
-		if (NotNeedUpdateMileVector)
-		{
-			//列表为空同时不需要更新Mile  表示是第一次打开工程  
-			m_p2DProject->add2dMilePile(m_vecMileagePile);
-			m_p2DProject->add2dMarkInfo(m_vecMarkInfo, this);
-		}
-		 
-		
-	
 		/*for (int i = 0 ; i<m_vecMarkInfo.size();++i)
 		{
 			hnMarkInfo& mark = m_vecMarkInfo[i];
 			mark.nID = i;
 		}*/
-		//解析gps数据
-		//3.1 较桩数据 写入数据库 
-		//3.2 打标数据写入数据库 
-		//3.3 工程配置数据写入数据库 
-		updatePorjectAllSettingSource();
+		// initMileList 只生成运行时 m_vecMile，不写成果库，也不覆盖外业文本。
 
 		QVector<hnMile> miles;
 		QStringList picPathList = m_p2DProject->getRoadPicturePath();
@@ -970,14 +968,9 @@ namespace hnPro
 			//可能是简易工程
 			m_pDbSqlite->m_mileInfoTable.readData(m_vecMile);
 			 
-			if (m_vecMile.size()<0)
-			{
-				return;
-			}
-			else
+			if (m_vecMile.size() > 0)
 			{
 				m_currentMile = m_vecMile.at(0);
-				return;
 			}
 			return;
 		}
@@ -1391,6 +1384,70 @@ namespace hnPro
 	{ 
 		return QVector<hnCommon::hnMilePile>::fromStdVector(m_vecMileagePile);
 	}
+	bool hnProject::isRoadAttributeMark(int nType) const
+	{
+		return nType == hnCommon::ROAD_MARK_TYPE::ROAD_SURFACE
+			|| nType == hnCommon::ROAD_MARK_TYPE::ROAD_GRAD
+			|| nType == hnCommon::ROAD_MARK_TYPE::ROAD_STANDARD;
+	}
+
+	bool hnProject::saveMarksToResultDb()
+	{
+		if (!m_pDbSqlite)
+		{
+			return false;
+		}
+		m_pDbSqlite->m_markerInfoTable.clearData();
+		return m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
+	}
+
+	bool hnProject::saveMileagePilesToResultDb()
+	{
+		if (!m_pDbSqlite)
+		{
+			return false;
+		}
+		m_pDbSqlite->m_milePileTable.clearData();
+		return m_pDbSqlite->m_milePileTable.writeData(m_vecMileagePile);
+	}
+
+	bool hnProject::saveProjectSettingToResultDb()
+	{
+		if (!m_pDbSqlite)
+		{
+			return false;
+		}
+		m_pDbSqlite->m_projectSetTable.clearData();
+		return m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo);
+	}
+
+	void hnProject::import2DFieldDataToResultDb()
+	{
+		if ((!m_bNeedImportFieldMilePilesToResultDb && !m_bNeedImportFieldMarksToResultDb) || !m_p2DProject || !m_pDbSqlite)
+		{
+			return;
+		}
+
+		if (m_bNeedImportFieldMilePilesToResultDb)
+		{
+			m_p2DProject->add2dMilePile(m_vecMileagePile);
+			sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
+			saveMileagePilesToResultDb();
+		}
+		if (m_bNeedImportFieldMarksToResultDb)
+		{
+			m_p2DProject->add2dMarkInfo(m_vecMarkInfo, this);
+			saveMarksToResultDb();
+		}
+		QFile importFlag(m_strDbDirPath + "/FieldSourceImported.flag");
+		if (importFlag.open(QIODevice::WriteOnly | QIODevice::Text))
+		{
+			importFlag.close();
+		}
+		m_bNeedImportFieldMilePilesToResultDb = false;
+		m_bNeedImportFieldMarksToResultDb = false;
+	}
+
 
 
  bool hnProject::AddDisease()
@@ -1416,15 +1473,15 @@ namespace hnPro
 	bool hnProject::changeMark(QVector<hnCommon::hnMarkInfo>& marks, const QVector<int>&deleteMarkIndexs)
 	{
 		bool needUpdate = false;
-		 
-		int lastIndex = 0;
-		if (m_vecMarkInfo.size() >= 1)
+		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
+		for (const auto& item : m_vecMarkInfo)
 		{
-			lastIndex = m_vecMarkInfo.at(m_vecMarkInfo.size() - 1).nID + 1;
+			lastIndex = std::max(lastIndex, item.nID + 1);
 		}
+
 		for (auto& mark : marks)
 		{
-			if (mark.nType == 0 || mark.nType == 2 || mark.nType == 3)
+			if (isRoadAttributeMark(mark.nType))
 			{
 				needUpdate = true;
 			}
@@ -1432,169 +1489,113 @@ namespace hnPro
 			mark.nID = lastIndex++;
 			m_vecMarkInfo.push_back(mark);
 		}
-		QSet<int> deleteSet = QSet<int>::fromList(deleteMarkIndexs.toList());
 
+		QSet<int> deleteSet = QSet<int>::fromList(deleteMarkIndexs.toList());
 		m_vecMarkInfo.erase(
 			std::remove_if(
 				m_vecMarkInfo.begin(),
-				m_vecMarkInfo.end(), 
-				[&deleteSet,&needUpdate](const hnCommon::hnMarkInfo&obj) {
+				m_vecMarkInfo.end(),
+				[&deleteSet, &needUpdate, this](const hnCommon::hnMarkInfo& obj) {
+					const bool deleteItem = deleteSet.contains(obj.nID);
+					if (deleteItem && isRoadAttributeMark(obj.nType))
 					{
-						const bool& deleteItem = deleteSet.contains(obj.nID);
-						  if (deleteItem)
-						  {
-							  if (obj.nType == 0 || obj.nType == 2 || obj.nType==3)
-							  {
-								  needUpdate = true;
-							  }
-						  }
-						return deleteItem; 
+						needUpdate = true;
 					}
-		
-		}
+					return deleteItem;
+				}
 			),
 			m_vecMarkInfo.end()
-	);
-		//m_pDbSqlite->m_markerInfoTable.clearData();
-		//m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
-		initMileList(!needUpdate);
+		);
+
+		saveMarksToResultDb();
+		if (needUpdate)
+		{
+			initMileList(false);
+		}
 		return needUpdate;
 	}
 
-	bool hnProject::addMark(  hnCommon::hnMarkInfo& mark)
+	bool hnProject::addMark(hnCommon::hnMarkInfo& mark)
 	{
-		bool needUpdate = false;
+		bool needUpdate = isRoadAttributeMark(mark.nType);
+		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
+		for (const auto& item : m_vecMarkInfo)
+		{
+			lastIndex = std::max(lastIndex, item.nID + 1);
+		}
 
-		int lastIndex = 0;
-		if (m_vecMarkInfo.size() >= 1)
-		{
-			 
-			lastIndex = 	m_pDbSqlite->m_markerInfoTable.getMaxID();
-		}
-		if (mark.nType == 0 || mark.nType == 2 || mark.nType == 3)
-		{
-			needUpdate = true;
-		}
 		mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
 		mark.nID = lastIndex;
-		m_vecMarkInfo.push_back(mark); 
-		initMileList(!needUpdate);
-		//m_pDbSqlite->m_markerInfoTable.clearData();
-		//m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
-	//	updatePorjectXml();
+		m_vecMarkInfo.push_back(mark);
+		saveMarksToResultDb();
+		if (needUpdate)
+		{
+			initMileList(false);
+		}
 		return needUpdate;
 	}
 
 	bool hnProject::deleteMark(const hnCommon::hnMarkInfo& Mark)
 	{
-		bool needUpdate = false;
-		 
-		for (auto& mark : m_vecMarkInfo)
-		{
-			if (mark.nType == 0 || mark.nType == 2 || mark.nType == 3)
-			{
-				needUpdate = true;
-			}
-			 
-		}
-
-		for (int i = m_vecMarkInfo.size()-1; i>=0 ;  --i)
-		{
-			hnCommon::hnMarkInfo curMark = m_vecMarkInfo[i];
-			if (curMark.nID== Mark.nID)
-			{
-				m_vecMarkInfo.erase(m_vecMarkInfo.begin() + i);
-			}
-		} 
-		//m_pDbSqlite->m_markerInfoTable.clearData();
-		//m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
-		initMileList(!needUpdate);
-		//updatePorjectXml();
-		return needUpdate;
+		return deleteMark(Mark.nID);
 	}
 
 	bool hnProject::deleteMark(int id)
 	{
 		bool needUpdate = false;
-
-		for (auto& mark : m_vecMarkInfo)
-		{
-			if (mark.nType == 0 || mark.nType == 2 || mark.nType == 3)
-			{
-				needUpdate = true;
-			}
-
-		}
-
-		for (int i = m_vecMarkInfo.size()-1; i >= 0; --i)
+		for (int i = static_cast<int>(m_vecMarkInfo.size()) - 1; i >= 0; --i)
 		{
 			hnCommon::hnMarkInfo curMark = m_vecMarkInfo[i];
 			if (curMark.nID == id)
 			{
+				if (isRoadAttributeMark(curMark.nType))
+				{
+					needUpdate = true;
+				}
 				m_vecMarkInfo.erase(m_vecMarkInfo.begin() + i);
 			}
 		}
-		//m_pDbSqlite->m_markerInfoTable.clearData();
-	//	m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
-		initMileList(!needUpdate);
-		//updatePorjectXml();
+
+		saveMarksToResultDb();
+		if (needUpdate)
+		{
+			initMileList(false);
+		}
 		return needUpdate;
 	}
 
 	void hnProject::changeMilePile(QVector < hnCommon::hnMilePile>& piles)
 	{
 		m_vecMileagePile.clear();
-		for (auto mile:piles)
+		for (auto mile : piles)
 		{
 			m_vecMileagePile.push_back(mile);
 		}
 
 		sort(piles.begin(), piles.end(), compareMilepileByEnclMile);
 		sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-		if (this->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE)
-	{
-			initMileList(false);
-
-	}
-		else  if(this->getProjectType()== PROJECT_TYPE::PROJECT_2D_TYPE)
-		{
-			initMileList(false);
-
-		}
-		else
-		{
-
-		}
-	
+		saveMileagePilesToResultDb();
+		initMileList(false);
 	}
 
 	void hnProject::addMilePile(hnCommon::hnMilePile& pile)
 	{
-	    int maxId = 	m_pDbSqlite->m_milePileTable.getMaxID();
-	     pile.nID = maxId;
+		int maxId = m_pDbSqlite ? m_pDbSqlite->m_milePileTable.getMaxID() : 1;
+		for (const auto& item : m_vecMileagePile)
+		{
+			maxId = std::max(maxId, item.nID + 1);
+		}
+		pile.nID = maxId;
 		m_vecMileagePile.push_back(pile);
 
 		sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-		if (this->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE)
-		{
-			initMileList(false);
-
-		}
-		else  if (this->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
-		{
-			initMileList(false);
-
-		}
-		else
-		{
-
-		}
-		updatePorjectXml();
+		saveMileagePilesToResultDb();
+		initMileList(false);
 	}
 
 	void hnProject::deleteMilePile(int id)
 	{
-		for (int i = m_vecMileagePile.size()-1; i >= 0; --i)
+		for (int i = static_cast<int>(m_vecMileagePile.size()) - 1; i >= 0; --i)
 		{
 			hnCommon::hnMilePile curMile = m_vecMileagePile[i];
 			if (curMile.nID == id)
@@ -1602,14 +1603,12 @@ namespace hnPro
 				m_vecMileagePile.erase(m_vecMileagePile.begin() + i);
 			}
 		}
-		m_pDbSqlite->m_milePileTable.clearData();
-		m_pDbSqlite->m_milePileTable.writeData(m_vecMileagePile);
-		updatePorjectXml();
+		saveMileagePilesToResultDb();
+		initMileList(false);
 	}
-
 	void hnProject::updataMarkDatabase()
 	{
-
+		saveMarksToResultDb();
 	}
 
 	// 获取是否存在成果db  根据道路等级+绘制模式 查找数据库地址    isOld 是否是数据库名称代码更新之前的工程，需要适配
@@ -1689,16 +1688,9 @@ namespace hnPro
 
 	void hnProject::updatePorjectDb()
 	{
-		m_pDbSqlite->m_markerInfoTable.clearData();
-		m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
-
-		m_pDbSqlite->m_milePileTable.clearData();
-		m_pDbSqlite->m_milePileTable.writeData(m_vecMileagePile);
-		 
-		// 写入设置参数到数据库
-		m_pDbSqlite->m_projectSetTable.clearData();
-		m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo);
-
+		saveMarksToResultDb();
+		saveMileagePilesToResultDb();
+		saveProjectSettingToResultDb();
 	}
 
 
@@ -1708,8 +1700,9 @@ namespace hnPro
 		{
 			return;
 		}
-		//更新打标文件
-		QString markPath = this->get2DProject()->getMarkFilePath(); 
+		//导出内业打标修正文件，不覆盖外业原始 RoadStatuMarkInfo.txt。
+		QFileInfo markFileInfo(this->get2DProject()->getMarkFilePath());
+		QString markPath = markFileInfo.absolutePath() + QStringLiteral("/RoadStatuMarkInfo_内业修正.txt");
 		QVector<hnCommon::hnMarkInfo> marks = 	this->getCurrentMarkVector();
 		QStringList markTxts;
 		for (int i = 0 ; i <marks.size();++i)
@@ -1753,8 +1746,9 @@ namespace hnPro
 		MyCommonMethods::writeAllLines(markPath, markTxts);
 	
 
-		//更新打标分段记录文件 
-		 markPath = this->get2DProject()->getFullRoadTypeMarkFilePath();
+		//导出内业打标分段修正文件。
+		 QFileInfo roadTypeFileInfo(this->get2DProject()->getFullRoadTypeMarkFilePath());
+		 markPath = roadTypeFileInfo.absolutePath() + QStringLiteral("/RoadTypeInfo_内业修正.txt");
 		  marks = this->getCurrentMarkVector();
 		QStringList markRoadTypeTxts; 
 		QVector<hnCommon::hnMarkInfo> curMarks;
@@ -1801,8 +1795,9 @@ namespace hnPro
 
 
 
-		//更新较桩文件 
-		QString path = this->get2DProject()->getMilePilePath();
+		//导出内业较桩修正文件，不覆盖外业原始 Dmi2Mile.txt。
+		QFileInfo milePileFileInfo(this->get2DProject()->getMilePilePath());
+		QString path = milePileFileInfo.absolutePath() + QStringLiteral("/Dmi2Mile_内业修正.txt");
 		QVector<hnCommon::hnMilePile> milePile = 	this->getCurrentMilePileVector();
 		QStringList txts;
 		QStringList For2DTxts;
@@ -1834,7 +1829,8 @@ namespace hnPro
 		MyCommonMethods::writeAllLines(path, txts);
 		//For2DTxts.removeFirst();
 		//For2DTxts.removeLast();
-		MyCommonMethods::writeAllLines(this->get2DProject()->getMileStoneCaliInfoFilePath(), For2DTxts);
+		QFileInfo caliFileInfo(this->get2DProject()->getMileStoneCaliInfoFilePath());
+		MyCommonMethods::writeAllLines(caliFileInfo.absolutePath() + QStringLiteral("/MileStoneCaliInfo_内业修正.txt"), For2DTxts);
 
 	}
 
@@ -1846,15 +1842,13 @@ namespace hnPro
 
 	void hnProject::updatePorjectAllSettingSource()
 	{
+		// 只同步成果库。外业文本必须由用户手动导出，不能在刷新里程时自动覆盖。
 		updatePorjectDb();
-		updatePorjectXml();
-		//更新文本
-		updatePorjectText();
 	}
 
 	void hnProject::updataMilePileDatabase()
 	{
-
+		saveMileagePilesToResultDb();
 	}
 
 }

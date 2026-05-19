@@ -407,20 +407,32 @@ void projectView::MilePileMenuClicked(const QPoint &pos)
 void projectView::deleteMark()
 {
 	//获取选中的行并删除
-	QSet<int>rowToRemove;
-	QApplication::setOverrideCursor(Qt::WaitCursor);
-	for (QTableWidgetItem * item :ui.markTableWidget->selectedItems())
+	QSet<int> rowToRemove;
+	for (QTableWidgetItem * item : ui.markTableWidget->selectedItems())
 	{
-		int row = item->row();
-		QTableWidgetItem * firstItem = ui.markTableWidget->item(row, 0);
-		int rowId = firstItem->data(Qt::UserRole).toInt();
 		rowToRemove.insert(item->row());
+	}
+
+	bool needUpdateAll = false;
+	QApplication::setOverrideCursor(Qt::WaitCursor);
+	for (int row : rowToRemove)
+	{
+		QTableWidgetItem * firstItem = ui.markTableWidget->item(row, 0);
+		if (!firstItem)
+		{
+			continue;
+		}
+		int rowId = firstItem->data(Qt::UserRole).toInt();
 		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->deleteMark(rowId))
 		{
-			emit signal_updateAllWidget();
+			needUpdateAll = true;
 		}
 	}
 	QApplication::restoreOverrideCursor();
+	if (needUpdateAll)
+	{
+		emit signal_updateAllWidget();
+	}
 	//从高到低删除避免索引错乱
 	QList<int> sortedRows = rowToRemove.toList();
 	std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
@@ -432,23 +444,28 @@ void projectView::deleteMark()
 	QVector<hnCommon::hnMarkInfo> marks = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector();
 	updateMarkFrom(marks, isUp);
 }
-
 void projectView::deletePipe()
 {
 	//获取选中的行并删除
-	QSet<int>rowToRemove;
-	QApplication::setOverrideCursor(Qt::WaitCursor);
+	QSet<int> rowToRemove;
 	for (QTableWidgetItem * item : ui.pileTableWidget->selectedItems())
 	{
-		int row = item->row();
-		QTableWidgetItem * firstItem = ui.pileTableWidget->item(row, 0);
-		int rowId = firstItem->data(Qt::UserRole).toInt();
 		rowToRemove.insert(item->row());
+	}
+
+	QApplication::setOverrideCursor(Qt::WaitCursor);
+	for (int row : rowToRemove)
+	{
+		QTableWidgetItem * firstItem = ui.pileTableWidget->item(row, 0);
+		if (!firstItem)
+		{
+			continue;
+		}
+		int rowId = firstItem->data(Qt::UserRole).toInt();
 		hnApp::hnDataManager::getDataManager()->getCurrentProject()->deleteMilePile(rowId);
-		emit signal_updateAllWidget();
-	 
 	}
 	QApplication::restoreOverrideCursor();
+	emit signal_updateAllWidget();
 	//从高到低删除避免索引错乱
 	QList<int> sortedRows = rowToRemove.toList();
 	std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
@@ -457,9 +474,6 @@ void projectView::deletePipe()
 		ui.pileTableWidget->removeRow(row);
 	}
 }
-
- 
-
 void projectView::updateDmiTxt(const QString &text)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())

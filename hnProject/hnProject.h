@@ -194,6 +194,12 @@ namespace hnPro
 		//人工操作  重写较桩数据库
 		void updataMilePileDatabase();
 	private: //cwb
+		bool saveMarksToResultDb();
+		bool saveMileagePilesToResultDb();
+		bool saveProjectSettingToResultDb();
+		void import2DFieldDataToResultDb();
+		bool isRoadAttributeMark(int nType) const;
+
 		bool  read2dSetting(const QString& path );
 
 		//获得文件夹内第一张图片像素值 设置配置参数
@@ -214,6 +220,9 @@ namespace hnPro
 		//更新  打标  较桩  工程配置   相关的 所有 文本，xml，数据库记录
 		void updatePorjectAllSettingSource();
 	private:
+		bool m_bNeedImportFieldMilePilesToResultDb;
+		bool m_bNeedImportFieldMarksToResultDb;
+
 		// 工程根目录
 		QString m_strProjectPath;
 
@@ -260,7 +269,7 @@ namespace hnPro
 		
 
 		// 打标信息
-		//注意更新的话 数据库写一份   RoadStatuMarkInfo.txt 文件里面也要写一份
+		//内业修改只写成果库；外业 RoadStatuMarkInfo.txt 不自动覆盖。
 		vector<hnMarkInfo> m_vecMarkInfo;
 
 		// 工程类型
