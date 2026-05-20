@@ -104,14 +104,14 @@ int hn2d3dPixBaseWidget::diseaseImagePixels(const QImage &image, int screenPixel
 
 void hn2d3dPixBaseWidget::slot_cancelDrawDiseases()
 {
-	clearLittleRectDrawSelection();
+	resetLittleFrameDrawState();
 	this->m_isDrawingDisease = false;
 	this->m_isAllowDrawPix = true;
 	this->m_isAllowLinked = true;
-	//清空合并病害的数组
+
+
 	m_seclectedDiseases.clear();
-	m_tmpLineDiseasePoints.clear();
-	m_tmpPaintLineDiseasePoints.clear();
+
 	this->update();
 }
 
@@ -792,6 +792,12 @@ QPoint hn2d3dPixBaseWidget::pixImagePointToBigImagePoint(const pixImagePoint & p
 	return result;
 }
 
+void hn2d3dPixBaseWidget::clearVisibleLittleFrameRectCache()
+{
+	m_cachedVisibleLittleFrameRects.clear();
+	m_cachedVisibleLittleFramePixNames.clear();
+}
+
 void hn2d3dPixBaseWidget::setLittleDiseaseSize(const QVector<QRect>& diseaseRects, hnRoadDiseaseInfo& disease)
 {  
 	QRect boundingRect;
@@ -964,6 +970,36 @@ void hn2d3dPixBaseWidget::clearLittleRectDrawSelection()
 {
 	m_committedLittleFrameDiseaseRects.clear();
 	m_tmpLittleFrameDiseaseRects.clear();
+}
+
+
+void hn2d3dPixBaseWidget::resetLittleFrameDrawState()
+{
+	clearLittleRectDrawSelection();
+	clearVisibleLittleFrameRectCache();
+	m_diseaseEndPoint.pixName.clear();
+	m_diseaseEndPoint.pixPoint = QPoint(-1, -1);
+
+	m_diseaseStartPoint.pixName.clear();
+	m_diseaseStartPoint.pixPoint = QPoint(-1, -1);
+
+	m_diseaseAddPoint.pixName.clear();
+	m_diseaseAddPoint.pixPoint = QPoint(-1,-1);
+
+
+	m_littleSingleImagePoints.clear();
+	m_litteBigImagePoints.clear();
+
+
+	m_tmpLineDiseasePoints.clear();
+	m_tmpPaintLineDiseasePoints.clear();
+	m_tmpLastPaintLineDiseasePoints.clear();
+	m_tempPoints.clear();
+
+
+	m_isEndAddPoint = false;
+
+	m_ignoreNextMouseMoveAfterAutoCursorMove = false;
 }
 
 void hn2d3dPixBaseWidget::syncLittleFrameContinueAnchor(const QPoint& targetWidgetPoint)

@@ -20,10 +20,10 @@ struct HNAPPLICATION_EXPORT DiseaseDrawStyle
 {
 
 	//ÐÞ¸Ä¿ò´ÖÏ¸
-	int bigFrameRectWidth = 3;
+	int bigFrameRectWidth = 5;
 	int littleFrameRectWidth = 2;
 	int selectedRectWidth = 3;
-	int tempRectWidth = 4; 
+	int tempRectWidth = 5; 
 	int lineDiseaseWidth = 3;
 	int tempLineDiseaseWidth =3;
 

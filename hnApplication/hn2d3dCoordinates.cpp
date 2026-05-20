@@ -132,8 +132,17 @@ QVector<QRect> hn2d3dCoordinates::crossLineOver(const QLineF &line, const QVecto
 QVector<QRect> hn2d3dCoordinates::crossRectOver(const QRect& rect, const QVector<QRect> &rects)
 {
 	QVector<QRect> dstRects;
+	dstRects.reserve(qMin(rects.size(), 4096));
+	const QRect normalizedRect = rect.normalized();
 
-	for (const QRect &smallRect :rects)
+	for (const QRect &smallRect : qAsConst(rects))
+	{
+		if (normalizedRect.contains(smallRect))
+		{
+			dstRects.append(smallRect);
+		}
+	}
+	/*for (const QRect &smallRect :rects)
    {
 		QPoint center = smallRect.center();
 		bool inside = rect.contains(center);
@@ -141,12 +150,8 @@ QVector<QRect> hn2d3dCoordinates::crossRectOver(const QRect& rect, const QVector
 		{
 			dstRects.append(smallRect);
 
-		}
-		/*if (rect.contains(smallRect))
-		{
-			dstRects.append(smallRect);
-		}*/
-   }
+		}*/ 
+  // }
 
 	return dstRects;
 }

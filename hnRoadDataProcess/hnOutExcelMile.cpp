@@ -877,36 +877,7 @@ QString hnOutExcelMile::getPqiEvaluateStr(int rowCnt, QString pqiIndex)
 	  if (!m_project)
 	  {
 		  return false;
-	  }
-	  //if (!onlyInitSetInfo)
-	  //{
-		 // m_currentMileVec.clear();
-		 // //填充 QVector<hnMile> m_currentMileVec;
-		 // QVector<hnMile> allMile = m_project->getCurrentMileVector();
-		 // int line = 1;//上行 
-		 // if (StartMile > EndMile)
-		 // {
-			//  line = -1;//下行
-		 // }
-		 // Direction = line;
-		 // for (hnMile mile : allMile)
-		 // {
-			//  if (line > 0)
-			//  {
-			//	  if (StartMile <= mile.dTrueMile&& mile.dTrueMile < EndMile)
-			//	  {
-			//		  m_currentMileVec.push_back(mile);
-			//	  }
-			//  }
-			//  else
-			//  {
-			//	  if (StartMile >= mile.dTrueMile&& mile.dTrueMile > EndMile)
-			//	  {
-			//		  m_currentMileVec.push_back(mile);
-			//	  }
-			//  }
-		 // }
-	  //}
+	  } 
 	 
 	  //获取规范计算参数 
 	  hnApp::hnDataManager::getDataManager()->getRoadTypeSetInfo(Type, RoadDegreestr, RoadSurface, m_roadTypeSetInfo);

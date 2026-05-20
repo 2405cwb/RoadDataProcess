@@ -23,6 +23,7 @@ namespace hnPro
 {
 	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0), m_bNeedImportFieldMilePilesToResultDb(false), m_bNeedImportFieldMarksToResultDb(false)
 	{
+		m_xrSetting = HnXRSettings::getInstance();
 	}
 
 	hnProject::~hnProject()
@@ -742,7 +743,15 @@ namespace hnPro
 			}
 		}
 
-		return dTrueMile;
+		if (m_xrSetting->mile2dmiToInt)
+		{
+			return round(dTrueMile);
+		}
+		else
+		{
+			return dTrueMile;
+		}
+		 
 	}
 	// 绝对里程桩相对里程
 	double hnProject::trueMileToEncl(double dTrueMile)
@@ -817,7 +826,16 @@ namespace hnPro
 				}
 			}
 		}
-		return dEnclMile;
+		if (m_xrSetting->mile2dmiToInt)
+		{
+			return round(dEnclMile);
+		}
+		else
+		{
+			return dEnclMile;
+		}
+		
+		
 		//return round(dEnclMile);//cwb 20231027
 	}
 
@@ -1562,7 +1580,7 @@ namespace hnPro
 		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
 		for (const auto& item : m_vecMarkInfo)
 		{
-			lastIndex = std::max(lastIndex, item.nID + 1);
+			lastIndex = qMax(lastIndex, item.nID + 1);
 		}
 
 		for (auto& mark : marks)
@@ -1607,7 +1625,7 @@ namespace hnPro
 		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
 		for (const auto& item : m_vecMarkInfo)
 		{
-			lastIndex = std::max(lastIndex, item.nID + 1);
+			lastIndex = qMax(lastIndex, item.nID + 1);
 		}
 
 		mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
@@ -1669,7 +1687,7 @@ namespace hnPro
 		int maxId = m_pDbSqlite ? m_pDbSqlite->m_milePileTable.getMaxID() : 1;
 		for (const auto& item : m_vecMileagePile)
 		{
-			maxId = std::max(maxId, item.nID + 1);
+			maxId = qMax(maxId, item.nID + 1);
 		}
 		pile.nID = maxId;
 		m_vecMileagePile.push_back(pile);

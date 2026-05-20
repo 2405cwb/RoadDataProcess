@@ -341,11 +341,7 @@ void hn3dPixWidget::mousePressEvent(QMouseEvent * event)
 					//清空自动化模式病害数组
 					if (this->m_isDrawingDisease)
 					{
-						m_diseaseStartPoint.pixPoint = QPoint(-1, -1);
-						m_diseaseEndPoint.pixPoint = QPoint(-1, -1);
-						m_tmpLittleFrameDiseaseRects.clear();
-						m_littleSingleImagePoints.clear();
-						m_litteBigImagePoints.clear();
+						resetLittleFrameDrawState();
 					}
 
 					//记录开始点
@@ -479,6 +475,12 @@ void hn3dPixWidget::mousePressEvent(QMouseEvent * event)
 					}
 
 
+				}
+				else
+				{
+					this->slot_cancelDrawDiseases();
+					event->accept();
+					return;
 				}
 			}
 			else
@@ -831,8 +833,12 @@ void hn3dPixWidget::keyPressEvent(QKeyEvent * event)
 		QPoint widgetPoint = this->mapFromGlobal(screenPoint);
 		if (m_frameMode == LITTLE_FRAME)
 		{
-			// 按下 删除键 时，获取鼠标位置，删除病害
-			this->littleFrameRightButtonDragDelete(widgetPoint);
+			for (auto& dis : m_seclectedDiseases)
+			{
+				hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(dis);
+
+			}
+			m_seclectedDiseases.clear();
 		}
 	}
 	if (event->key() == Qt::Key_D)
@@ -1001,16 +1007,28 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 				QRect bigRect = this->drawTmpLittleBigFrameDisease(image);
 
 				
+				QStringList visiblePixNames;
 				QVector<pixImagePoint> visibleImagePoints;
 				for (auto it = m_currentWidgetPixNames.constBegin(); it != m_currentWidgetPixNames.constEnd(); ++it)
 				{
-					pixImagePoint point;
-					point.pixName = it.value();
-					point.pixPoint = QPoint(0, 0);
-					visibleImagePoints.append(point);
+					visiblePixNames.append(it.value());
 				}
-				//创造自动化模式鼠标移动轨迹的自动化模式
-				this->m_currentLittleFrameRects = this->createLittleFrameRects(visibleImagePoints);
+
+				if (visiblePixNames != m_cachedVisibleLittleFramePixNames)
+				{
+					m_cachedVisibleLittleFramePixNames = visiblePixNames;
+					visibleImagePoints.reserve(visiblePixNames.size());
+
+					for (const QString& pixName : qAsConst(visiblePixNames))
+					{
+						pixImagePoint  point;
+						point.pixName = pixName;
+						point.pixPoint = QPoint(0, 0);
+						visibleImagePoints.append(point);
+					}
+					m_cachedVisibleLittleFrameRects = this->createLittleFrameRects(visibleImagePoints);
+				}
+				this->m_currentLittleFrameRects = m_cachedVisibleLittleFrameRects;
 
 				//判断鼠标移动轨迹折线与当前自动化模式矩形数组 相交的矩形数组
 				hn2d3dCoordinates tool;
@@ -1018,13 +1036,21 @@ void hn3dPixWidget::drawTmpData(QImage & image)
 				QVector<QRect> currentRects = tool.crossRectOver(bigRect, this->m_currentLittleFrameRects);
 				this->m_tmpLittleFrameDiseaseRects.clear();
 				this->appendCommittedLittleRectDrawSelection(this->m_tmpLittleFrameDiseaseRects);
-				for (const QRect& rect : qAsConst(currentRects))
+				if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
 				{
-					if (!this->m_tmpLittleFrameDiseaseRects.contains(rect))
+					this->m_tmpLittleFrameDiseaseRects = currentRects;
+				}
+				else
+				{
+					for (const QRect& rect : qAsConst(currentRects))
 					{
-						this->m_tmpLittleFrameDiseaseRects.append(rect);
+						if (!this->m_tmpLittleFrameDiseaseRects.contains(rect))
+						{
+							this->m_tmpLittleFrameDiseaseRects.append(rect);
+						}
 					}
 				}
+				
 				const QColor rectColor = Qt::red;
 				this->drawRectsOnImage(
 					image,
@@ -2678,6 +2704,7 @@ bool hn3dPixWidget::littleFrameProcess()
 {
 	if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
 	{
+		resetLittleFrameDrawState();
 		return false;
 	}
 
@@ -2687,6 +2714,8 @@ bool hn3dPixWidget::littleFrameProcess()
 		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
 			QString::fromLocal8Bit("所画病害中有不同的路面标准或者路面类型，病害无效，取消绘制"),
 			QString::fromLocal8Bit("确定"));
+		resetLittleFrameDrawState();
+
 		return false;
 	}
 
@@ -2731,6 +2760,8 @@ bool hn3dPixWidget::littleFrameProcess()
 	}
 	else
 	{
+		resetLittleFrameDrawState();
+
 		return false;
 	}
 
@@ -2763,6 +2794,8 @@ bool hn3dPixWidget::littleFrameProcess()
 			diseaseRects);
 		if (false == isDrawDisease)
 		{
+			resetLittleFrameDrawState();
+
 			return false;
 		}
 	}
@@ -2779,7 +2812,8 @@ bool hn3dPixWidget::littleFrameProcess()
 	}
 
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
-	clearLittleRectDrawSelection();
+	resetLittleFrameDrawState();
+	 
 
 	return true;
 }

@@ -2138,8 +2138,14 @@ void hnOutExcelMileManage::readPbiValueFromFile(QVector<hnOutExcelMile>& miles, 
 		oriDataD[i] = (nextDataD[i - 2] + nextDataD[i - 1] + nextDataD[i] + nextDataD[i + 1] + nextDataD[i + 2]) / 5;
 	}
 	//QStringList temp;
+	int i = 0; 
 	for (hnOutExcelMile& excelMile : miles)
 	{
+		i++;
+		if (i == miles.size()-1)
+		{
+			int t = 3;
+		}
 		bool HasData = false;
 		//获得分段的 起始里程和终止里程
 		double sMile = excelMile.getStartDmi();

@@ -23,6 +23,7 @@ hnAboutInfoWidgets::hnAboutInfoWidgets(QWidget *parent)
 
 hnAboutInfoWidgets::~hnAboutInfoWidgets()
 {
+
 }
 
 void hnAboutInfoWidgets::okButton_Slot()

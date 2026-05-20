@@ -219,6 +219,8 @@ private:
 	//根据自动化模式病害的坐标矩形数组，创建写入数据库的2d坐标数组
 	vector<hn2dRectI> generateLittleFrameHn2dRectVector(const QVector<QRect> &rects);
 
+	bool makeLittleFrameHn2dRect(const QRect&bigImageRect,hn2dRectI& hnRect);
+
 	//根据自动化模式病害的坐标矩形数组，创建写入数据库的3d坐标数组
 	vector<hn3dRectI> generateLittleFrameHn3dRectVector(const QVector<QRect> &rects);
 

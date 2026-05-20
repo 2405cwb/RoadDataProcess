@@ -219,14 +219,14 @@
             <item row="0" column="1">
              <widget class="QLabel" name="label_2">
               <property name="text">
-               <string>Shift + A</string>
+               <string>F1</string>
               </property>
              </widget>
             </item>
             <item row="1" column="1">
              <widget class="QLabel" name="label_4">
               <property name="text">
-               <string>Shift + D</string>
+               <string>F2|病害列表右键删除|界面选中后Delete</string>
               </property>
              </widget>
             </item>
@@ -261,7 +261,7 @@
             <item row="2" column="1">
              <widget class="QLabel" name="label_6">
               <property name="text">
-               <string>Shift + E</string>
+               <string>F3</string>
               </property>
              </widget>
             </item>

@@ -155,6 +155,8 @@ protected:
 	// Clear all temporary D-rectangle selection state.
 	void clearLittleRectDrawSelection();
 
+	void resetLittleFrameDrawState();
+
 	// 重建 m_litteBigImagePoints
 	void rebuildLittleFrameBigImagePoints();
 
@@ -212,7 +214,7 @@ protected:
 protected:
 	// pixImagePoint 转 bigImagePoint
 	QPoint pixImagePointToBigImagePoint(const pixImagePoint &point);
-
+	void clearVisibleLittleFrameRectCache();
 protected:
 	//线状病害的临时点，这个点用于存储用户点击的点
 	QVector<pixImagePoint> m_tmpLineDiseasePoints;
@@ -224,12 +226,14 @@ protected:
 	QVector<pixImagePoint> m_tempPoints;
 
 	//绘制线状病害 记录最后一次用户按下后移动的点 
-	QVector<pixImagePoint> m_tmpLastPaintLineDiseasePoints;
-protected:
+	QVector<pixImagePoint> m_tmpLastPaintLineDiseasePoints; 
 	// 绘制线条的宽度，矩形的边框宽度也适用
 	int m_lineWidth;
 	// 字体大小
 	int m_fontSize;
+
+	QVector<QRect> m_cachedVisibleLittleFrameRects;
+	QStringList m_cachedVisibleLittleFramePixNames;
 protected:
 	WidgetType m_widgetType;
 

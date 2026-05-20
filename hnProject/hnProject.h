@@ -8,6 +8,7 @@
 #include <QVector>
 #include <QString>
 #include "..\hnCommon\hnRoadTypeDef.h"
+#include "..\hnConfigService\HnXRSettings.h"
 using namespace hnCommon;
 //using namespace hnDataTable;
 
@@ -224,6 +225,8 @@ namespace hnPro
 		bool m_bNeedImportFieldMilePilesToResultDb;
 		bool m_bNeedImportFieldMarksToResultDb;
 
+
+		HnXRSettings* m_xrSetting;
 		// 工程根目录
 		QString m_strProjectPath;
 
