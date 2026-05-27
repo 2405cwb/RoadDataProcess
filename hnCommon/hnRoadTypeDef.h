@@ -29,7 +29,7 @@ namespace hnCommon
 		DESIGN						// 设计模式
 	};
 	 
-	static char* workTypeToQString(ROAD_WORK_TYPE workType)
+	static const char* workTypeToQString(ROAD_WORK_TYPE workType)
 	{
 		switch (workType)
 		{
@@ -45,6 +45,7 @@ namespace hnCommon
 		default:
 			break;
 		}
+		return "";
 	}
 	static ROAD_WORK_TYPE qstringToWorkType(const char * standard)
 	{
