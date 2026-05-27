@@ -1488,6 +1488,8 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 	QVector<hnRoadDiseaseInfo> diss;
 	 
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getRoadDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, diss);
+	const qint64 getDiseasesMs = timer.elapsed();
+	timer.restart();
 	this->m_currentWidgetDiseases = diss.toStdVector();
 	if (this->m_frameMode == FrameMode::BIG_FRAME)
 	{
@@ -1509,6 +1511,9 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 		this->drawLineDiseases(m_currentWidgetDiseases, image);
 	}
 
+
+	const qint64 drawMs = timer.elapsed();
+	timer.restart();
 
 	//绘制二三维开始里程矫正的线
 	if (PROJECT_23D_TYPE == project->getProjectType())
@@ -1533,11 +1538,10 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 			m_tmpPixImageWithoutDisease, image);
 	}
 	const qint64 drawLineAndDrawBigImage = timer.elapsed();
-	timer.restart();
-	if (getDiseases >= 5 || drawMs >= 10 || drawLineAndDrawBigImage >= 10 || !m_currentWidgetDiseases.empty())
+	if (getDiseasesMs >= 5 || drawMs >= 10 || drawLineAndDrawBigImage >= 10 || !m_currentWidgetDiseases.empty())
 	{
 		qDebug().noquote() << "[HN_PERF][2DDrawDatabaseLoadData]"
-			<< "getDiseasesMs=" << getDiseases
+			<< "getDiseasesMs=" << getDiseasesMs
 			<< "drawDiseaseMs=" << drawMs
 			<< "drawLineMagnifyMs=" << drawLineAndDrawBigImage
 			<< "diseaseCount=" << m_currentWidgetDiseases.size()

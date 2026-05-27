@@ -1658,7 +1658,7 @@ bool hnOutExcelManage::exportProjectInfoSheet(Document &xlsx, hnPro::hnProject*c
 
 	xlsx.write(QString("A19"), QStringLiteral("道路规范"), contextFormat);
 	xlsx.write(QString("B19"), standard, contextFormat);
-	char * drawType = hnCommon::workTypeToQString(curProject->getBaseDrawType());
+	const char * drawType = hnCommon::workTypeToQString(curProject->getBaseDrawType());
 	xlsx.write(QString("A20"), QStringLiteral("绘制模式"), contextFormat);
 	QString drawTypeStr = QString::fromLocal8Bit(drawType);
 	xlsx.write(QString("B20"), drawTypeStr, contextFormat);

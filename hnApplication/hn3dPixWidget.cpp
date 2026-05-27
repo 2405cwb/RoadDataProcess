@@ -6,6 +6,8 @@
 #include <QFileInfo>
 #include <QToolTip>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <QDebug>
 #include "../hnDiseaseService.h"
 using namespace hnApp;
 using namespace hnPro;

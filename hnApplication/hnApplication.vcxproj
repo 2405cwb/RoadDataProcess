@@ -67,7 +67,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtGui;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level1</WarningLevel>
       <FunctionLevelLinking>
       </FunctionLevelLinking>
@@ -88,7 +88,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtGui;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;hnDataTable.lib;qtmaind.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320d.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib</AdditionalDependencies>
