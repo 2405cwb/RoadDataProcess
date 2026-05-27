@@ -61,6 +61,9 @@ void hnDiseaseService::ensureAllDiseaseCache()
 		<< timer.elapsed()
 		<< "ms, count:"
 		<< m_allDiseaseCache.size();
+	qDebug().noquote() << "[HN_PERF][DiseaseCacheLoad]"
+		<< "elapsedMs=" << timer.elapsed()
+		<< "count=" << m_allDiseaseCache.size();
 }
 
  QVector<hnCommon::hnRoadDiseaseInfo>& hnDiseaseService::getAllDiseases()
@@ -91,12 +94,15 @@ void hnDiseaseService::getRoadDiseasesInRange(
 	double endMile,
 	QVector<hnCommon::hnRoadDiseaseInfo>& result)
 {
+	QElapsedTimer totalTimer;
+	totalTimer.start();
+
 	ensureAllDiseaseCache();
 
 	result.clear();
 
-	QElapsedTimer timer;
-	timer.start();
+	QElapsedTimer filterTimer;
+	filterTimer.start();
 
 	for (int i = 0; i < m_allDiseaseCache.size(); ++i)
 	{
@@ -108,10 +114,19 @@ void hnDiseaseService::getRoadDiseasesInRange(
 		}
 	}
 
-	/*qDebug() << "[DiseaseService] filterRoad diseases:"
-		<< timer.elapsed()
-		<< "ms, result:"
-		<< result.size();*/
+	const qint64 filterMs = filterTimer.elapsed();
+	const qint64 totalMs = totalTimer.elapsed();
+	if (totalMs >= 5 || result.size() > 0)
+	{
+		qDebug().noquote() << "[HN_PERF][DiseaseRangeRoad]"
+			<< "totalMs=" << totalMs
+			<< "filterMs=" << filterMs
+			<< "beginMile=" << beginMile
+			<< "endMile=" << endMile
+			<< "cacheCount=" << m_allDiseaseCache.size()
+			<< "resultCount=" << result.size()
+			<< "cacheValid=" << m_allDiseaseCacheValid;
+	}
 }
 
 void hnDiseaseService::getStreetDiseaseInRange(double beginMile, double endMile, QVector<hnCommon::hnRoadDiseaseInfo>& result)

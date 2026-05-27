@@ -12,6 +12,10 @@
 #include <qDebug>
 #include <QThread>
 #include <QFuture>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <QFont>
+#include <QColor>
 #include <QMutexLocker>
 #include "imageLoader.h"
 #include "hnImagePainter.h"
@@ -655,23 +659,33 @@ bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 
 void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
 {
-	if (bottomFrameIdx <= 0)
-	{
-		return;
-	}
+    if (bottomFrameIdx <= 0)
+    {
+        return;
+    }
 
-	if (m_preloadFuture.isRunning())
-	{
-		return;
-	}
+    if (m_preloadFuture.isRunning())
+    {
+        qDebug().noquote() << "[HN_PERF][PreloadSkippedRunning]"
+            << "requestBottomFrameIdx=" << bottomFrameIdx
+            << "lastBottomFrameIdx=" << m_lastPreloadBottomFrameIdx
+            << "scrollValue=" << m_currentScrollBarValue
+            << "cacheSize=" << m_perfLastCacheSize;
+        m_perfLastStatus = QString("preload busy f%1").arg(bottomFrameIdx);
+        return;
+    }
 
-	if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
-	{
-		return;
-	}
+    if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
+    {
+        return;
+    }
 
-	m_lastPreloadBottomFrameIdx = bottomFrameIdx;
-	m_preloadFuture = QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx, bottomFrameIdx);
+    m_lastPreloadBottomFrameIdx = bottomFrameIdx;
+    qDebug().noquote() << "[HN_PERF][PreloadScheduled]"
+        << "bottomFrameIdx=" << bottomFrameIdx
+        << "loadFrameNum=" << m_loadFrameNum
+        << "scrollValue=" << m_currentScrollBarValue;
+    m_preloadFuture = QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx, bottomFrameIdx);
 }
 
 void hnBrowsePixWidget::drawSomeThingOnImage(QImage & image)
@@ -684,54 +698,68 @@ void hnBrowsePixWidget::afterLoadPictures()
 
 void hnBrowsePixWidget::drawPicture(QImage &image)
 {
-	//异常处理
-	if (this->height() == 0 || this->width() == 0)
-	{
-		return;
-	}
+    QElapsedTimer timer;
+    timer.start();
 
-	//计算每一帧照片的长和宽
-	double framePixWidth = m_pixWidth;
-	double framePixHeight = m_pixHeight;
+    //异常处理
+    if (this->height() == 0 || this->width() == 0)
+    {
+        qDebug().noquote() << "[HN_PERF][DrawPictureSkip]" << "reason=zeroWidgetSize";
+        return;
+    }
 
-	//往label上画图片
-	this->drawAllPixOnLabel(image, framePixHeight, framePixWidth, m_heightScale);
+    //计算每一帧照片的长和宽
+    double framePixWidth = m_pixWidth;
+    double framePixHeight = m_pixHeight;
 
-	//画完图片后  储存临时的、只含有图片的image 用于局部放大
-	this->m_tmpPixImageWithoutDisease = image;
+    //往label上画图片
+    this->drawAllPixOnLabel(image, framePixHeight, framePixWidth, m_heightScale);
 
+    //画完图片后  储存临时的、只含有图片的image 用于局部放大
+    this->m_tmpPixImageWithoutDisease = image;
+
+    m_perfLastDrawMs = timer.elapsed();
+    if (m_perfLastDrawMs >= 16)
+    {
+        qDebug().noquote() << "[HN_PERF][DrawPicture]"
+            << "elapsedMs=" << m_perfLastDrawMs
+            << "scrollValue=" << m_currentScrollBarValue
+            << "bottomFrame=" << m_buttomFrameIdx
+            << "currentFrameNum=" << m_currentWidgetFrameNum
+            << "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
+            << "cacheSize=" << m_perfLastCacheSize;
+    }
 }
 
 void hnBrowsePixWidget::slot_updateCurrentScrollBar(const int scrollBarValue)
 {
+    QElapsedTimer timer;
+    timer.start();
 
-	//设置加载图片的张数为当前帧数的两倍
-	this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
+    //设置加载图片的张数为当前帧数的两倍
+    this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
 
-	QDateTime currentDataTime = QDateTime::currentDateTime();
+    QDateTime currentDataTime = QDateTime::currentDateTime();
+    qint64 intervalTimeMS = m_lastTime.msecsTo(currentDataTime);
+    m_lastTime = currentDataTime;
 
-	qint64 intervalTimeMS = m_lastTime.msecsTo(currentDataTime);
+    //倒转滚动条的值
+    int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
+    const int oldValue = m_currentScrollBarValue;
+    m_currentScrollBarValue = tmpScrollBarValue;
+    m_perfLastScrollValue = scrollBarValue;
+    m_perfLastStatus = QString("scroll %1->%2").arg(oldValue).arg(tmpScrollBarValue);
 
-	m_lastTime = currentDataTime;
+    qDebug().noquote() << "[HN_PERF][ScrollBarUpdate]"
+        << "rawValue=" << scrollBarValue
+        << "mappedValue=" << tmpScrollBarValue
+        << "oldMappedValue=" << oldValue
+        << "delta=" << (tmpScrollBarValue - oldValue)
+        << "intervalMs=" << intervalTimeMS
+        << "loadFrameNum=" << m_loadFrameNum
+        << "slotMs=" << timer.elapsed();
 
-	//倒转滚动条的值
-	int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
-
-	//if (qAbs(tmpScrollBarValue - m_currentScrollBarValue) < 5 && qAbs(intervalTimeMS) > 70)
-	//{
-	//	this->update();
-	//}
-	////否则，延时进行更新，延时500ms
-	//else
-	//{
-	//	QTimer::singleShot(500, [=]() {
-	//		this->update();
-	//	});
-	//}
-	//m_currentScrollBarValue = tmpScrollBarValue;
-	m_currentScrollBarValue = tmpScrollBarValue;
-	this->update();
-	//
+    this->update();
 }
 
 void hnBrowsePixWidget::slot_moveMouse(bool up,bool is2D)
@@ -1082,16 +1110,19 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 			int cnt;
 			cnt = frameNum - num;
 
-			ensureImageLoaded(frameIdx);
-			//从内存中读取
-			auto iter = this->m_imageMap.find(frameIdx);
-			if (iter == m_imageMap.end())
-			{
-				this->delayReupdate();
-				return;
-			}
-
-			auto image = iter.value();
+			const bool loaded = ensureImageLoaded(frameIdx);
+            QImage image;
+            if (!loaded || !getCachedImage(frameIdx, &image))
+            {
+                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
+                    << "reason=cacheMissAfterLoad"
+                    << "frameIdx=" << frameIdx
+                    << "scrollValue=" << m_currentScrollBarValue
+                    << "bottomFrame=" << m_buttomFrameIdx
+                    << "cacheSize=" << m_perfLastCacheSize;
+                this->delayReupdate();
+                return;
+            }
 	
 			//往当前视图的图片名称数组中添加
 			auto pixNameiter = this->m_pixNameMap.find(frameIdx);
@@ -1123,15 +1154,19 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 
 		frameIdx = frameIdx - 0.5;
 
-		ensureImageLoaded(frameIdx);
-		//从内存中读取
-		auto iter = this->m_imageMap.find(frameIdx);
-		if (iter == m_imageMap.end())
-		{
-			this->delayReupdate();
-			return;
-		}
-		auto image = iter.value();
+		const bool loaded = ensureImageLoaded(frameIdx);
+            QImage image;
+            if (!loaded || !getCachedImage(frameIdx, &image))
+            {
+                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
+                    << "reason=cacheMissAfterLoad"
+                    << "frameIdx=" << frameIdx
+                    << "scrollValue=" << m_currentScrollBarValue
+                    << "bottomFrame=" << m_buttomFrameIdx
+                    << "cacheSize=" << m_perfLastCacheSize;
+                this->delayReupdate();
+                return;
+            }
 		
 
 
@@ -1172,15 +1207,19 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		{
 			int cnt;
 			cnt = frameNum - num;
-			ensureImageLoaded(frameIdx);
-			//从内存中读取
-			auto iter = this->m_imageMap.find(frameIdx);
-			if (iter == m_imageMap.end())
-			{
-				this->delayReupdate();
-				return;
-			}
-			auto image = iter.value();
+			const bool loaded = ensureImageLoaded(frameIdx);
+            QImage image;
+            if (!loaded || !getCachedImage(frameIdx, &image))
+            {
+                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
+                    << "reason=cacheMissAfterLoad"
+                    << "frameIdx=" << frameIdx
+                    << "scrollValue=" << m_currentScrollBarValue
+                    << "bottomFrame=" << m_buttomFrameIdx
+                    << "cacheSize=" << m_perfLastCacheSize;
+                this->delayReupdate();
+                return;
+            }
 
 			if (image.isNull() || image.bytesPerLine() == 0)
 			{
@@ -1209,64 +1248,98 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 
 void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 {
-	//异常处理，图片数组为空就推出
-	if (m_pixNameMap.isEmpty())
-	{
-		return;
-	}
-	int tempH = this->height();
-	int tempw = this->width();
-	int tempValue = this->height()*(m_pixWidth / this->width());
+    Q_UNUSED(event);
+    QElapsedTimer paintTimer;
+    paintTimer.start();
 
-	//QImage image(this->m_pixWidth, this->height()*(m_pixWidth / this->width()), QImage::Format_RGB888);
+    //异常处理，图片数组为空就推出
+    if (m_pixNameMap.isEmpty())
+    {
+        return;
+    }
 
- 
+    const QSize imageSize = currentPaintImageSize();
+    QImage image(imageSize, QImage::Format_RGB888);
 
-	const QSize  imageSize = currentPaintImageSize();
+    if (!m_tmpPixImageWithoutDisease.isNull() &&
+        m_tmpPixImageWithoutDisease.size() == image.size())
+    {
+        image = m_tmpPixImageWithoutDisease.copy();
+    }
+    else
+    {
+        image.fill(Qt::black);
+    }
 
-	QImage image(imageSize, QImage::Format_RGB888);
+    QElapsedTimer drawPixTimer;
+    drawPixTimer.start();
+    //允许画图片，就画上去
+    if (this->m_isAllowDrawPix)
+    {
+        //画图片 传image 进去  这个是固定的，把几张分开的图片画到image上
+        this->drawPicture(image);
+    }
+    const qint64 baseDrawMs = drawPixTimer.elapsed();
 
+    QElapsedTimer overlayTimer;
+    overlayTimer.start();
+    //画其他的 传image 进去 这个函数是可重载的
+    //这里面的临时内容判断，交由子类去自行处理
+    this->drawSomeThingOnImage(image);
+    const qint64 overlayMs = overlayTimer.elapsed();
 
-	
-	if (!m_tmpPixImageWithoutDisease.isNull()&&
-		m_tmpPixImageWithoutDisease.size() == image.size())
-	{
-		image = m_tmpPixImageWithoutDisease.copy();
-	}
-	else
-	{
-		image.fill(Qt::black);
-	}
+    //将图片一次性画到this窗口上
+    QPainter painter(this);
+    painter.drawImage(this->rect(), image);
 
-	//允许画图片，就画上去
-	if (this->m_isAllowDrawPix)
-	{
-		//画图片 传image 进去  这个是固定的，把几张分开的图片画到image上
-		this->drawPicture(image);
-	}
+    ++m_perfPaintCount;
+    if (!m_perfFpsTimer.isValid())
+    {
+        m_perfFpsTimer.start();
+    }
+    const qint64 fpsWindowMs = m_perfFpsTimer.elapsed();
+    if (fpsWindowMs >= 500)
+    {
+        m_perfFps = (m_perfPaintCount * 1000.0) / qMax<qint64>(1, fpsWindowMs);
+        m_perfPaintCount = 0;
+        m_perfFpsTimer.restart();
+    }
 
+    m_perfLastPaintMs = paintTimer.elapsed();
+    drawPerformanceOverlay(painter);
 
-	
-	//画其他的 传image 进去 这个函数是可重载的  
-	//这里面的临时内容判断，交由子类去自行处理
-	this->drawSomeThingOnImage(image);
+    if (m_perfLastPaintMs >= 33 || overlayMs >= 16 || baseDrawMs >= 16)
+    {
+        qDebug().noquote() << "[HN_PERF][PaintEvent]"
+            << "totalMs=" << m_perfLastPaintMs
+            << "baseDrawMs=" << baseDrawMs
+            << "overlayMs=" << overlayMs
+            << "fps=" << QString::number(m_perfFps, 'f', 1)
+            << "scrollValue=" << m_currentScrollBarValue
+            << "bottomFrame=" << m_buttomFrameIdx
+            << "widgetSize=" << QString("%1x%2").arg(width()).arg(height())
+            << "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
+            << "cacheSize=" << m_perfLastCacheSize;
+    }
 
-	//将图片一次性画到this窗口上
-	QPainter painter(this);
-	painter.drawImage(this->rect(), image);
-
-
-	//记录上次滚动条的值
-	this->m_lastScrollBarValue = this->m_currentScrollBarValue;
+    //记录上次滚动条的值
+    this->m_lastScrollBarValue = this->m_currentScrollBarValue;
 }
 
 void hnBrowsePixWidget::resizeEvent(QResizeEvent* event)
 {
-	m_isAllowDrawPix = true;
-	m_tmpContectImage = QImage();
-	m_tmpPixImageWithoutDisease = QImage();
-	QWidget::resizeEvent(event);
-	update();
+    qDebug().noquote() << "[HN_PERF][BrowseResize]"
+        << "oldSize=" << QString("%1x%2").arg(event ? event->oldSize().width() : -1).arg(event ? event->oldSize().height() : -1)
+        << "newSize=" << QString("%1x%2").arg(event ? event->size().width() : -1).arg(event ? event->size().height() : -1)
+        << "scrollValue=" << m_currentScrollBarValue
+        << "bottomFrame=" << m_buttomFrameIdx
+        << "wasTmpImageNull=" << m_tmpPixImageWithoutDisease.isNull();
+    m_perfLastStatus = "resize";
+    m_isAllowDrawPix = true;
+    m_tmpContectImage = QImage();
+    m_tmpPixImageWithoutDisease = QImage();
+    QWidget::resizeEvent(event);
+    update();
 }
 
 void hnBrowsePixWidget::delayReupdate()

@@ -1532,6 +1532,20 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
 			m_tmpPixImageWithoutDisease, image);
 	}
+	const qint64 drawLineAndDrawBigImage = timer.elapsed();
+	timer.restart();
+	if (getDiseases >= 5 || drawMs >= 10 || drawLineAndDrawBigImage >= 10 || !m_currentWidgetDiseases.empty())
+	{
+		qDebug().noquote() << "[HN_PERF][2DDrawDatabaseLoadData]"
+			<< "getDiseasesMs=" << getDiseases
+			<< "drawDiseaseMs=" << drawMs
+			<< "drawLineMagnifyMs=" << drawLineAndDrawBigImage
+			<< "diseaseCount=" << m_currentWidgetDiseases.size()
+			<< "frameMode=" << static_cast<int>(m_frameMode)
+			<< "beginMile=" << m_beginEncoderMile
+			<< "endMile=" << m_endEncoderMile
+			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
+	}
 }
 
 void hn2dPixWidget::drawTmpData(QImage & image)
@@ -1971,8 +1985,8 @@ QString hn2dPixWidget::generateStatusInfo(const QPoint & eventPos)
 	 
 
 	hnMile currentPointMile = this->getHnMileFromPoint(bigImagePoint);
-	statusInfo = QString::fromLocal8Bit("图片底部桩号：%1\t图片底部里程：%2\t桩号：%3\t里程:%4\t路面标准：%5\t"
-		"路面材质：%6\t路面等级：%7\t病害模式：%8\t屏幕坐标：%9\t拼接图片坐标：%10\t单张图片坐标：%11\t图片名称：%12\t")
+	statusInfo = QString::fromLocal8Bit("图片底部桩号：%1	图片底部里程：%2	桩号：%3	里程:%4	路面标准：%5	"
+		"路面材质：%6	路面等级：%7	病害模式：%8	屏幕坐标：%9	拼接图片坐标：%10	单张图片坐标：%11	图片名称：%12	")
 		.arg(currentPointMile.dTrueMile, 0, 'f', 0)
 		.arg(currentPointMile.dEnclMile, 0, 'f', 0)
 		.arg(caculateTrueMile(bigImagePoint), 0, 'f', 3)

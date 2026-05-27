@@ -930,22 +930,31 @@ QVector<QPoint> hn3dPixWidget::createBrokenLinePoints(hnRoadDiseaseInfo & diseas
 
 void hn3dPixWidget::drawDatabaseLoadData(QImage & image)
 {
+	QElapsedTimer totalTimer;
+	QElapsedTimer stepTimer;
+	totalTimer.start();
+
 	if (!m_isAllowDrawPix)
 	{
 		return;
 	}
 	QVector<hnRoadDiseaseInfo> diss;
+	stepTimer.start();
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getRoadDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, diss);
+	const qint64 getDiseasesMs = stepTimer.elapsed();
 	this->m_currentWidgetDiseases = diss.toStdVector();
 
 	auto projectInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 	QString standard = HnProjectEnums::roadTypeEnumToQString(hnApp::hnDataManager::getDataManager()->getCurrentProject()->getBaseStandard());
 	//加载控制点
+	stepTimer.restart();
 	m_currentCtrlPoints.clear();
 	QString stateMent = QString("SELECT * FROM %1 WHERE Mileage >= %2 AND Mileage <= %3")
 		.arg(CTRL_POINT_TABLE).arg(m_beginEncoderMile).arg(m_endEncoderMile);
 	hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->readData(m_currentCtrlPoints, stateMent.toLocal8Bit().data());
+	const qint64 ctrlPointMs = stepTimer.elapsed();
 
+	stepTimer.restart();
 	if (PROJECT_23D_TYPE == m_projectType)
 	{
 		if (false == m_seclectPoint.pixName.isEmpty())
@@ -980,15 +989,34 @@ void hn3dPixWidget::drawDatabaseLoadData(QImage & image)
 
 	//将加载后的控制点绘制到image上
 	this->drawCtrlPoint(image, m_currentCtrlPoints);
+	const qint64 drawMs = stepTimer.elapsed();
 
 	//记录临时内容画板
 	m_tmpContectImage = image;
 
+	stepTimer.restart();
 	//如果要画放大镜内容
 	if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
 	{
 		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
 			m_tmpPixImageWithoutDisease, image);
+	}
+	const qint64 magnifyMs = stepTimer.elapsed();
+	const qint64 totalMs = totalTimer.elapsed();
+	if (totalMs >= 20 || !m_currentWidgetDiseases.empty() || !m_currentCtrlPoints.empty())
+	{
+		qDebug().noquote() << "[HN_PERF][3DDrawDatabaseLoadData]"
+			<< "totalMs=" << totalMs
+			<< "getDiseasesMs=" << getDiseasesMs
+			<< "ctrlPointMs=" << ctrlPointMs
+			<< "drawMs=" << drawMs
+			<< "magnifyMs=" << magnifyMs
+			<< "diseaseCount=" << m_currentWidgetDiseases.size()
+			<< "ctrlPointCount=" << m_currentCtrlPoints.size()
+			<< "frameMode=" << static_cast<int>(m_frameMode)
+			<< "beginMile=" << m_beginEncoderMile
+			<< "endMile=" << m_endEncoderMile
+			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
 	}
 }
 
