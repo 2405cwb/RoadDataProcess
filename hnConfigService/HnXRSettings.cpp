@@ -37,6 +37,7 @@ void HnXRSettings::readData()
 	sheetRoundingOffNum = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum", 0);
 	sheetRoundingOffNum_Dr = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum_Dr", 0);
 	movePictureBackMouseRatio= m_Setting->ReadInteger("SETTING", "movePictureBackMouseRatio", 0);
+	wheelScrollOneImage = m_Setting->ReadBool("SETTING", "wheelScrollOneImage", false);
 	diseaseMarkTxt = m_Setting->ReadString("SETTING", "diseaseMarkTxt", "");
 	diseaseMarkTxts = m_Setting->ReadString("SETTING", "diseaseMarkTxts", "");
 	Las_Filter = m_Setting->ReadBool("IRM", "Las_Filter", true);
@@ -89,6 +90,7 @@ void HnXRSettings::writeData()
 	m_Setting->WriteInteger("SETTING", "sheetRoundingOffNum_Dr", sheetRoundingOffNum_Dr);
 
 	m_Setting->WriteInteger("SETTING", "movePictureBackMouseRatio", movePictureBackMouseRatio);
+	m_Setting->WriteBool("SETTING", "wheelScrollOneImage", wheelScrollOneImage);
 	m_Setting->WriteBool("SETTING", "gpsFormat", gpsFormat);
 	m_Setting->WriteString("SETTING", "DefaultPath", DefaultPath);
 	m_Setting->WriteString("SETTING", "lastProjectName", lastProjectName);

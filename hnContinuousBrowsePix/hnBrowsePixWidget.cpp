@@ -571,6 +571,12 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 
 	//this->m_imageMapMutex.unlock();
 
+	QElapsedTimer timer;
+	timer.start();
+	qint64 maxSingleLoadMs = 0;
+	int loadedCount = 0;
+	int removedCount = 0;
+
 	const int btmIdx = bottomFrameIdx;
 	const int LOAD_NUM = this->m_loadFrameNum;
 	const int minKeep = qMax(1, btmIdx - LOAD_NUM);
@@ -592,6 +598,8 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 			continue;
 		}
 
+		QElapsedTimer loadTimer;
+		loadTimer.start();
 		QImage image(fileName);
 		if (image.isNull())
 		{
@@ -599,12 +607,14 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 		}
 
 		image = image.mirrored(m_isHMirrored, m_isVMirrored);
+		maxSingleLoadMs = qMax(maxSingleLoadMs, loadTimer.elapsed());
 
 		{
 			QMutexLocker locker(&m_imageMapMutex);
 			if (!m_imageMap.contains(idx))
 			{
 				m_imageMap.insert(idx, image);
+				++loadedCount;
 			}
 		}
 	}
@@ -625,19 +635,42 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 			m_imageMap.remove(key);
 		}
 	}
+
+	removedCount = removeKeys.size();
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		m_perfLastCacheSize = m_imageMap.size();
+	}
+
+	m_perfLastPreloadMs = timer.elapsed();
+	if (m_perfLastPreloadMs >= 50 || maxSingleLoadMs >= 25 || loadedCount > 0 || removedCount > 0)
+	{
+		qDebug().noquote() << "[HN_PERF][Preload]"
+			<< "bottomFrameIdx=" << bottomFrameIdx
+			<< "elapsedMs=" << m_perfLastPreloadMs
+			<< "maxSingleLoadMs=" << maxSingleLoadMs
+			<< "loadedCount=" << loadedCount
+			<< "removedCount=" << removedCount
+			<< "keepRange=" << QString("%1-%2").arg(minKeep).arg(maxKeep)
+			<< "cacheSize=" << m_perfLastCacheSize;
+	}
 }
 
 bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 {
-	if (frameIdx <1 || frameIdx >m_pixNameMap.size())
+	if (frameIdx < 1 || frameIdx > m_pixNameMap.size())
 	{
 		return false;
 	}
 
-	QMutexLocker locker(&m_imageMapMutex);
-	if (m_imageMap.contains(frameIdx))
 	{
-		return true;
+		QMutexLocker locker(&m_imageMapMutex);
+		m_perfLastCacheSize = m_imageMap.size();
+		if (m_imageMap.contains(frameIdx))
+		{
+			m_perfLastSyncLoadMs = 0;
+			return true;
+		}
 	}
 
 	const QString fileName = m_pixNameMap.value(frameIdx);
@@ -645,18 +678,38 @@ bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 	{
 		return false;
 	}
+
+	QElapsedTimer timer;
+	timer.start();
 	QImage image(fileName);
-	if (image.isNull()
-		)
+	if (image.isNull())
 	{
+		m_perfLastSyncLoadMs = timer.elapsed();
 		return false;
 	}
+
 	image = image.mirrored(m_isHMirrored, m_isVMirrored);
-	m_imageMap.insert(frameIdx, image);
+	m_perfLastSyncLoadMs = timer.elapsed();
+
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		if (!m_imageMap.contains(frameIdx))
+		{
+			m_imageMap.insert(frameIdx, image);
+		}
+		m_perfLastCacheSize = m_imageMap.size();
+	}
+
+	if (m_perfLastSyncLoadMs >= 25)
+	{
+		qDebug().noquote() << "[HN_PERF][SyncImageLoad]"
+			<< "frameIdx=" << frameIdx
+			<< "elapsedMs=" << m_perfLastSyncLoadMs
+			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
+			<< "file=" << fileName;
+	}
 	return true;
-
 }
-
 void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
 {
     if (bottomFrameIdx <= 0)
@@ -1261,7 +1314,8 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
     const QSize imageSize = currentPaintImageSize();
     QImage image(imageSize, QImage::Format_RGB888);
 
-    if (!m_tmpPixImageWithoutDisease.isNull() &&
+    if (!m_isAllowDrawPix &&
+        !m_tmpPixImageWithoutDisease.isNull() &&
         m_tmpPixImageWithoutDisease.size() == image.size())
     {
         image = m_tmpPixImageWithoutDisease.copy();
@@ -1326,6 +1380,63 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
     this->m_lastScrollBarValue = this->m_currentScrollBarValue;
 }
 
+bool hnBrowsePixWidget::getCachedImage(int frameIdx, QImage* image)
+{
+	if (image == nullptr)
+	{
+		return false;
+	}
+
+	QMutexLocker locker(&m_imageMapMutex);
+	auto iter = m_imageMap.constFind(frameIdx);
+	if (iter == m_imageMap.constEnd())
+	{
+		m_perfLastCacheSize = m_imageMap.size();
+		return false;
+	}
+
+	*image = iter.value();
+	m_perfLastCacheSize = m_imageMap.size();
+	return true;
+}
+
+void hnBrowsePixWidget::drawPerformanceOverlay(QPainter& painter)
+{
+	const QStringList lines = QStringList()
+		<< QString("FPS %1").arg(QString::number(m_perfFps, 'f', 1))
+		<< QString("paint %1ms draw %2ms").arg(m_perfLastPaintMs).arg(m_perfLastDrawMs)
+		<< QString("load %1ms preload %2ms").arg(m_perfLastSyncLoadMs).arg(m_perfLastPreloadMs)
+		<< QString("cache %1 frame %2").arg(m_perfLastCacheSize).arg(m_buttomFrameIdx, 0, 'f', 1)
+		<< m_perfLastStatus;
+
+	painter.save();
+	QFont font = painter.font();
+	font.setPixelSize(12);
+	painter.setFont(font);
+	QFontMetrics metrics(font);
+
+	int width = 0;
+	for (const QString& line : lines)
+	{
+		width = qMax(width, metrics.width(line));
+	}
+	const int padding = 6;
+	const int lineHeight = metrics.height();
+	const QRect bgRect(8, 8, width + padding * 2, lineHeight * lines.size() + padding * 2);
+
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(QColor(0, 0, 0, 150));
+	painter.drawRect(bgRect);
+	painter.setPen(Qt::white);
+
+	int y = bgRect.top() + padding + metrics.ascent();
+	for (const QString& line : lines)
+	{
+		painter.drawText(bgRect.left() + padding, y, line);
+		y += lineHeight;
+	}
+	painter.restore();
+}
 void hnBrowsePixWidget::resizeEvent(QResizeEvent* event)
 {
     qDebug().noquote() << "[HN_PERF][BrowseResize]"

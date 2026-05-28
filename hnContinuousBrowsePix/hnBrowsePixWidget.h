@@ -44,6 +44,7 @@
 #include <QSize>
 #include <QResizeEvent>
 #include <QFuture>
+#include <QElapsedTimer>
 #pragma endregion
 
 
@@ -260,6 +261,8 @@ protected:
 		const int originalWidgetWidth, const int originalWidgetHeight);
 private:
 	void drawAllPixOnLabel(QImage &labelImage,const int framePixHeight,const int framePixWidth, const double heightScale);
+	bool getCachedImage(int frameIdx, QImage* image);
+	void drawPerformanceOverlay(QPainter& painter);
 
 	//封装私有函数   更新鼠标位置帧数值
 	void updateMousePosFrameIdx(QMouseEvent *event);
@@ -403,6 +406,16 @@ private:
 
 	QFuture<void> m_preloadFuture;
 	int m_lastPreloadBottomFrameIdx = -1;
+	qint64 m_perfLastPaintMs = 0;
+	qint64 m_perfLastDrawMs = 0;
+	qint64 m_perfLastPreloadMs = 0;
+	qint64 m_perfLastSyncLoadMs = 0;
+	int m_perfLastCacheSize = 0;
+	int m_perfLastScrollValue = 0;
+	int m_perfPaintCount = 0;
+	double m_perfFps = 0.0;
+	QElapsedTimer m_perfFpsTimer;
+	QString m_perfLastStatus;
 	 
 public:
 	//获取是否允许联动

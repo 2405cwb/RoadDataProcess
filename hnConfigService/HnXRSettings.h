@@ -149,6 +149,7 @@ public:
 
 	   //界面移动鼠标退回阈值
 	   int movePictureBackMouseRatio;
+	   bool wheelScrollOneImage = false;
 
 	   //是否根据打标分段
 	   bool  outMileWithMark;
