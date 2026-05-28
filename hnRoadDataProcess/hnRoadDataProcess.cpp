@@ -173,22 +173,55 @@ void hnRoadDataProcess::widgetviewActive(WId hwnd)
 
 void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 {
-	if (!m_projects->isOpenProject())
+	this->setEnabled(false);
+	if (m_2dPixScrollWidget)
 	{
+		m_2dPixScrollWidget->setEnabled(false);
+		if (m_2dPixScrollWidget->getPixWidget())
+		{
+			m_2dPixScrollWidget->getPixWidget()->setEnabled(false);
+		}
+	}
+	if (m_3dPixScrollWidget)
+	{
+		m_3dPixScrollWidget->setEnabled(false);
+		if (m_3dPixScrollWidget->getPixWidget())
+		{
+			m_3dPixScrollWidget->getPixWidget()->setEnabled(false);
+		}
+	}
+
+	if (!m_projects || !m_projects->isOpenProject())
+	{
+		this->saveLayout();
+		if (e)
+		{
+			e->accept();
+		}
 		return;
 	}
+
 	hnPro::hnProject * lastProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	//记录最后工程帧号
-	const int frameNum = m_2dPixScrollWidget->getPixWidget()->getButtomFrameNumber();
+	const int frameNum = (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+		? m_2dPixScrollWidget->getPixWidget()->getButtomFrameNumber()
+		: 0;
 
 	m_xrSetting->lastProjectFn = frameNum;
-	m_xrSetting->lastProjectName = lastProject->get2DProName();
+	if (lastProject)
+	{
+		m_xrSetting->lastProjectName = lastProject->get2DProName();
+	}
 
 	m_projects->closeProject();
 	this->saveLayout();
 
 	//保存工程信息 供最近工程使用 
 	m_xrSetting->writeData();
+	if (e)
+	{
+		e->accept();
+	}
 }
 
 void hnRoadDataProcess::showEvent(QShowEvent *event)
@@ -6079,5 +6112,4 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	//打开出表软件
 
 }
-
 

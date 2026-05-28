@@ -91,6 +91,8 @@ void hn2dPixWidget::loadRoadPicture()
 	this->m_pixHeight = setInfo.picPixelY;
 
 	this->m_hnMileVector.clear();
+	this->m_pixNameHnMileMap.clear();
+	this->m_milePixNameMap.clear();
 	this->m_hnMileVector = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
 	QStringList pixNames;
 	for (auto mile : m_hnMileVector)
@@ -221,7 +223,14 @@ void hn2dPixWidget::drawSomeThingOnImage(QImage & image)
 
 void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 {
-	m_lblCoordinates->hide();
+	if (event == nullptr || QApplication::closingDown())
+	{
+		return;
+	}
+	if (m_lblCoordinates)
+	{
+		m_lblCoordinates->hide();
+	}
 	bool isvalid = isValidArea(event);
 	if (!isvalid)
 	{
@@ -618,6 +627,10 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 
 void hn2dPixWidget::mouseReleaseEvent(QMouseEvent * event)
 {
+	if (event == nullptr || QApplication::closingDown())
+	{
+		return;
+	}
 
 	// 鼠标右键释放
 	if (event->button() == Qt::MouseButton::RightButton)
@@ -629,14 +642,20 @@ void hn2dPixWidget::mouseReleaseEvent(QMouseEvent * event)
 
 void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 { 
-	currentMousePos = event->screenPos().toPoint();				// 记录鼠标在屏幕的位置
-
-	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	if (event == nullptr || QApplication::closingDown())
 	{
 		return;
 	}
 
-	if (m_pixNameMap.empty())
+	currentMousePos = event->screenPos().toPoint();				// 记录鼠标在屏幕的位置
+
+	auto dataManager = hnApp::hnDataManager::getDataManager();
+	if (!dataManager->isOpenProject() || dataManager->getCurrentProject() == nullptr)
+	{
+		return;
+	}
+
+	if (m_pixNameMap.empty() || m_pixNameHnMileMap.empty())
 	{
 		return;
 	}
@@ -651,6 +670,10 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	//获取鼠标位置
 	if (m_xrSetting->showGpsInfo&&!this->m_isDrawingDisease)
 	{
+		if (m_highAccuracy == nullptr || m_lblCoordinates == nullptr)
+		{
+			return;
+		}
 		int curPosX = 0;
 		int curPosY = 0;
 		int pictureW = 0; 
@@ -855,6 +878,11 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 
 void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 {
+	if (event == nullptr || QApplication::closingDown())
+	{
+		return;
+	}
+
 	this->m_isAllowDrawPix = true;
 
 	const bool up = event->delta() > 0;
@@ -881,7 +909,10 @@ void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 void hn2dPixWidget::leaveEvent(QEvent * event)
 {
 	m_magnifyBigImagePos = QPoint(-100, -100);
-	m_lblCoordinates->hide();
+	if (m_lblCoordinates)
+	{
+		m_lblCoordinates->hide();
+	}
 	QWidget::leaveEvent(event);
 }
 
@@ -2126,28 +2157,43 @@ hnCommon::hn2dPointWithMileI hn2dPixWidget::getHnPoint2dWithMileI(const QPoint &
 
 hnMile hn2dPixWidget::getHnMileFromPoint(const QPoint & allImagePoint)
 {
+	hnMile mile;
+	if (m_pixNameMap.isEmpty() || m_pixNameHnMileMap.isEmpty())
+	{
+		qWarning().noquote() << "[HN_PERF][HnMileLookupInvalid]"
+			<< "reason=emptyMap"
+			<< "pixNameMapSize=" << m_pixNameMap.size()
+			<< "mileMapSize=" << m_pixNameHnMileMap.size()
+			<< "point=" << QString("%1,%2").arg(allImagePoint.x()).arg(allImagePoint.y());
+		return mile;
+	}
+
 	QString picName;
 	QPoint singleImagePoint = this->bigImagePointToSingleImagePoint(allImagePoint, &picName);
-	Q_UNUSED(singleImagePoint);
-	hnMile mile;
+	if (picName.isEmpty() || singleImagePoint == QPoint(-1, -1))
+	{
+		qWarning().noquote() << "[HN_PERF][HnMileLookupInvalid]"
+			<< "reason=invalidPoint"
+			<< "point=" << QString("%1,%2").arg(allImagePoint.x()).arg(allImagePoint.y())
+			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
+			<< "bottomFrame=" << m_buttomFrameIdx;
+		return mile;
+	}
 
 	auto iter = m_pixNameHnMileMap.constFind(picName);
 	if (iter != m_pixNameHnMileMap.constEnd())
 	{
 		mile = iter.value();
 	}
-	/*for (auto iter = m_pixNameHnMileMap.begin(); iter != m_pixNameHnMileMap.end(); iter++)
+	else
 	{
-		if (iter.key().contains(picName))
-		{
-			mile = iter.value();
-			break;
-		}
-	}*/
+		qWarning().noquote() << "[HN_PERF][HnMileLookupMiss]"
+			<< "picName=" << picName
+			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
+			<< "mileMapSize=" << m_pixNameHnMileMap.size();
+	}
 	return mile;
 }
-
-
 double hn2dPixWidget::calculateBigFrameCenterMile(const QRect & rect)
 {
 	double mile;
@@ -3790,21 +3836,56 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 
 bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 {
-
-	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	if (event == nullptr || QApplication::closingDown())
 	{
+		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
+			<< "reason=" << (event == nullptr ? "nullEvent" : "appClosing");
 		return false;
 	}
 
-	if (m_pixNameMap.empty())
+	auto dataManager = hnApp::hnDataManager::getDataManager();
+	if (!dataManager->isOpenProject() || dataManager->getCurrentProject() == nullptr)
 	{
+		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]" << "reason=noProject";
 		return false;
 	}
+
+	if (m_pixNameMap.empty() || m_pixNameHnMileMap.empty())
+	{
+		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
+			<< "reason=emptyMap"
+			<< "pixNameMapSize=" << m_pixNameMap.size()
+			<< "mileMapSize=" << m_pixNameHnMileMap.size();
+		return false;
+	}
+
 	QPoint bigImagePoint = this->screenPointToBigImagePoint(event->pos());
-	this->m_firstHnMile = this->getHnMileFromPoint(bigImagePoint);
+	QString pixName;
+	QPoint singleImagePoint = this->bigImagePointToSingleImagePoint(bigImagePoint, &pixName);
+	if (pixName.isEmpty() || singleImagePoint == QPoint(-1, -1))
+	{
+		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
+			<< "reason=invalidImagePoint"
+			<< "screenPoint=" << QString("%1,%2").arg(event->pos().x()).arg(event->pos().y())
+			<< "bigPoint=" << QString("%1,%2").arg(bigImagePoint.x()).arg(bigImagePoint.y())
+			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
+			<< "bottomFrame=" << m_buttomFrameIdx;
+		return false;
+	}
+
+	auto mileIter = m_pixNameHnMileMap.constFind(pixName);
+	if (mileIter == m_pixNameHnMileMap.constEnd())
+	{
+		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
+			<< "reason=missingMile"
+			<< "picName=" << pixName
+			<< "mileMapSize=" << m_pixNameHnMileMap.size();
+		return false;
+	}
+	this->m_firstHnMile = mileIter.value();
 
 	//判断当前桩号 是否在用户规定区间内
-	auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
+	auto setting = dataManager->getCurrentProject()->getCurProSetInfo();
 	if (setting.dUserBegMile != -1)
 	{
 		if (setting.nLineType * setting.dUserBegMile > m_firstHnMile.dTrueMile * setting.nLineType || m_firstHnMile.dTrueMile > setting.nLineType * setting.dUserEndMile)
@@ -3816,7 +3897,6 @@ bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 	}
 	return true;
 }
-
 void hn2dPixWidget::selectDisease(const QPoint & mousePoint)
 {
 	//选中病害 病害列表选中
