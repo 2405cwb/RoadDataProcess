@@ -17,6 +17,8 @@ logMgr *logMgr::instance()
 //1.判断日志文件大小  2.设置日志格式  3.判断日志输出方向输出日志
 void logMgr::writeLog(QString msg)
 {
+	QMutexLocker locker(&m_mtx);
+
     this->checkLogSize();
 
     this->formatLog(msg);
@@ -82,23 +84,31 @@ void logMgr::checkLogSize()
 
 void logMgr::checkOutDirection(QString msg)
 {
+	bool hasOutput = false;
+
     if(m_outDirection.indexOf("Console")>=0)
     {
         this->logToConsole(msg);
+		hasOutput = true;
     }
-    else if(m_outDirection.indexOf("File")>=0)
+
+    if(m_outDirection.indexOf("File")>=0)
     {
         this->logToFile(msg);
-        m_logSize += msg.size();
+        m_logSize += msg.toUtf8().size();
+		hasOutput = true;
     }
-    else if(m_outDirection.indexOf("Net")>=0)
+
+    if(m_outDirection.indexOf("Net")>=0)
     {
         this->logToTcp(msg,m_outDirection.section(":",1,1),m_outDirection.section(":",2,2).toUInt());
+		hasOutput = true;
     }
-    else
+
+    if(!hasOutput)
     {
         this->logToFile(msg);
-        m_logSize += msg.size();
+        m_logSize += msg.toUtf8().size();
     }
 }
 

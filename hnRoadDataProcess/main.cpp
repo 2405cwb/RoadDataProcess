@@ -19,42 +19,61 @@
 using namespace std;
 void logOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
+	static thread_local bool isWritingLog = false;
+	if (isWritingLog)
+	{
+		return;
+	}
+
 	//过滤掉libping的警告
 	if (msg.contains("libpng"))	return;
 
-	QString text;
-
-	//加入debug类型
-	switch (type)
+	isWritingLog = true;
+	try
 	{
-	case QtInfoMsg:
-		text.append("[Info]");
-		break;
+		QString text;
 
-	case QtDebugMsg:
-		text.append("[Debug]");
-		break;
+		//加入debug类型
+		switch (type)
+		{
+		case QtInfoMsg:
+			text.append("[Info]");
+			break;
 
-	case QtWarningMsg:
-		text.append("[Warning]");
-		break;
+		case QtDebugMsg:
+			text.append("[Debug]");
+			break;
 
-	case QtCriticalMsg:
-		text.append("[Critical]");
-		break;
+		case QtWarningMsg:
+			text.append("[Warning]");
+			break;
 
-	case QtFatalMsg:
-		text.append("[Fatal]");
+		case QtCriticalMsg:
+			text.append("[Critical]");
+			break;
+
+		case QtFatalMsg:
+			text.append("[Fatal]");
+		}
+
+		if (context.file != nullptr && context.line > 0)
+		{
+			text += QString("[%1:%2]").arg(QString::fromLocal8Bit(context.file)).arg(context.line);
+		}
+
+		//加入debug信息
+		text += msg;
+
+		//调用日志模块记录日志
+		logMgr::instance()->writeLog(text);
 	}
-
-	//加入debug信息
-	text += msg;
-
-	//调用日志模块记录日志
-	logMgr::instance()->writeLog(text);
+	catch (...)
+	{
+		//日志系统不能反过来导致 Qt 消息处理崩溃。
+	}
+	isWritingLog = false;
 
 }
-
 int main(int argc, char *argv[])
 {
 	SetProcessDPIAware();
