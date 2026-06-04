@@ -32,6 +32,8 @@ public:
     //获取日志模块输出方向
     void getOutDir();
 
+	void getOutPerfLog();
+
     //获取日志文件最大大小
     void getLogMaxSize();
 
@@ -52,6 +54,9 @@ private:
 
     //日志文件最大大小 单位:Byte 根据需要自行换算
     int m_maxLogSize;
+
+	//是否记录性能日志
+	bool enable_perf_log;
 };
 
 #endif // LOGMGR_H

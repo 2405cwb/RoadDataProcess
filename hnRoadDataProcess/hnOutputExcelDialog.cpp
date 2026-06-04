@@ -10,16 +10,235 @@
 #include <QAbstractButton>
 #include <QComboBox>
 #include "hnXlsxInterface.h"
+#include <QDateTime>
 #include <QStandardPaths>
 #include <QDir>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QProgressDialog>
 #include <QDesktopServices>
 #include "../hnQtCommon/MyCommonMethods.h" 
 #include "../ActiveQt/QAxObject"
 #include <QFontMetrics>
+#include <QLabel>
+#include <QLayout>
 #include <QPainter>
+#include <QProgressBar>
+#include <QTextStream>
+#include <QTextCodec>
 
+namespace
+{
+	const QString kReportProjectSection = QStringLiteral("二三维设置信息");
+	const QString kReportRoadWidthKey = QStringLiteral("报表路面宽度");
+	const QString kReportMaintenanceUnitKey = QStringLiteral("报表管养单位");
+	const QString kReportLaneTypeKey = QStringLiteral("报表车道类型");
+	const QString kReportTaskYearKey = QStringLiteral("报表检测任务年份");
+	const QString kReportDetectCountKey = QStringLiteral("报表检测次数");
+	const QString kReportRegionCodeKey = QStringLiteral("报表行政区划代码");
+
+	QString reportProjectInfoPath(hnPro::hnProject* project)
+	{
+		if (!project)
+		{
+			return QString();
+		}
+		if (project->get2DProject())
+		{
+			return QDir::toNativeSeparators(project->get2DProject()->getBasePath() + QStringLiteral("/ProjectInfo.txt"));
+		}
+		QString projectPath = project->getAbsulotelyPath();
+		if (projectPath.isEmpty())
+		{
+			return QString();
+		}
+		return QDir::toNativeSeparators(projectPath + QStringLiteral("/ProjectInfo.txt"));
+	}
+
+	int keyValueSeparatorIndex(const QString& line)
+	{
+		int halfIndex = line.indexOf(':');
+		int fullIndex = line.indexOf(QStringLiteral("："));
+		if (halfIndex < 0)
+		{
+			return fullIndex;
+		}
+		if (fullIndex < 0)
+		{
+			return halfIndex;
+		}
+		return qMin(halfIndex, fullIndex);
+	}
+
+	QMap<QString, QString> readReportProjectSection(const QString& filePath)
+	{
+		QMap<QString, QString> values;
+		QFile file(filePath);
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		{
+			return values;
+		}
+
+		QTextStream in(&file);
+		in.setCodec(QTextCodec::codecForName("UTF-8"));
+		QString currentSection;
+		while (!in.atEnd())
+		{
+			QString line = in.readLine().trimmed();
+			if (line.startsWith('[') && line.endsWith(']'))
+			{
+				currentSection = line.mid(1, line.length() - 2).trimmed();
+				continue;
+			}
+			if (currentSection != kReportProjectSection)
+			{
+				continue;
+			}
+
+			int sepIndex = keyValueSeparatorIndex(line);
+			if (sepIndex <= 0)
+			{
+				continue;
+			}
+			QString key = line.left(sepIndex).trimmed();
+			QString value = line.mid(sepIndex + 1).trimmed();
+			values[key] = value;
+		}
+		return values;
+	}
+
+	bool writeReportProjectSection(const QString& filePath, QMap<QString, QString> values)
+	{
+		QFile file(filePath);
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		{
+			return false;
+		}
+
+		QStringList lines;
+		QTextStream in(&file);
+		in.setCodec(QTextCodec::codecForName("UTF-8"));
+		while (!in.atEnd())
+		{
+			lines.append(in.readLine());
+		}
+		file.close();
+
+		int sectionStart = -1;
+		int sectionEnd = lines.size();
+		for (int i = 0; i < lines.size(); ++i)
+		{
+			QString trimmed = lines.at(i).trimmed();
+			if (trimmed.startsWith('[') && trimmed.endsWith(']'))
+			{
+				QString section = trimmed.mid(1, trimmed.length() - 2).trimmed();
+				if (section == kReportProjectSection)
+				{
+					sectionStart = i;
+					sectionEnd = lines.size();
+				}
+				else if (sectionStart >= 0)
+				{
+					sectionEnd = i;
+					break;
+				}
+			}
+		}
+
+		if (sectionStart < 0)
+		{
+			if (!lines.isEmpty() && !lines.last().trimmed().isEmpty())
+			{
+				lines.append(QString());
+			}
+			lines.append(QStringLiteral("[%1]").arg(kReportProjectSection));
+			sectionStart = lines.size() - 1;
+			sectionEnd = lines.size();
+		}
+
+		for (int i = sectionStart + 1; i < sectionEnd; ++i)
+		{
+			int sepIndex = keyValueSeparatorIndex(lines.at(i));
+			if (sepIndex <= 0)
+			{
+				continue;
+			}
+			QString key = lines.at(i).left(sepIndex).trimmed();
+			if (!values.contains(key))
+			{
+				continue;
+			}
+			lines[i] = QStringLiteral("%1：%2").arg(key, values.value(key));
+			values.remove(key);
+		}
+
+		for (auto it = values.begin(); it != values.end(); ++it)
+		{
+			lines.insert(sectionEnd, QStringLiteral("%1：%2").arg(it.key(), it.value()));
+			++sectionEnd;
+		}
+
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+		{
+			return false;
+		}
+		QTextStream out(&file);
+		out.setCodec(QTextCodec::codecForName("UTF-8"));
+		for (const QString& line : qAsConst(lines))
+		{
+			out << line << '\n';
+		}
+		return true;
+	}
+
+	void setComboBoxText(QComboBox* comboBox, const QString& value)
+	{
+		if (!comboBox || value.trimmed().isEmpty())
+		{
+			return;
+		}
+		int index = comboBox->findText(value);
+		if (index < 0)
+		{
+			comboBox->addItem(value);
+			index = comboBox->findText(value);
+		}
+		comboBox->setCurrentIndex(index);
+	}
+
+	QString writeReportExportIssueFile(const QString& outPath, const QStringList& issues)
+	{
+		if (issues.isEmpty())
+		{
+			return QString();
+		}
+
+		QDir dir(outPath);
+		if (!dir.exists() && !dir.mkpath(QStringLiteral(".")))
+		{
+			return QString();
+		}
+
+		QString filePath = dir.filePath(QStringLiteral("报表导出问题汇总_%1.txt")
+			.arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"))));
+		QFile file(filePath);
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+		{
+			return QString();
+		}
+
+		QTextStream out(&file);
+		out.setCodec(QTextCodec::codecForName("UTF-8"));
+		out << QStringLiteral("报表导出问题汇总") << '\n';
+		out << QStringLiteral("生成时间：") << QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")) << '\n';
+		out << QStringLiteral("问题数量：") << issues.size() << "\n\n";
+		for (int i = 0; i < issues.size(); ++i)
+		{
+			out << QString::number(i + 1) << QStringLiteral(". ") << issues.at(i) << '\n';
+		}
+		return filePath;
+	}
+}
 
 hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
 	: QDialog(parent), m_dEMile(0), m_dSMile(0), isSingleProject(false), p_modelGroup(nullptr), p_excelLayout(nullptr)
@@ -105,10 +324,184 @@ hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
 
 void hnOutputExcelDialog::setSettingFrom()
 {
-	ui.groupBox_12->setVisible(false);
+	ui.groupBox_12->setVisible(true);
+	ui.groupBox_12->setEnabled(true);
+
+	hnPro::hnProjectManager* projectManager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+	if (!projectManager)
+	{
+		return;
+	}
+	auto allProject = projectManager->getAllBaseProject();
+	if (allProject.empty())
+	{
+		return;
+	}
+	loadReportProjectInfo(allProject.at(0));
 }
 
+void hnOutputExcelDialog::loadReportProjectInfo(hnPro::hnProject* project)
+{
+	if (!project)
+	{
+		return;
+	}
 
+	QMap<QString, QString> values = readReportProjectSection(reportProjectInfoPath(project));
+	auto projectInfo = project->getCurProSetInfo();
+
+	QString reportRoadWidth = values.value(kReportRoadWidthKey);
+	if (reportRoadWidth.isEmpty())
+	{
+		reportRoadWidth = values.value(QStringLiteral("检测路面宽度"));
+	}
+	if (reportRoadWidth.isEmpty())
+	{
+		reportRoadWidth = QString::number(projectInfo.dRoadWidth);
+	}
+	ui.lineEdit_7->setText(reportRoadWidth);
+
+	QString maintenanceUnit = values.value(kReportMaintenanceUnitKey);
+	if (maintenanceUnit.isEmpty())
+	{
+		maintenanceUnit = values.value(QStringLiteral("管养单位"));
+	}
+	if (!maintenanceUnit.isEmpty())
+	{
+		ui.lineEdit_4->setText(maintenanceUnit);
+	}
+
+	QString laneType = values.value(kReportLaneTypeKey);
+	if (laneType.isEmpty())
+	{
+		laneType = values.value(QStringLiteral("车道类型"));
+	}
+	if (!laneType.isEmpty())
+	{
+		ui.lineEdit_6->setText(laneType);
+	}
+
+	QString taskYear = values.value(kReportTaskYearKey);
+	if (taskYear.isEmpty())
+	{
+		taskYear = values.value(QStringLiteral("检测任务年份"));
+	}
+	setComboBoxText(ui.comboBox_5, taskYear);
+
+	QString detectCount = values.value(kReportDetectCountKey);
+	if (detectCount.isEmpty())
+	{
+		detectCount = values.value(QStringLiteral("检测次数"));
+	}
+	setComboBoxText(ui.comboBox_6, detectCount);
+
+	QString regionCode = values.value(kReportRegionCodeKey);
+	if (regionCode.isEmpty())
+	{
+		regionCode = values.value(QStringLiteral("行政区划代码"));
+	}
+	if (!regionCode.isEmpty())
+	{
+		ui.lineEdit_8->setText(regionCode);
+	}
+}
+
+bool hnOutputExcelDialog::saveReportProjectInfo(hnPro::hnProject* project)
+{
+	if (!project)
+	{
+		return false;
+	}
+	QString filePath = reportProjectInfoPath(project);
+	if (filePath.isEmpty())
+	{
+		return false;
+	}
+
+	QMap<QString, QString> values;
+	values[kReportRoadWidthKey] = QString::number(getReportRoadWidthFromUi());
+	values[kReportMaintenanceUnitKey] = ui.lineEdit_4->text().trimmed();
+	values[kReportLaneTypeKey] = ui.lineEdit_6->text().trimmed();
+	values[kReportTaskYearKey] = ui.comboBox_5->currentText().trimmed();
+	values[kReportDetectCountKey] = ui.comboBox_6->currentText().trimmed();
+	values[kReportRegionCodeKey] = ui.lineEdit_8->text().trimmed();
+	return writeReportProjectSection(filePath, values);
+}
+
+double hnOutputExcelDialog::getReportRoadWidthFromUi() const
+{
+	return ui.lineEdit_7->text().trimmed().toDouble();
+}
+
+void hnOutputExcelDialog::setupReportProgressDialog(int maximum)
+{
+	if (!m_progressDialog)
+	{
+		m_progressDialog = new QProgressDialog(this);
+	}
+
+	m_progressDialog->setObjectName(QStringLiteral("reportProgressDialog"));
+	m_progressDialog->setWindowTitle(QStringLiteral("导出报表"));
+	m_progressDialog->setLabelText(QStringLiteral("正在准备导出任务..."));
+	m_progressDialog->setMinimum(0);
+	m_progressDialog->setMaximum(qMax(1, maximum));
+	m_progressDialog->setValue(0);
+	m_progressDialog->setMinimumDuration(0);
+	m_progressDialog->setAutoClose(false);
+	m_progressDialog->setAutoReset(false);
+	m_progressDialog->setCancelButton(nullptr);
+	m_progressDialog->setWindowModality(Qt::ApplicationModal);
+	m_progressDialog->setFixedSize(QSize(520, 112));
+	m_progressDialog->setWindowFlags((m_progressDialog->windowFlags() & ~Qt::WindowContextHelpButtonHint) | Qt::WindowTitleHint);
+	m_progressDialog->setStyleSheet(QStringLiteral(
+		"QProgressDialog#reportProgressDialog{"
+		"background:#FFFFFF;"
+		"border:1px solid #D8E0EA;"
+		"}"
+		"QProgressDialog#reportProgressDialog QLabel{"
+		"font-family:'Microsoft YaHei';"
+		"font-size:13px;"
+		"font-weight:500;"
+		"color:#26384D;"
+		"padding:0;"
+		"}"
+		"QProgressDialog#reportProgressDialog QProgressBar{"
+		"height:14px;"
+		"border:1px solid #C9D5E2;"
+		"border-radius:7px;"
+		"background:#EEF3F8;"
+		"text-align:center;"
+		"font-family:'Microsoft YaHei';"
+		"font-size:10px;"
+		"font-weight:600;"
+		"color:#21354D;"
+		"}"
+		"QProgressDialog#reportProgressDialog QProgressBar::chunk{"
+		"border-radius:6px;"
+		"margin:1px;"
+		"background:#1677FF;"
+		"}"));
+	if (m_progressDialog->layout())
+	{
+		m_progressDialog->layout()->setContentsMargins(24, 16, 24, 18);
+		m_progressDialog->layout()->setSpacing(10);
+	}
+
+	QLabel* label = m_progressDialog->findChild<QLabel*>();
+	if (label)
+	{
+		label->setWordWrap(true);
+		label->setMinimumHeight(28);
+		label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	}
+
+	QProgressBar* progressBar = m_progressDialog->findChild<QProgressBar*>();
+	if (progressBar)
+	{
+		progressBar->setTextVisible(true);
+		progressBar->setFormat(QStringLiteral("%p%"));
+	}
+}
 
 void hnOutputExcelDialog::setSingleProjectFrom()
 {
@@ -305,7 +698,6 @@ void hnOutputExcelDialog::getUserSelectExcelName(QGridLayout* grid, QMap<int, QV
 	}
 }
 
-
 void hnOutputExcelDialog::onTableChange(int index)
 {
 	//单表模式有三个页 
@@ -391,6 +783,11 @@ void hnOutputExcelDialog::onOkButton()
 {
 	m_xrSetting->ExcelErrorMessageList.clear();
 	setSetting();
+	if (getReportRoadWidthFromUi() <= 0)
+	{
+		QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("检测路面宽度必须大于0!"));
+		return;
+	}
 	//弹出对话框 让用户设置输出位置
 	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择输出路径"), m_xrSetting->OutPath);
 	if (projectPath.isEmpty())
@@ -421,49 +818,41 @@ void hnOutputExcelDialog::onOkButton()
 	 
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
 	auto allProject = manager->getAllBaseProject(); 
+	for (auto project : allProject)
+	{
+		if (!saveReportProjectInfo(project))
+		{
+			QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("写入ProjectInfo.txt报表工程信息失败!"));
+			return;
+		}
+	}
 	 
 	int count = allProject.size();
 #pragma region 设置进度条
 	
-	if (!m_progressDialog)
-	{
-		m_progressDialog = new QProgressDialog(this);
-	
-	} 
-	else
-	{
-
-	}
-	m_progressDialog->setFixedSize(QSize(500, 50));
-	m_progressDialog->setAutoClose(true);
-	m_progressDialog->setCancelButton(nullptr);
+	hnOutExcelMileManage::beginCollectExportIssues();
 	m_progressValue = 0;
-	m_progressDialog->setValue(m_progressValue);
-	m_progressDialog->setWindowTitle(QString::fromLocal8Bit("输出成果"));
-	m_progressDialog->setModal(true);
-	m_progressDialog->setMaximum(m_UserSelectCount*count);
-
+	const int progressScale = 10;
+	setupReportProgressDialog(m_UserSelectCount * count * progressScale);
 	m_progressDialog->show();
 
 	for (int i = 0; i < count; ++i)
 	{
-		m_progressValue = 0;
 		m_currentPorject = allProject.at(i);
 		//进度条设置
 	//	m_progressDialog->reset();
 		QString projectName ="";
 		if (m_nowProjectType == PROJECT_TYPE::PROJECT_23D_TYPE || m_nowProjectType == PROJECT_TYPE::PROJECT_2D_TYPE)
 		{
-			projectName = QString::fromLocal8Bit("当前出表工程:%1").arg(m_currentPorject->get2DProName()); 
+			projectName = QStringLiteral("正在导出：%1").arg(m_currentPorject->get2DProName());
 		}
 		else
 		{
-			projectName = QString::fromLocal8Bit("当前出表工程:%1").arg(m_currentPorject->get3DProName()); 
+			projectName = QStringLiteral("正在导出：%1").arg(m_currentPorject->get3DProName());
 		} 
 		 
 		m_progressDialog->setLabelText(projectName);
-		m_progressDialog->adjustSize();//强制重绘
-		QApplication::processEvents();
+		QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 		
 #pragma endregion
 
@@ -508,9 +897,9 @@ void hnOutputExcelDialog::onOkButton()
 		}
 #pragma endregion 
 
-		startOutExcelManager(saveExcelDir, selectModelTxt, m_currentPorject	 ,m_progressValue, m_progressDialog);
+		startOutExcelManager(saveExcelDir, selectModelTxt, m_currentPorject	 ,m_progressValue, m_progressDialog, progressScale);
 
-		startOutExcelManager_Street(saveExcelDir,selectModelTxt, allProject, StreetSelectMsg,	m_progressValue, m_progressDialog);
+		startOutExcelManager_Street(saveExcelDir,selectModelTxt, allProject, StreetSelectMsg,	m_progressValue, m_progressDialog, progressScale);
 
 
 
@@ -536,18 +925,47 @@ void hnOutputExcelDialog::onOkButton()
 	}
 	if(m_progressDialog)
 	m_progressDialog->hide();
+
+	QStringList exportIssues = hnOutExcelMileManage::endCollectExportIssues();
+	QString issueFilePath = writeReportExportIssueFile(m_xrSetting->OutPath, exportIssues);
 	 
 	QDialog * tipDlg = new QDialog(this);
-	tipDlg->setWindowTitle(QStringLiteral("提示窗口"));
+	tipDlg->setWindowTitle(QStringLiteral("导出完成"));
 	QPushButton* openFld = new QPushButton(QStringLiteral("打开目录"));
 	QPushButton* okBtn = new QPushButton(QStringLiteral("确定"));
-	QLabel * lable = new QLabel(QStringLiteral("所有出表任务已经完成!"), this);
+	QPushButton* openIssueFile = nullptr;
+	QLabel * lable = new QLabel(this);
+	if (exportIssues.isEmpty())
+	{
+		lable->setText(QStringLiteral("所有出表任务已经完成。"));
+	}
+	else if (issueFilePath.isEmpty())
+	{
+		lable->setText(QStringLiteral("导出完成，但发现 %1 条数据问题。\n问题文件写入失败，请检查导出目录权限。")
+			.arg(exportIssues.size()));
+	}
+	else
+	{
+		lable->setText(QStringLiteral("导出完成，但发现 %1 条数据问题。\n已生成问题汇总文件：\n%2")
+			.arg(exportIssues.size())
+			.arg(QDir::toNativeSeparators(issueFilePath)));
+		openIssueFile = new QPushButton(QStringLiteral("查看问题明细"));
+	}
+	lable->setWordWrap(true);
 	m_xrSetting->outExcel = true;
 	QGridLayout * laout = new QGridLayout(tipDlg);
-	laout->addWidget(lable, 0, 0, 1, 2, Qt::AlignCenter);
+	laout->addWidget(lable, 0, 0, 1, 3, Qt::AlignCenter);
 	laout->addWidget(openFld, 1, 0);
-	laout->addWidget(okBtn, 1, 1);
-	tipDlg->resize(200, 150);
+	if (openIssueFile)
+	{
+		laout->addWidget(openIssueFile, 1, 1);
+		laout->addWidget(okBtn, 1, 2);
+	}
+	else
+	{
+		laout->addWidget(okBtn, 1, 1);
+	}
+	tipDlg->resize(exportIssues.isEmpty() ? 260 : 560, exportIssues.isEmpty() ? 150 : 190);
 	tipDlg->setLayout(laout);
 	connect(okBtn, &QPushButton::clicked, this, [&]()
 	{
@@ -563,6 +981,14 @@ void hnOutputExcelDialog::onOkButton()
 		tipDlg->reject();
 	}
 	);
+	if (openIssueFile)
+	{
+		connect(openIssueFile, &QPushButton::clicked, this, [issueFilePath]()
+		{
+			QDesktopServices::openUrl(QUrl::fromLocalFile(issueFilePath));
+		}
+		);
+	}
 	tipDlg->exec();
 
 }
@@ -1085,7 +1511,7 @@ void hnOutputExcelDialog::readExcelConfigData()
 
 void hnOutputExcelDialog::startOutExcelManager(const QString& excelDir, const QString&selectModelTxt, hnPro::hnProject*curProject,
 	int & progressValue,
-	QProgressDialog* process)
+	QProgressDialog* process, int progressScale)
 {
 	    
 		QMap<ReportItem*, QPair<QCheckBox*, QComboBox*>>::iterator it;
@@ -1102,7 +1528,7 @@ void hnOutputExcelDialog::startOutExcelManager(const QString& excelDir, const QS
 				reportItem,
 				curProject , 
 				m_startMile, m_endMile, 
-				progressValue, process);
+				progressValue, process, progressScale);
 		}
 	
 }
@@ -1112,7 +1538,7 @@ void hnOutputExcelDialog::startOutExcelManager_Street(const QString& excelDir,
 	std::vector<hnPro::hnProject*>& allProject,
 	const QMap<int, QVector<double>>&streetSelect,
 	int & progressValue,
-	QProgressDialog* process)
+	QProgressDialog* process, int progressScale)
 {
 	//景观出表
 	for (auto it = streetSelect.begin(); it != streetSelect.end(); ++it)
@@ -1127,10 +1553,8 @@ void hnOutputExcelDialog::startOutExcelManager_Street(const QString& excelDir,
 			m_currentPorject,
 			m_startMile,
 			m_endMile
-			,progressValue, process
+			,progressValue, process, progressScale
 		
 		);
 	}
-} 
-
- 
+}

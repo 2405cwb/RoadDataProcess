@@ -108,7 +108,7 @@ public slots:
 
 	//槽函数  根据显示窗口底部帧序号，对应设置滚动条的值 这里帧序号从0开始
 	void slot_updateScrollBarValue(int buttomFrameIdx);
-	void slot_setSelectedDiseaseId(int id);
+	void slot_setSelectedDiseaseId(int id, const QString& tableName);
 
 	void slot_updateBrowser();
 

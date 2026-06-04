@@ -76,7 +76,7 @@
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtGui;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>../hnQtCommon\BaseException.h</ForcedIncludeFiles>
     </ClCompile>
     <QtRcc>
@@ -92,7 +92,7 @@
       <AdditionalDependencies>HighAccConvertPlane.lib;hnApplication.lib;hnDataTable.lib;qtadvanceddocking.lib;hdFramework.lib;hnQtRibbonUI.lib;hnCommon.lib;hnProject.lib;hnIO.lib;hnLogService.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;sqlite3.lib;QXlsxd.lib;hnAlgorithm.lib;opencv_world320d.lib;hnDxfIO.lib;Qt5PrintSupportd.lib;Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;qtmaind.lib;Qt5AxContainerd.lib;Qt5AxBased.lib;Qt5Networkd.lib;Qt5WebEngineWidgetsd.lib;Qt5WebEngineCored.lib;Qt5WebChanneld.lib;Qt5WebEngined.lib;Qt5WebViewd.lib;hnPavementCreate3d.lib;hnCoordTranslate.lib;hnPcdCoordinate.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtGui;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtWidgets;..\QtAdvancedDocking;../hnLogService;../hnConfigService;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include/;../QXlsx/header;../hnAlgorithm;../3rd/opencv3.2.0/include;../HnDxfIO;..\hnApplication\x64\$(ConfigurationName)\uic;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../HighAccConvertPlane;../hnPavementCreate3d;..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BrowseInformation>true</BrowseInformation>
       <PreprocessorDefinitions>$(Qt_DEFINES_);DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ForcedIncludeFiles>../hnQtCommon\BaseException.h</ForcedIncludeFiles>

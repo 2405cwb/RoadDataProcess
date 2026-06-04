@@ -725,7 +725,7 @@
          <item>
           <widget class="QGroupBox" name="groupBox_12">
            <property name="enabled">
-            <bool>false</bool>
+            <bool>true</bool>
            </property>
            <property name="title">
             <string>工程信息</string>

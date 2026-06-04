@@ -31,7 +31,7 @@ public:
 		//车辙
 		Rut,
 		//磨耗
-	 
+
 		Smtd,
 
 		//
@@ -42,7 +42,7 @@ public:
 public:
 	CalculationThread(CalculationType type, int taskId, hnPro::hnProject* const project);
 	~CalculationThread();
-	void run() override; 
+	void run() override;
 signals:
 	void progressUpdated(hnPro::hnProject* project, int calculationType,double progress,bool isInt);
 
@@ -55,9 +55,10 @@ public slots:
 	int taskId()const { return m_taskID; }
 private:
 	CalculationType m_type;
-	bool m_stopRequested;
+	std::atomic_bool m_stopRequested;
 	int m_taskID;
 	QMutex m_mutex;
+	bool isStopRequested() const;
 private:
 	void StartIRMThread(hnPro::hnProject* pro, const QString  iriPath,const QString & daqBasePath, const QString& resamplePath,int side);
 	void  CheckSetting( hnPro::hnProject* const);
@@ -68,7 +69,7 @@ private:
 	//单例  全局设置
 	HnXRSettings* _Setting;
 	hnPro::hnProject* currentPorject ;
-private: //计算函数 
+private: //计算函数
 	void startCalculateIRI( QString dataPath, const QString& outPath,double dIntervel, vector<double> listIRI,const QVector<double>speeds, bool datasrc);
 
 #pragma region 修正后平整度算法 可计算0.1与0.25
@@ -98,7 +99,7 @@ private: //计算函数
 		const std::vector<double>& bparms, int parmnum);
 #pragma endregion
 
-	 
+
 	bool ComputeRut(bool Isbar, int valnum, int rutmode);
 	void AdjustRutVal(int valnum);
 	void CreateGaussFilter(std::unique_ptr<float[]>&  gaus, int size, float sigma);
@@ -112,7 +113,8 @@ private: //计算函数
 	void ComputeMTD(const QString& prj, int side, int featurelen, double threshval);
 	void 	AdjustVal(QString fname, double Thrval, double scale);
 	void ComputeMPD(const QString& prj, int side, int featurelen, double threshval);
-	
+	void reportSideProgress(int side, double progress);
+
 private:
 	//随机数
 	  std::uniform_int_distribution<>dis;
@@ -126,8 +128,11 @@ private:
 	 // std::mutex  mutex;
 	  QMutex m_mmutex;
 	  QMutex m_smutex;
+	  QMutex m_progressMutex;
+	  QVector<int> m_metricSideIndexes;
+	  QVector<double> m_metricSideProgress;
 
-	 
+
 	  int m_stdProcessValue;
 	  int m_spdProcessValue;
 

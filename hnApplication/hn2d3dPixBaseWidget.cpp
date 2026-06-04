@@ -1,5 +1,6 @@
 #include "hn2d3dPixBaseWidget.h"
 #include <QTimer>
+#include <QSet>
 #include "hnDiseaseService.h"
 
 hn2d3dPixBaseWidget::hn2d3dPixBaseWidget(QWidget *parent) : hnBrowsePixWidget(parent)
@@ -328,7 +329,8 @@ void hn2d3dPixBaseWidget::drawLineDiseases(const vector<hnRoadDiseaseInfo>& dise
 			continue;
 		}
 
-		const bool selected = selectedDiseaseId == disease.nID;
+		const bool selected = selectedDiseaseId == disease.nID
+			&& selectedDiseaseTableName == QString::fromLocal8Bit(disease.strDiseaseTableName);
 		const bool mergeSelected = isSeclectedMergeDisease(disease);
 
 		if (selected)
@@ -935,6 +937,8 @@ void hn2d3dPixBaseWidget::commitCurrentLittleRectDrawSelection()
 		return;
 	}
 
+	m_tmpLittleFrameDiseaseRects = currentLittleRectDrawSelection();
+
 	for (const QRect& bigRect : qAsConst(m_tmpLittleFrameDiseaseRects))
 	{
 		QString pixName;
@@ -956,12 +960,31 @@ void hn2d3dPixBaseWidget::commitCurrentLittleRectDrawSelection()
 
 void hn2d3dPixBaseWidget::appendCommittedLittleRectDrawSelection(QVector<QRect>& rects)
 {
+	auto rectKey = [](const QRect& rect) -> QString
+	{
+		const QRect normalized = rect.normalized();
+		return QString("%1,%2,%3,%4")
+			.arg(normalized.x())
+			.arg(normalized.y())
+			.arg(normalized.width())
+			.arg(normalized.height());
+	};
+
+	QSet<QString> existingRectKeys;
+	existingRectKeys.reserve(rects.size() + m_committedLittleFrameDiseaseRects.size());
+	for (const QRect& rect : qAsConst(rects))
+	{
+		existingRectKeys.insert(rectKey(rect));
+	}
+
 	for (const LittleFrameSingleRectSelection& selection : qAsConst(m_committedLittleFrameDiseaseRects))
 	{
 		QRect bigRect = this->singleImageRectToBigImageRect(selection.singleRect, selection.pixName).normalized();
-		if (!rects.contains(bigRect))
+		const QString key = rectKey(bigRect);
+		if (!existingRectKeys.contains(key))
 		{
 			rects.append(bigRect);
+			existingRectKeys.insert(key);
 		}
 	}
 }

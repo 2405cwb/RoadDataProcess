@@ -2,7 +2,7 @@
 #include "hnImagePainter.h"
 #include "addDiseaseDialog.h"
 #include "../hnDataTable/hnDBSqliteRoadInfo.h"
-#include "../hnDataTable/hnDBSqlite.h" 
+#include "../hnDataTable/hnDBSqlite.h"
 #include "hnDataManager.h"
 #include "hnProject.h"
 #include "hn3DProject.h"
@@ -13,13 +13,14 @@
 #include <QSet>
 #include <QEventLoop>
 #include <QTimer>
-#include <QApplication> 
-#include "QMessageBox" 
-#include <QTextEdit> 
+#include <QApplication>
+#include "QMessageBox"
+#include <QTextEdit>
 #include <QElapsedTimer>
 #include <QDebug>
+#include <algorithm>
 #include<QProgressDialog>
- 
+
 
 
 hn2dPixWidget::hn2dPixWidget(QWidget *parent)
@@ -52,13 +53,13 @@ hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 		"	font-size: 10px;"
 		"	font-family: 'Microsoft YaHei','Segoe UI',Arial;"
 		"}");
-	 
+
 	m_lblCoordinates->hide();
 
 	connect(hnApp::hnDataManager::getDataManager()->getDiseaseService(),
 		SIGNAL(diseaseChanged()), this, SLOT(slotDiseaseChanged()));
 
- 
+
 }
 
 void hn2dPixWidget::loadRoadPicture()
@@ -73,7 +74,7 @@ void hn2dPixWidget::loadRoadPicture()
 	}
 
 	{
-		
+
 		m_highAccuracy = std::make_unique<  HighAccuracyPositioning>(hnApp::hnDataManager::getDataManager()->getCurrentProject());
 
 	}
@@ -93,6 +94,7 @@ void hn2dPixWidget::loadRoadPicture()
 	this->m_hnMileVector.clear();
 	this->m_pixNameHnMileMap.clear();
 	this->m_milePixNameMap.clear();
+	markDiseaseCacheDirty();
 	this->m_hnMileVector = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
 	QStringList pixNames;
 	for (auto mile : m_hnMileVector)
@@ -139,10 +141,10 @@ void hn2dPixWidget::loadRoadPicture()
 		reCalculateDiseaseSizeAndSave(dis,true);
 	}
 
-#endif 
+#endif
 	//更新所有病害
 	QVector<hnRoadDiseaseInfo> allRoadDiseaes = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
-   
+
 	QProgressDialog progress(QStringLiteral("检测到旧版本病害，自动进行更新，此过程仅一次，耗时较长，请耐心等待"),
 		QString(), 0, allRoadDiseaes.size(), this);
 	progress.setWindowTitle(QStringLiteral("处理中..."));
@@ -150,10 +152,10 @@ void hn2dPixWidget::loadRoadPicture()
 	progress.setMinimumDuration(0);
 	progress.setValue(0);
 	for (int i = 0 ; i<allRoadDiseaes.size() ;++i)
-	{ 
+	{
 		auto& dis = allRoadDiseaes[i];
 		if (dis.nDrawType == 1)
-		{ 
+		{
 			if (dis.dLength == 0 || dis.dArea == 0)
 			{
 				std::vector<hn2dRectI>  hn2dRects = dis.vec2dRect;
@@ -169,7 +171,7 @@ void hn2dPixWidget::loadRoadPicture()
 					diseaseRects.push_back(rect);
 				}
 				reCalculateOldDiseaseSizeAndSave(diseaseRects, dis);
-			} 
+			}
 		}
 		progress.setValue(i + 1);
 		QApplication::processEvents();
@@ -189,38 +191,48 @@ void hn2dPixWidget::drawSomeThingOnImage(QImage & image)
 	if (this->m_pixNameMap.size() == 0)
 	{
 		return;
-	} 
-	//调整图片
-//	QElapsedTimer timer;
+	}
 
-	//timer.restart();
-	
+	QElapsedTimer totalTimer;
+	QElapsedTimer stepTimer;
+	totalTimer.start();
+
+	stepTimer.start();
 	this->adjustImage(image);
-	//qDebug() << "PERF adjustImage" << timer.elapsed() << "ms";
+	const qint64 adjustMs = stepTimer.elapsed();
 
-
-	//timer.restart(); 
-	// 绘制数据库加载内容
+	stepTimer.restart();
 	this->drawDatabaseLoadData(image);
-	//qDebug() << "PERF drawDatabaseLoadData" << timer.elapsed() << "ms";
+	const qint64 dbMs = stepTimer.elapsed();
 
-	//timer.restart();
-	//绘制临时内容
+	stepTimer.restart();
 	this->drawTmpData(image);
-	//qDebug() << "PERF drawTmpData" << timer.elapsed() << "ms";
+	const qint64 tmpMs = stepTimer.elapsed();
 
-	//timer.restart();
-	//绘制打标分界线
+	stepTimer.restart();
 	this->drawMarkValue(image);
-	//qDebug() << "PERF drawMarkValue" << timer.elapsed() << "ms";
-	
+	const qint64 markMs = stepTimer.elapsed();
 
-	//timer.restart();
-	//设置当前的hnMile
+	stepTimer.restart();
 	this->setCurrentHnMile();
-	//qDebug() << "PERF setCurrentHnMile" << timer.elapsed() << "ms";
-}
+	const qint64 mileMs = stepTimer.elapsed();
 
+	const qint64 totalMs = totalTimer.elapsed();
+	if (totalMs >= 60 || adjustMs >= 20 || dbMs >= 20 || tmpMs >= 20 || markMs >= 20 || mileMs >= 20)
+	{
+		qDebug().noquote() << "[HN_PERF][2DDrawOverlay]"
+			<< "totalMs=" << totalMs
+			<< "adjustMs=" << adjustMs
+			<< "dbMs=" << dbMs
+			<< "tmpMs=" << tmpMs
+			<< "markMs=" << markMs
+			<< "mileMs=" << mileMs
+			<< "bottomFrame=" << m_buttomFrameIdx
+			<< "currentFrameNum=" << m_currentWidgetFrameNum
+			<< "visiblePix=" << m_currentWidgetPixNames.size()
+			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
+	}
+}
 void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 {
 	if (event == nullptr || QApplication::closingDown())
@@ -245,12 +257,16 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 	}
 #endif
 
-	if (event->button()== Qt::RightButton)
+	if (event->button() == Qt::LeftButton && this->m_workMode == WorkMode::NO_MODE && !this->m_isDrawingDisease)
 	{
 		selectDisease(event->pos());
 	}
-	
- 
+	if (event->button() == Qt::RightButton && this->m_workMode == WorkMode::ADD_MODE && !this->m_isDrawingDisease)
+	{
+		selectDisease(event->pos());
+	}
+
+
 	//人工模式模式 添加病害 鼠标左键
 
 	if (this->m_frameMode == FrameMode::BIG_FRAME)
@@ -296,7 +312,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 			}
 		}
 
-	}  
+	}
 
 	if (this->m_frameMode == FrameMode::LITTLE_FRAME)
 	{
@@ -312,7 +328,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 				{
 					this->m_isDrawingDisease = true;
 					this->m_isAllowDrawPix = false;
-				 
+
 
 															//修改是否联动
 					this->m_isAllowLinked = false;
@@ -345,8 +361,10 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 							this->m_isAllowLinked = true;
 							return;
 						}
+						return;
+
 					}
-				 
+
 					this->m_isDrawingDisease = !this->m_isDrawingDisease;
 					this->m_isAllowDrawPix = !this->m_isDrawingDisease;
 					//修改是否联动
@@ -392,7 +410,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 				{
 					this->m_isEndAddPoint = true;
 					this->m_tempPoints.clear();
-					 
+
 
 					if (m_littleSingleImagePoints.size() > 1)
 					{
@@ -470,6 +488,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 
 							return;
 						}
+						return;
 						this->m_isDrawingDisease = !this->m_isDrawingDisease;
 						this->m_isAllowDrawPix = !this->m_isDrawingDisease;
 						//修改是否联动
@@ -483,7 +502,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 						this->m_isEndAddPoint = false;
 					}
 
-					 
+
 				}
 				else
 				{
@@ -494,35 +513,19 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 			}
 			else
 			{
-				this->m_isRightDeleteMouseDown = true;
-				m_RightDeleteMousePoint = event->pos();
-				
-
-				m_pendingRightClickDeletePoint = event->pos();
-				const int serial = ++m_pendingRightClcikDeleteSerial;
-				QTimer::singleShot(QApplication::doubleClickInterval(), this, [this, serial]()
+				if (this->m_workMode == WorkMode::DELETE_MODE)
 				{
-					if (serial !=m_pendingRightClcikDeleteSerial)
-					{
-						return;
-					}
-					if (m_pendingRightClickDeletePoint.x()< 0||m_pendingRightClickDeletePoint.y()<0)
-					{
-						return;
-					}
-
-				 
-				  
-					this->littleFrameRightButtonDragDelete(m_pendingRightClickDeletePoint);
+					this->m_isRightDeleteMouseDown = true;
+					m_RightDeleteMousePoint = event->pos();
+					++m_pendingRightClcikDeleteSerial;
 					m_pendingRightClickDeletePoint = QPoint(-1, -1);
-				
-				});
-
-
-
-			} 
-		} 
-	}   
+					this->littleFrameRightButtonDragDelete(event->pos());
+				}
+				event->accept();
+				return;
+			}
+		}
+	}
 
 
 	if (m_frameMode == DESIGN_FACETS)
@@ -553,7 +556,7 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 	}
 	if (m_frameMode == DESIGN_LINE)
 	{
-	
+
 		switch (m_workMode)
 		{
 		case hnWorkMode::NO_MODE:
@@ -619,8 +622,8 @@ void hn2dPixWidget::mousePressEvent(QMouseEvent * event)
 		//转为大imagePoint 保存下来
 		m_seclectPoint.pixPoint = this->screenToSingleImagePoint(event->pos(), m_seclectPoint.pixName);
 	}
-	 
-  
+
+
 	hn2d3dPixBaseWidget::mousePressEvent(event);
 }
 
@@ -641,21 +644,19 @@ void hn2dPixWidget::mouseReleaseEvent(QMouseEvent * event)
 }
 
 void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
-{ 
+{
 	if (event == nullptr || QApplication::closingDown())
 	{
 		return;
 	}
-
 	currentMousePos = event->screenPos().toPoint();				// 记录鼠标在屏幕的位置
 
-	auto dataManager = hnApp::hnDataManager::getDataManager();
-	if (!dataManager->isOpenProject() || dataManager->getCurrentProject() == nullptr)
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
 	}
 
-	if (m_pixNameMap.empty() || m_pixNameHnMileMap.empty())
+	if (m_pixNameMap.empty())
 	{
 		return;
 	}
@@ -676,7 +677,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 		}
 		int curPosX = 0;
 		int curPosY = 0;
-		int pictureW = 0; 
+		int pictureW = 0;
 		int pictureH = 0;
 		double curMile = 0;
 		QPoint pos = event->pos();
@@ -696,8 +697,8 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 		if (m_isVMirrored)
 		{
 			curPosY = pictureH - curPosY;
-		} 
-		m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile,curPosX,curPosY , dDiseaseLon, dDiseaseLat, dDiseaseH); 
+		}
+		m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile,curPosX,curPosY , dDiseaseLon, dDiseaseLat, dDiseaseH);
 		m_latitude    = QString::number(dDiseaseLat, 'f', 6);
 		m_longitude = QString::number(dDiseaseLon, 'f', 6);
 		m_centerH    = QString::number(dDiseaseH, 'f', 2);
@@ -747,7 +748,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 			m_lblCoordinates->show();
 			m_lblCoordinates->raise();
 		}
-	
+
 	}
 
 	//2025.11.3 新增最后一个左键点击点与鼠标位置之间的连线（虚线）
@@ -765,7 +766,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 			m_tempPoints.push_back(endPoint);
 		}
 
-		this->update();
+		requestOverlayUpdate();
 
 	}
 
@@ -801,7 +802,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 			m_tmpPaintLineDiseasePoints.append(m_diseaseEndPoint);
 			m_tmpLastPaintLineDiseasePoints.append(m_diseaseEndPoint);
 		}
-		this->update();
+		requestOverlayUpdate();
 	}
 
 #if 0
@@ -830,7 +831,7 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	{
 		//记录当前鼠标位置
 		m_magnifyBigImagePos = this->screenPointToBigImagePoint(event->pos());
-		this->update();
+		requestOverlayUpdate();
 	}
 
 	//更新原始比例窗口
@@ -882,7 +883,6 @@ void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 	{
 		return;
 	}
-
 	this->m_isAllowDrawPix = true;
 
 	const bool up = event->delta() > 0;
@@ -898,7 +898,7 @@ void hn2dPixWidget::wheelEvent(QWheelEvent * event)
 		this->commitCurrentLittleRectDrawSelection();
 		QTimer::singleShot(20, this, [this]()
 		{
-			this->update();
+			requestOverlayUpdate();
 		});
 	}
 	event->ignore();
@@ -951,11 +951,12 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 			for (auto& dis: m_seclectedDiseases)
 			{
 				hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(dis);
+				markDiseaseCacheDirty();
 
 			}
 			m_seclectedDiseases.clear();
-			
-			
+
+
 			// 按下 删除键 时，获取鼠标位置，删除病害
 			//this->littleFrameRightButtonDragDelete(widgetPoint);
 		}
@@ -990,7 +991,7 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 				//根据图片名字获取帧序号
 				int startIdx = m_pixNameMap.key(startName, -1);
 				int endIdx = m_pixNameMap.key(endName, -1);
- 
+
 				//如果结束的帧号小，就交换一下
 				if (qMin(startIdx, endIdx) == endIdx)
 				{
@@ -1028,7 +1029,7 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 					}
 				}
 			}
-		 
+
 		}
 
 		if (this->m_isDrawingDisease)
@@ -1049,6 +1050,7 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 
 				return;
 			}
+			return;
 			this->m_isDrawingDisease = !this->m_isDrawingDisease;
 			this->m_isAllowDrawPix = !this->m_isDrawingDisease;
 			//修改是否联动
@@ -1060,7 +1062,7 @@ void hn2dPixWidget::keyPressEvent(QKeyEvent * event)
 			m_tmpLittleFrameDiseaseRects.clear();
 
 			this->m_isEndAddPoint = false;
-		} 
+		}
 	}
 
 	// 上传其他没有处理的消息
@@ -1096,7 +1098,7 @@ bool hn2dPixWidget::isTmpDiseaseRoadTypeValid(const int & frameType)
 			qSwap(beginIdx, endIdx);
 		}
 
-		//把所有帧号的图片找出来	
+		//把所有帧号的图片找出来
 		for (int i = beginIdx; i <= endIdx; i++)
 		{
 			QString pixName = m_pixNameMap.value(i, "");
@@ -1260,7 +1262,7 @@ bool hn2dPixWidget::drawBigFrameProcess()
 			QString::fromLocal8Bit("确定"));
 		return false;
 	}
-	 
+
 	if (false == diseaseInfo.vec3dRect.empty() && true == m_isOPenDepthCaculate && nullptr != hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
 	{
 		//计算人工模式病害深度信息
@@ -1277,11 +1279,12 @@ bool hn2dPixWidget::drawBigFrameProcess()
 
 		diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
 			->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
-		
 
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo); 
- 
-	} 
+
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+		markDiseaseCacheDirty();
+
+	}
 
 	return true;
 }
@@ -1298,7 +1301,8 @@ void hn2dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& disease
 		hn2dRectI hnRect = disease.vec2dRect.at(0);
 		QRect diseaseRect = hn2dRectToImageQtRect(hnRect);
 
-		const bool selected = selectedDiseaseId == disease.nID;
+		const bool selected = selectedDiseaseId == disease.nID
+			&& selectedDiseaseTableName == QString::fromLocal8Bit(disease.strDiseaseTableName);
 		const bool mergeSelected = isSeclectedMergeDisease(disease);
 
 		QColor rectColor = m_diseaseDrawStyle.bigFrameRectColor;
@@ -1336,7 +1340,7 @@ void hn2dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& disease
 			//rectWidth,
 			rectColor,
 			penStyle,
-		 
+
 			diseaseImagePixels(image, fontSize)
 		);
 	}
@@ -1356,7 +1360,7 @@ void hn2dPixWidget::bigFrameAddDisease(const QPoint & mousePoint)
 	if (this->m_isDrawingDisease)
 	{
 		if (!this->drawBigFrameProcess())
-		{ 
+		{
 			this->m_isDrawingDisease = false;
 			this->m_isAllowDrawPix = false;
 			this->m_isAllowLinked = true;
@@ -1479,7 +1483,7 @@ void hn2dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 		//结束里程
 		newDisease.dDmiEnd = this->calculateBigFrameEndMile(newDiseaseRect);
 
-		//计算病害的计算面积 
+		//计算病害的计算面积
 		hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(newDisease);
 
 		//重新设置ID
@@ -1491,17 +1495,18 @@ void hn2dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 
 		//删除第一个病害
-		auto firstDisease = m_seclectedDiseases.at(0); 
+		auto firstDisease = m_seclectedDiseases.at(0);
 
 		//删除第二个病害
-		auto secondDisease = m_seclectedDiseases.at(1); 
+		auto secondDisease = m_seclectedDiseases.at(1);
 
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease); 
-		 
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease);
+		markDiseaseCacheDirty();
+
 		this->update();
-		 
+
 		m_seclectedDiseases.clear();
 	}
 }
@@ -1512,26 +1517,38 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 
 	timer.restart();
 	if (!this->m_isAllowDrawPix)
-		return;  
+		return;
 
 	auto project = hnDataManager::getDataManager()->getCurrentProject();
 
-	QVector<hnRoadDiseaseInfo> diss;
-	 
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getRoadDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, diss);
-	const qint64 getDiseasesMs = timer.elapsed();
+	qint64 getDiseases = 0;
+	if (!isDiseaseCacheValid())
+	{
+		QVector<hnRoadDiseaseInfo> diss;
+		timer.start();
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->getRoadDiseasesInRange(m_beginEncoderMile, m_endEncoderMile, diss);
+		getDiseases = timer.elapsed();
+		m_cachedRangeDiseases = diss.toStdVector();
+		m_cachedDiseaseBeginMile = m_beginEncoderMile;
+		m_cachedDiseaseEndMile = m_endEncoderMile;
+		m_cachedDiseaseFrameMode = m_frameMode;
+		m_diseaseCacheDirty = false;
+	}
+	this->m_currentWidgetDiseases = m_cachedRangeDiseases;
 	timer.restart();
-	this->m_currentWidgetDiseases = diss.toStdVector();
 	if (this->m_frameMode == FrameMode::BIG_FRAME)
 	{
 		this->drawBigFrameDisease(this->m_currentWidgetDiseases, image, 0);
 	}
 
 	//将加载后的自动化模式病害画到界面上
+	timer.start();
 	if (this->m_frameMode == FrameMode::LITTLE_FRAME)
 	{
 		this->drawLittleFrameDisease(this->m_currentWidgetDiseases, image);
 	}
+	const qint64 drawMs = timer.elapsed();
+	timer.restart();
 	//qDebug() << "PERF drawLittleFrameDisease" << timer.elapsed() << "ms";
 	//绘制设计模式面状病害
 	if (FrameMode::DESIGN_FACETS == m_frameMode || FrameMode::DESIGN_LINE == m_frameMode)
@@ -1542,9 +1559,7 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 		this->drawLineDiseases(m_currentWidgetDiseases, image);
 	}
 
-
-	const qint64 drawMs = timer.elapsed();
-	timer.restart();
+	timer.start();
 
 	//绘制二三维开始里程矫正的线
 	if (PROJECT_23D_TYPE == project->getProjectType())
@@ -1556,8 +1571,8 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 			QLine line(startPoint, endPoint);
 			this->drawLineOnImage(line, 20, Qt::yellow, image);
 		}
-	
-	
+
+
 	}
 	//记录临时内容画板
 	m_tmpContectImage = image;
@@ -1568,23 +1583,55 @@ void hn2dPixWidget::drawDatabaseLoadData(QImage & image)
 		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
 			m_tmpPixImageWithoutDisease, image);
 	}
+
+
 	const qint64 drawLineAndDrawBigImage = timer.elapsed();
-	if (getDiseasesMs >= 5 || drawMs >= 10 || drawLineAndDrawBigImage >= 10 || !m_currentWidgetDiseases.empty())
+	timer.restart();
+	if (getDiseases >= 5 || drawMs >= 20 || drawLineAndDrawBigImage >= 20)
 	{
-		qDebug().noquote() << "[HN_PERF][2DDrawDatabaseLoadData]"
-			<< "getDiseasesMs=" << getDiseasesMs
-			<< "drawDiseaseMs=" << drawMs
-			<< "drawLineMagnifyMs=" << drawLineAndDrawBigImage
-			<< "diseaseCount=" << m_currentWidgetDiseases.size()
-			<< "frameMode=" << static_cast<int>(m_frameMode)
-			<< "beginMile=" << m_beginEncoderMile
-			<< "endMile=" << m_endEncoderMile
-			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
+		qDebug().noquote() << "[HN_PERF][drawDatabaseLoadData]" << "getDiseases=" << getDiseases
+			<< "drawMs=" << drawMs
+			<< "drawLineAndDrawBigImage=" << drawLineAndDrawBigImage
+			<< "diseaseCount=" << m_currentWidgetDiseases.size();
 	}
+
 }
 
+QVector<QRect> hn2dPixWidget::currentLittleRectDrawSelection()
+{
+	QVector<QRect> result;
+	if (!this->littleDrawRectType || this->m_frameMode != FrameMode::LITTLE_FRAME)
+	{
+		return result;
+	}
+	if (m_diseaseStartPoint.pixName.isEmpty() || m_diseaseEndPoint.pixName.isEmpty())
+	{
+		return result;
+	}
+
+	const QPoint bigImageStart = singleImagePointToBigImagePoint(
+		m_diseaseStartPoint.pixPoint,
+		m_diseaseStartPoint.pixName);
+	const QPoint bigImageEnd = singleImagePointToBigImagePoint(
+		m_diseaseEndPoint.pixPoint,
+		m_diseaseEndPoint.pixName);
+	const QRect bigRect = QRect(bigImageStart, bigImageEnd).normalized();
+	if (bigRect.isNull())
+	{
+		return result;
+	}
+
+	QVector<pixImagePoint> rangePoints;
+	rangePoints.reserve(2);
+	rangePoints.append(m_diseaseStartPoint);
+	rangePoints.append(m_diseaseEndPoint);
+
+	this->m_currentLittleFrameRects = this->createLittleFrameRects(rangePoints);
+	hn2d3dCoordinates tool;
+	return tool.crossRectOver(bigRect, this->m_currentLittleFrameRects);
+}
 void hn2dPixWidget::drawTmpData(QImage & image)
-{ 
+{
 	if (!this->m_isAllowDrawPix)
 	{
 		//改变画板为临时内容画板
@@ -1596,66 +1643,9 @@ void hn2dPixWidget::drawTmpData(QImage & image)
 	{
 		if (this->littleDrawRectType)
 		{
-			QRect bigRect = this->drawTmpLittleBigFrameDisease(image);
-
-		 
-			QStringList visiblePixNames;
-			QVector<pixImagePoint> visibleImagePoints;
-			for (auto it = m_currentWidgetPixNames.constBegin();it != m_currentWidgetPixNames.constEnd();++it)
-			{
-				visiblePixNames.append(it.value());
-			}
-
-			if (visiblePixNames!=m_cachedVisibleLittleFramePixNames)
-			{
-				m_cachedVisibleLittleFramePixNames = visiblePixNames;
-				visibleImagePoints.reserve(visiblePixNames.size());
-
-				for (const QString& pixName :qAsConst(visiblePixNames))
-				{
-					pixImagePoint  point;
-					point.pixName = pixName;
-					point.pixPoint = QPoint(0,0);
-					visibleImagePoints.append(point);
-				}
-				m_cachedVisibleLittleFrameRects = this->createLittleFrameRects(visibleImagePoints);
-			}
-			this->m_currentLittleFrameRects = m_cachedVisibleLittleFrameRects;
-
-
-			hn2d3dCoordinates tool;
-			QVector<QRect> currentRects = tool.crossRectOver(bigRect, this->m_currentLittleFrameRects);
-			
+			this->drawTmpLittleBigFrameDisease(image);
 			this->m_tmpLittleFrameDiseaseRects.clear();
-			this->appendCommittedLittleRectDrawSelection(this->m_tmpLittleFrameDiseaseRects);
-			if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
-			{
-				this->m_tmpLittleFrameDiseaseRects = currentRects;
-			}
-			else
-			{
-				for (const QRect& rect : qAsConst(currentRects))
-				{
-					if (!this->m_tmpLittleFrameDiseaseRects.contains(rect))
-					{
-						this->m_tmpLittleFrameDiseaseRects.append(rect);
-					}
-				}
-			}
-
-
-			
-
-
-
-			const QColor rectColor = Qt::red;
-			this->drawRectsOnImage(
-				image,
-				this->m_tmpLittleFrameDiseaseRects,
-				diseaseImagePixels(image, m_diseaseDrawStyle.tempRectWidth),
-				rectColor,
-				Qt::SolidLine);
-
+			this->m_tmpLittleFrameCacheValid = false;
 		}
 		else
 		{
@@ -1717,7 +1707,7 @@ void hn2dPixWidget::drawTmpData(QImage & image)
 
 						//画出自动化模式
 						const QColor rectColor = Qt::red;
-					  
+
 
 						this->drawRectsOnImage(image, QVector<QRect>::fromList(tmpDiseaseRects.toList()), diseaseImagePixels(image,m_diseaseDrawStyle.tempRectWidth), rectColor, Qt::SolidLine);
 
@@ -1736,7 +1726,7 @@ void hn2dPixWidget::drawTmpData(QImage & image)
 				this->m_tmpLittleFrameDiseaseRects = tool.crossOver(m_litteBigImagePoints, this->m_currentLittleFrameRects);
 
 				//画出自动化模式
-				const QColor rectColor = Qt::red; 
+				const QColor rectColor = Qt::red;
 				this->drawRectsOnImage(image, this->m_tmpLittleFrameDiseaseRects, diseaseImagePixels(image,   m_diseaseDrawStyle.tempRectWidth), rectColor, Qt::SolidLine);
 
 			}
@@ -1778,7 +1768,7 @@ QRect hn2dPixWidget::hn2dRectToImageQtRect(const hn2dRectI & hnRect)
 QPoint hn2dPixWidget::hn2dPointToImageQtPoint(const hn2dPointWithMileI & hn2dPoint)
 {
 	QPoint qpoint;
-	//auto iter = this->m_milePixNameMap.find(hn2dPoint.m_dmi); 
+	//auto iter = this->m_milePixNameMap.find(hn2dPoint.m_dmi);
 	auto iter = getPreviousStakeIterator(m_milePixNameMap, hn2dPoint.m_dmi);
 	if (iter == this->m_milePixNameMap.end())
 	{
@@ -1789,7 +1779,7 @@ QPoint hn2dPixWidget::hn2dPointToImageQtPoint(const hn2dPointWithMileI & hn2dPoi
 	//镜像的x，镜像的y
 	int mirroredX = hn2dPoint.x;
 	int mirroredY = hn2dPoint.y;
-	 
+
 	if (m_isHMirrored)
 	{
 		mirroredX = m_pixWidth - hn2dPoint.x;
@@ -1840,8 +1830,9 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	int drawType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
 
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
+	markDiseaseCacheDirty();
 
- 
+
 
 	//给病害赋值病害类型
 	strcpy(disease.strDisName, diseaseTypeName.toLocal8Bit().data());
@@ -1895,7 +1886,7 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 				&rectAlgorithm::mergeRects,
 				*this,
 				&drawDiseases::generateLargeFrameHn3dRectVector,
-				m_tmpLittleFrameDiseaseRects);
+				this->caculateLittleFrameBigImageRects(disease));
 			if (false == isDrawDisease)
 			{
 				return;
@@ -1908,8 +1899,9 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	strcpy(disease.strRemark, markStd.c_str());
 
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(disease);
-	 
-	 
+	markDiseaseCacheDirty();
+
+
 
 	m_isAllowDrawPix = true;
 	this->update();
@@ -1920,8 +1912,9 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 	PROJECT_TYPE projectType=  hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
 	// 如果自动化模式数量为0 ，则直接删除整个病害
 	if (disease.vec2dRect.size() <= 0 || (disease.vec3dRect.size() <= 0&& projectType!= PROJECT_TYPE::PROJECT_2D_TYPE))
-	{ 
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease); 
+	{
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
+		markDiseaseCacheDirty();
 		this->update();
 		return;
 	}
@@ -1949,7 +1942,7 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 				&rectAlgorithm::mergeRects,
 				*this,
 				&drawDiseases::generateLargeFrameHn3dRectVector,
-				m_tmpLittleFrameDiseaseRects);
+				this->caculateLittleFrameBigImageRects(disease));
 			if (false == isDrawDisease)
 			{
 				return;
@@ -1962,8 +1955,9 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 	// todo 经过测试主要耗时是读写数据库耗时，除非将病害变为临时病害，在鼠标释放事件写入数据库，才会流畅一些
 	//写入数据库
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+	markDiseaseCacheDirty();
 
-	 
+
 	m_isAllowDrawPix = true;
 	this->update();
 
@@ -2017,11 +2011,11 @@ QString hn2dPixWidget::generateStatusInfo(const QPoint & eventPos)
 	{
 		pixNameResult = fileInfo.fileName();
 	}
-	 
+
 
 	hnMile currentPointMile = this->getHnMileFromPoint(bigImagePoint);
-	statusInfo = QString::fromLocal8Bit("图片底部桩号：%1	图片底部里程：%2	桩号：%3	里程:%4	路面标准：%5	"
-		"路面材质：%6	路面等级：%7	病害模式：%8	屏幕坐标：%9	拼接图片坐标：%10	单张图片坐标：%11	图片名称：%12	")
+	statusInfo = QString::fromLocal8Bit("图片底部桩号：%1\t图片底部里程：%2\t桩号：%3\t里程:%4\t路面标准：%5\t"
+		"路面材质：%6\t路面等级：%7\t病害模式：%8\t屏幕坐标：%9\t拼接图片坐标：%10\t单张图片坐标：%11\t图片名称：%12\t")
 		.arg(currentPointMile.dTrueMile, 0, 'f', 0)
 		.arg(currentPointMile.dEnclMile, 0, 'f', 0)
 		.arg(caculateTrueMile(bigImagePoint), 0, 'f', 3)
@@ -2157,43 +2151,28 @@ hnCommon::hn2dPointWithMileI hn2dPixWidget::getHnPoint2dWithMileI(const QPoint &
 
 hnMile hn2dPixWidget::getHnMileFromPoint(const QPoint & allImagePoint)
 {
-	hnMile mile;
-	if (m_pixNameMap.isEmpty() || m_pixNameHnMileMap.isEmpty())
-	{
-		qWarning().noquote() << "[HN_PERF][HnMileLookupInvalid]"
-			<< "reason=emptyMap"
-			<< "pixNameMapSize=" << m_pixNameMap.size()
-			<< "mileMapSize=" << m_pixNameHnMileMap.size()
-			<< "point=" << QString("%1,%2").arg(allImagePoint.x()).arg(allImagePoint.y());
-		return mile;
-	}
-
 	QString picName;
 	QPoint singleImagePoint = this->bigImagePointToSingleImagePoint(allImagePoint, &picName);
-	if (picName.isEmpty() || singleImagePoint == QPoint(-1, -1))
-	{
-		qWarning().noquote() << "[HN_PERF][HnMileLookupInvalid]"
-			<< "reason=invalidPoint"
-			<< "point=" << QString("%1,%2").arg(allImagePoint.x()).arg(allImagePoint.y())
-			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
-			<< "bottomFrame=" << m_buttomFrameIdx;
-		return mile;
-	}
+	Q_UNUSED(singleImagePoint);
+	hnMile mile;
 
 	auto iter = m_pixNameHnMileMap.constFind(picName);
 	if (iter != m_pixNameHnMileMap.constEnd())
 	{
 		mile = iter.value();
 	}
-	else
+	/*for (auto iter = m_pixNameHnMileMap.begin(); iter != m_pixNameHnMileMap.end(); iter++)
 	{
-		qWarning().noquote() << "[HN_PERF][HnMileLookupMiss]"
-			<< "picName=" << picName
-			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
-			<< "mileMapSize=" << m_pixNameHnMileMap.size();
-	}
+		if (iter.key().contains(picName))
+		{
+			mile = iter.value();
+			break;
+		}
+	}*/
 	return mile;
 }
+
+
 double hn2dPixWidget::calculateBigFrameCenterMile(const QRect & rect)
 {
 	double mile;
@@ -2426,7 +2405,7 @@ hnCommon::hn3dPointWithMileI hn2dPixWidget::getHnPoint3dWithMileI(const QPoint &
 	}
 	//二三维有差值，要对其进行修正
 
-	//获取二三维的编码器里程差值  
+	//获取二三维的编码器里程差值
 	double encoderMileDiff = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2d3dMileDiff();
 
 	//转换成像素
@@ -2434,7 +2413,7 @@ hnCommon::hn3dPointWithMileI hn2dPixWidget::getHnPoint3dWithMileI(const QPoint &
 
 	int pixelDiff = encoderMileDiff / yScale;
 
-	//获取新的点 
+	//获取新的点
 	QPoint new2dBigImagePoint = QPoint(point.x(), point.y() + pixelDiff);	//像素和里程方向是反的，所以，这里的y是加的
 
 	//图片名称
@@ -2456,7 +2435,7 @@ hnCommon::hn3dPointWithMileI hn2dPixWidget::getHnPoint3dWithMileI(const QPoint &
 	//四分之一3d图片的高度
 	int quarter3dImageHeight = 0.25 * hnApp::hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImagePixelHeight();
 
-	//赋值x 
+	//赋值x
 	//这里对水平方向上二三维宽度的差异做了处理
 	hn2d3dCoordinates coordinates;
 	quarter3dPoint.setX(coordinates.single2dXToSingle3dX(single2dPoint.x()));
@@ -2521,7 +2500,7 @@ void hn2dPixWidget::drawTmpBigFrameDisease(QImage &image)
 	drawRectOnImageByStyle(
 		image,
 		rect,
-		m_diseaseDrawStyle.tempRectWidth,
+		diseaseImagePixels(image, m_diseaseDrawStyle.tempRectWidth),
 		m_diseaseDrawStyle.tempRectColor,
 		Qt::SolidLine);
 }
@@ -2542,7 +2521,7 @@ QRect hn2dPixWidget::drawTmpLittleBigFrameDisease(QImage &image)
 	drawRectOnImageByStyle(
 		image,
 		rect,
-		m_diseaseDrawStyle.tempRectWidth,
+		diseaseImagePixels(image, m_diseaseDrawStyle.tempRectWidth),
 		m_diseaseDrawStyle.tempRectColor,
 		Qt::SolidLine);
 
@@ -2624,7 +2603,7 @@ hnRoadDiseaseInfo hn2dPixWidget::caculateLineDiseaseInfo(QVector<pixImagePoint> 
 
 	hnCommon::hnProjectSetInfo projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 
-	//病害长度（线的长度）			
+	//病害长度（线的长度）
 	double lenth = this->caculateLineDiseaseLenth(lineDiseasePoints, WIDGET_2D);
 	result.dLength = lenth;
 
@@ -2674,11 +2653,25 @@ hnRoadDiseaseInfo hn2dPixWidget::caculateLineDiseaseInfo(QVector<pixImagePoint> 
 
 bool hn2dPixWidget::littleFrameProcess()
 {
+	if (this->littleDrawRectType)
+	{
+		this->commitCurrentLittleRectDrawSelection();
+
+		QVector<QRect> finalizedRects;
+		this->appendCommittedLittleRectDrawSelection(finalizedRects);
+		if (!finalizedRects.isEmpty())
+		{
+			this->m_tmpLittleFrameDiseaseRects = finalizedRects;
+		}
+	}
+
 	if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
 	{
 		resetLittleFrameDrawState();
 		return false;
 	}
+
+	QVector<QRect> diseaseRects = this->m_tmpLittleFrameDiseaseRects;
 
 	//如果病害无效，则取消画病害
 	if (!this->isTmpDiseaseRoadTypeValid(1))
@@ -2736,10 +2729,10 @@ bool hn2dPixWidget::littleFrameProcess()
 		}
 	}
       hnCommon::hnRoadDiseaseInfo diseaseInfo;
-	
+
 	//计算病害属性
 	 diseaseInfo = this->caculateLittleFrameDiseaseAttribute(
-		 this->m_tmpLittleFrameDiseaseRects, selectDiseaseSetInfo,diseaseMark);
+		 diseaseRects, selectDiseaseSetInfo,diseaseMark);
 
 
 
@@ -2752,7 +2745,7 @@ bool hn2dPixWidget::littleFrameProcess()
 			&rectAlgorithm::mergeRects,
 			*this,
 			&drawDiseases::generateLargeFrameHn3dRectVector,
-			m_tmpLittleFrameDiseaseRects);
+			diseaseRects);
 		if (false == isDrawDisease)
 		{
 			resetLittleFrameDrawState();
@@ -2776,10 +2769,32 @@ bool hn2dPixWidget::littleFrameProcess()
 		return false;
 	}
 
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+	m_isDrawingDisease = false;
+	m_isAllowDrawPix = true;
+	m_isAllowLinked = true;
+	m_isEndAddPoint = false;
+	markDiseaseCacheDirty();
+	const bool addOk = hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
 	resetLittleFrameDrawState();
 
-	return true;
+	if (addOk)
+	{
+		selectedDiseaseId = diseaseInfo.nID;
+		selectedDiseaseTableName = QString::fromLocal8Bit(diseaseInfo.strDiseaseTableName);
+		m_currentWidgetDiseases.push_back(diseaseInfo);
+		m_cachedRangeDiseases.push_back(diseaseInfo);
+		QTimer::singleShot(0, this, [this]()
+		{
+			markDiseaseCacheDirty();
+			this->update();
+		});
+	}
+	else
+	{
+		update();
+	}
+
+	return addOk;
 }
 
 void hn2dPixWidget::drawLittleFrameDisease(vector<hnRoadDiseaseInfo>& diseases, QImage &image)
@@ -2806,7 +2821,8 @@ void hn2dPixWidget::drawLittleFrameDisease(vector<hnRoadDiseaseInfo>& diseases, 
 			rects.push_back(hn2dRectToImageQtRect(hnRect));
 		}
 
-		const bool selected = selectedDiseaseId == disease.nID;
+		const bool selected = selectedDiseaseId == disease.nID
+			&& selectedDiseaseTableName == QString::fromLocal8Bit(disease.strDiseaseTableName);
 		const bool mergeSelected = isSeclectedMergeDisease(disease);
 
 		QColor rectColor = m_diseaseDrawStyle.littleFrameRectColor;
@@ -2908,7 +2924,7 @@ void hn2dPixWidget::littleFrameRightButtonDragDelete(const QPoint & mousePoint)
 	//	{
 	//		return;
 	//	}
-	//	std::vector<hnRoadDiseaseInfo> currentDis = m_currentWidgetDiseases; 
+	//	std::vector<hnRoadDiseaseInfo> currentDis = m_currentWidgetDiseases;
 	//	//获取鼠标位置的病害
 	//	for (auto& disease : currentDis)
 	//	{
@@ -2974,7 +2990,7 @@ void hn2dPixWidget::littleFrameRightButtonDragDelete(const QPoint & mousePoint)
 	//}
 	//catch (exception* e)
 	//{
-	//	
+	//
 	//}
 	QPoint bigImagePoint = this->screenPointToBigImagePoint(mousePoint);
 
@@ -3112,7 +3128,7 @@ void hn2dPixWidget::littleFrameMergeDiseases(const QPoint & screenPoint)
 						&rectAlgorithm::mergeRects,
 						*this,
 						&drawDiseases::generateLargeFrameHn3dRectVector,
-						m_tmpLittleFrameDiseaseRects);
+						newDiseaseRects);
 					if (false == isDrawDisease)
 					{
 						//清空选中的病害数组
@@ -3130,25 +3146,26 @@ void hn2dPixWidget::littleFrameMergeDiseases(const QPoint & screenPoint)
 		//结束里程
 		newDisease.dDmiEnd = this->calculateLittleFrameEndMile(newDiseaseRects);
 
-		//计算病害的计算面积 
+		//计算病害的计算面积
 		hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(newDisease);
 
 		//重新设置ID
 		newDisease.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
 			->getDB()->getDiseaseTable()->getMaxID(newDisease.strDiseaseTableName);
 
-		
-	
+
+
 
 		//删除第一个病害
-		auto firstDisease = m_seclectedDiseases.at(0); 
+		auto firstDisease = m_seclectedDiseases.at(0);
 
 		//删除第二个病害
-		auto secondDisease = m_seclectedDiseases.at(1); 
+		auto secondDisease = m_seclectedDiseases.at(1);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease); 
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease);
-		 
+		markDiseaseCacheDirty();
+
 		this->update();
 
 		//清空选中的病害数组
@@ -3233,9 +3250,9 @@ hnCommon::hnRoadDiseaseInfo hn2dPixWidget::caculateLittleFrameDiseaseAttribute(c
 	hnCommon::hnRoadDiseaseInfo disease;
 
 	hnCommon::hnProjectSetInfo projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
- 
+
 	disease.dArea = 0.1 * 0.1 *diseaseRects.size();		//病害面积
- 
+
 	//计算2d的坐标信息
 	vector<hn2dRectI> disease2dPointVector = this->generateLittleFrameHn2dRectVector(diseaseRects);
 	disease.vec2dRect = disease2dPointVector;
@@ -3253,7 +3270,7 @@ hnCommon::hnRoadDiseaseInfo hn2dPixWidget::caculateLittleFrameDiseaseAttribute(c
 	disease.nLevel = diseaseSetInfo.nLevel;
 	disease.diseaseWeight = diseaseSetInfo.fWidget;		//权重
 	disease.nRSurfaceType = firstHnMile.roadType;
-	 
+
 	auto mark8Bit = MarkInfo.toLocal8Bit();
 	auto markStd = mark8Bit.toStdString();
 	strcpy(disease.strRemark, markStd.c_str());
@@ -3282,7 +3299,7 @@ vector<hn2dRectI> hn2dPixWidget::generateLittleFrameHn2dRectVector(const QVector
 
 	for (const QRect& rect : qAsConst(rects))
 	{
-		hn2dRectI hnRect; 
+		hn2dRectI hnRect;
 		if (!makeLittleFrameHn2dRect(rect,hnRect))
 		{
 			continue;
@@ -3291,14 +3308,18 @@ vector<hn2dRectI> hn2dPixWidget::generateLittleFrameHn2dRectVector(const QVector
 		const int h1 = qAbs(hnRect.p2.y - hnRect.p0.y);
 		const int h2 = qAbs(hnRect.p3.y - hnRect.p1.y);
 
-		if (h1>300 ||h2>300)
+		if (h1 > 300 || h2 > 300)
 		{
-			qWarning() << "abnormal little rect saved"
-				<< "src rect = " << rect
-				<< "P0=" << hnRect.p0.x << hnRect.p0.y << hnRect.p0.m_dmi
-				<< "P1=" << hnRect.p1.x << hnRect.p1.y << hnRect.p1.m_dmi
-				<< "P2=" << hnRect.p2.x << hnRect.p2.y << hnRect.p2.m_dmi
-				<< "P3=" << hnRect.p3.x << hnRect.p3.y << hnRect.p3.m_dmi;
+			static int abnormalLittleRectWarnCount = 0;
+			if (abnormalLittleRectWarnCount++ < 20)
+			{
+				qWarning() << "abnormal little rect saved after clamp"
+					<< "src rect = " << rect
+					<< "P0=" << hnRect.p0.x << hnRect.p0.y << hnRect.p0.m_dmi
+					<< "P1=" << hnRect.p1.x << hnRect.p1.y << hnRect.p1.m_dmi
+					<< "P2=" << hnRect.p2.x << hnRect.p2.y << hnRect.p2.m_dmi
+					<< "P3=" << hnRect.p3.x << hnRect.p3.y << hnRect.p3.m_dmi;
+			}
 		}
 		dstVec.push_back(hnRect);
 	}
@@ -3406,15 +3427,35 @@ double hn2dPixWidget::calculateLittleFrameEndMile(const QVector<QRect> rects)
 	return endMile;
 }
 
-//大张图rect 转 单张图的rect	
+//大张图rect 转 单张图的rect
 QRect hn2dPixWidget::bigImageRectToSingleImageRect(const QRect & bigImageRect, QString * imageName)
 {
-	QPoint topLeft = this->bigImagePointToSingleImagePoint(bigImageRect.topLeft(), imageName);
-	QPoint bottomRight = this->bigImagePointToSingleImagePoint(bigImageRect.bottomRight(), imageName);
+	const QRect rect = bigImageRect.normalized();
+	QString centerPixName;
+	this->bigImagePointToSingleImagePoint(rect.center(), &centerPixName);
+	if (centerPixName.isEmpty())
+	{
+		if (imageName)
+		{
+			imageName->clear();
+		}
+		return QRect();
+	}
 
-	QRect singleImageRect(topLeft, bottomRight);
+	if (imageName)
+	{
+		*imageName = centerPixName;
+	}
 
-	return singleImageRect;
+	const QPoint imageTopLeft = this->singleImagePointToBigImagePoint(QPoint(0, 0), centerPixName);
+	auto toSinglePoint = [&](const QPoint& bigPoint) -> QPoint
+	{
+		const int x = qBound(0, bigPoint.x() - imageTopLeft.x(), m_pixWidth - 1);
+		const int y = qBound(0, bigPoint.y() - imageTopLeft.y(), m_pixHeight - 1);
+		return QPoint(x, y);
+	};
+
+	return QRect(toSinglePoint(rect.topLeft()), toSinglePoint(rect.bottomRight())).normalized();
 }
 
 //单张图的rect 转大张图的rect
@@ -3511,22 +3552,66 @@ QVector<QRect> hn2dPixWidget::createSingleImageLittleFrameRect()
 
 QVector<QRect> hn2dPixWidget::createLittleFrameRects(const QVector<pixImagePoint>& pixImagePoints)
 {
-	QVector<QRect> dstRects;		//目标的自动化模式rect数组
-	QVector<QRect> bigImageRects;	//大图片坐标系中每张图片的自动化模式数组
-	QVector<QString> pixNames;		//记录已经添加的图片名字
+	QVector<QRect> dstRects;
+	QVector<QRect> bigImageRects;
+	QVector<QString> pixNames;
+	QSet<QString> pixNameSet;
+	bool hasFrameRange = false;
+	int minFrameIdx = 0;
+	int maxFrameIdx = 0;
 
-	for (auto point : qAsConst(pixImagePoints))
+	for (const pixImagePoint& point : qAsConst(pixImagePoints))
+	{
+		const int frameIdx = this->m_reversePixNameMap.value(point.pixName, -1);
+		if (frameIdx > 0)
+		{
+			if (!hasFrameRange)
+			{
+				minFrameIdx = frameIdx;
+				maxFrameIdx = frameIdx;
+				hasFrameRange = true;
+			}
+			else
+			{
+				minFrameIdx = qMin(minFrameIdx, frameIdx);
+				maxFrameIdx = qMax(maxFrameIdx, frameIdx);
+			}
+			continue;
+		}
+
+		if (!point.pixName.isEmpty())
+		{
+			pixNameSet.insert(point.pixName);
+		}
+	}
+
+	if (hasFrameRange)
+	{
+		for (int frameIdx = minFrameIdx; frameIdx <= maxFrameIdx; ++frameIdx)
+		{
+			const QString pixName = this->m_pixNameMap.value(frameIdx, "");
+			if (!pixName.isEmpty())
+			{
+				pixNameSet.insert(pixName);
+			}
+		}
+	}
+
+	for (const QString& pixName : qAsConst(pixNameSet))
+	{
+		pixNames.append(pixName);
+	}
+
+	std::sort(pixNames.begin(), pixNames.end(), [this](const QString& lhs, const QString& rhs)
+	{
+		return this->m_reversePixNameMap.value(lhs, 2147483647) < this->m_reversePixNameMap.value(rhs, 2147483647);
+	});
+
+	for (const QString& pixName : qAsConst(pixNames))
 	{
 		bigImageRects.clear();
-
-		if (!pixNames.contains(point.pixName))
-		{
-			pixNames.append(point.pixName);
-			//将单张图片的自动化模式数组转成大 图片的自动化模式数组
-			bigImageRects = this->calculateBigImageRects(point.pixName);
-			//添加到目标rects中
-			dstRects += bigImageRects;
-		}
+		bigImageRects = this->calculateBigImageRects(pixName);
+		dstRects += bigImageRects;
 	}
 
 	return dstRects;
@@ -3549,7 +3634,7 @@ QMap<double, QString>::const_iterator hn2dPixWidget::getPreviousStakeIterator(co
 }
 
 void hn2dPixWidget::drawMarkValue(QImage & image)
-{ 
+{
 	//获取打标分界线 桩号
 	QVector<hnCommon::hnMarkInfo>marks = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector();
 
@@ -3593,13 +3678,13 @@ void hn2dPixWidget::drawMarkValue(QImage & image)
 
 			//根据里程获得坐标
 			hn2dPointWithMileI startPointWithMile(0, 0, dmi, 0);
-			
+
 			hn2dPointWithMileI endPointWithMile(m_pixWidth, 0, dmi, 0);
 
 			QPoint startPoint = this->hn2dPointToImageQtPoint(startPointWithMile);
-			 
+
 			QPoint endPoint = this->hn2dPointToImageQtPoint(endPointWithMile);
-			
+
 
 			if (m_isVMirrored)
 			{
@@ -3615,7 +3700,7 @@ void hn2dPixWidget::drawMarkValue(QImage & image)
 
 					endPoint.setY(endPoint.y() - m_pixHeight);
 				}
-				
+
 			}
 			else
 			{
@@ -3630,9 +3715,9 @@ void hn2dPixWidget::drawMarkValue(QImage & image)
 				{
 
 				}
-			 
+
 			}
-			 
+
 			QLine line(startPoint, endPoint);
 			this->drawLineOnImage(line, 20, Qt::blue, image);
 			QPainter painter(&image);
@@ -3652,7 +3737,7 @@ void hn2dPixWidget::drawMarkValue(QImage & image)
 			}
 			painter.drawText(QPoint(midWidth, startPoint.y()), diseaseInfo);
 		}
-	
+
 	}
 }
 
@@ -3694,21 +3779,21 @@ hnCommon::hnRoadDiseaseInfo hn2dPixWidget::getMousePosDisease( const QPoint & mo
 			std::vector<hn2dRectI>  hn2dRects = disease.vec2dRect;
 			QVector<QRect> diseaseRects;
 
-		
+
 			for (hn2dRectI rect2d : qAsConst(hn2dRects))
 			{
 				QRect rect = this->hn2dRectToImageQtRect(rect2d);
 				diseaseRects.push_back(rect);
 			}
-		 
-		
-		
+
+
+
 			//遍历病害数组，如果包含鼠标点击的点，就编辑病害
 			for (QRect rect : qAsConst(diseaseRects))
 			{
 				if (rect.contains(bigImagePoint))
 				{
-					return disease; 
+					return disease;
 				}
 			}
 			//最大外接矩形
@@ -3720,7 +3805,7 @@ hnCommon::hnRoadDiseaseInfo hn2dPixWidget::getMousePosDisease( const QPoint & mo
 			if (boundingRect.contains(bigImagePoint))
 			{
 				return disease;
-			} 
+			}
 		}
 	}
 	else
@@ -3763,18 +3848,18 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 			case hnWorkMode::NO_MODE:
 				break;
 			case hnWorkMode::ADD_MODE:
-			 
+
 				break;
 			case hnWorkMode::DELETE_MODE:
-		 
+
 				break;
 			case hnWorkMode::EDIT_MODE:
-			 
+
 				break;
 			case hnWorkMode::MOVE:
 				break;
 			case hnWorkMode::MERGE:
-				 
+
 				break;
 			case hnWorkMode::GET_MILE:
 				break;
@@ -3788,7 +3873,7 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 		{
 			this->bigFrameEditProcess(event->pos());
 		}
-	} 
+	}
 
 
 	if (this->m_frameMode == FrameMode::LITTLE_FRAME)
@@ -3824,10 +3909,9 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 		if (event->button() == Qt::RightButton)
 		{
 			++m_pendingRightClcikDeleteSerial;
-			m_pendingRightClickDeletePoint = QPoint(-1,-1);
+			m_pendingRightClickDeletePoint = QPoint(-1, -1);
 			m_isRightDeleteMouseDown = false;
 			m_RightDeleteMousePoint = QPoint(-1, -1);
-			this->selectDisease(event->pos());
 			event->accept();
 			return;
 		}
@@ -3836,56 +3920,21 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 
 bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 {
-	if (event == nullptr || QApplication::closingDown())
+
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
-		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
-			<< "reason=" << (event == nullptr ? "nullEvent" : "appClosing");
 		return false;
 	}
 
-	auto dataManager = hnApp::hnDataManager::getDataManager();
-	if (!dataManager->isOpenProject() || dataManager->getCurrentProject() == nullptr)
+	if (m_pixNameMap.empty())
 	{
-		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]" << "reason=noProject";
 		return false;
 	}
-
-	if (m_pixNameMap.empty() || m_pixNameHnMileMap.empty())
-	{
-		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
-			<< "reason=emptyMap"
-			<< "pixNameMapSize=" << m_pixNameMap.size()
-			<< "mileMapSize=" << m_pixNameHnMileMap.size();
-		return false;
-	}
-
 	QPoint bigImagePoint = this->screenPointToBigImagePoint(event->pos());
-	QString pixName;
-	QPoint singleImagePoint = this->bigImagePointToSingleImagePoint(bigImagePoint, &pixName);
-	if (pixName.isEmpty() || singleImagePoint == QPoint(-1, -1))
-	{
-		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
-			<< "reason=invalidImagePoint"
-			<< "screenPoint=" << QString("%1,%2").arg(event->pos().x()).arg(event->pos().y())
-			<< "bigPoint=" << QString("%1,%2").arg(bigImagePoint.x()).arg(bigImagePoint.y())
-			<< "singlePoint=" << QString("%1,%2").arg(singleImagePoint.x()).arg(singleImagePoint.y())
-			<< "bottomFrame=" << m_buttomFrameIdx;
-		return false;
-	}
-
-	auto mileIter = m_pixNameHnMileMap.constFind(pixName);
-	if (mileIter == m_pixNameHnMileMap.constEnd())
-	{
-		qWarning().noquote() << "[HN_PERF][InvalidAreaRejected]"
-			<< "reason=missingMile"
-			<< "picName=" << pixName
-			<< "mileMapSize=" << m_pixNameHnMileMap.size();
-		return false;
-	}
-	this->m_firstHnMile = mileIter.value();
+	this->m_firstHnMile = this->getHnMileFromPoint(bigImagePoint);
 
 	//判断当前桩号 是否在用户规定区间内
-	auto setting = dataManager->getCurrentProject()->getCurProSetInfo();
+	auto setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 	if (setting.dUserBegMile != -1)
 	{
 		if (setting.nLineType * setting.dUserBegMile > m_firstHnMile.dTrueMile * setting.nLineType || m_firstHnMile.dTrueMile > setting.nLineType * setting.dUserEndMile)
@@ -3897,37 +3946,90 @@ bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 	}
 	return true;
 }
+
 void hn2dPixWidget::selectDisease(const QPoint & mousePoint)
 {
 	//选中病害 病害列表选中
 	auto disease = getMousePosDisease(mousePoint);
 	if (disease.isValid())
 	{
-		
+
 		selectedDiseaseId = disease.nID;
+		selectedDiseaseTableName = QString::fromLocal8Bit(disease.strDiseaseTableName);
 		m_seclectedDiseases.clear();
 		m_seclectedDiseases.append(disease);
-	
+
 		emit	signal_selectDisease(disease);
-		update();
+		requestOverlayUpdate();
 	}
+}
+
+void hn2dPixWidget::markDiseaseCacheDirty()
+{
+	m_diseaseCacheDirty = true;
+	m_tmpLittleFrameCacheValid = false;
+}
+
+bool hn2dPixWidget::isDiseaseCacheValid() const
+{
+	return !m_diseaseCacheDirty
+		&& m_cachedDiseaseFrameMode == m_frameMode
+		&& qAbs(m_cachedDiseaseBeginMile - m_beginEncoderMile) < 0.0001
+		&& qAbs(m_cachedDiseaseEndMile - m_endEncoderMile) < 0.0001;
+}
+
+void hn2dPixWidget::requestOverlayUpdate()
+{
+	if (m_overlayUpdatePending)
+	{
+		return;
+	}
+
+	m_overlayUpdatePending = true;
+	QTimer::singleShot(16, this, [this]()
+	{
+		m_overlayUpdatePending = false;
+		this->update();
+	});
+}
+
+QString hn2dPixWidget::committedLittleFrameSelectionKey() const
+{
+	QString key;
+	key.reserve(m_committedLittleFrameDiseaseRects.size() * 32);
+	for (const LittleFrameSingleRectSelection& selection : qAsConst(m_committedLittleFrameDiseaseRects))
+	{
+		const QRect rect = selection.singleRect.normalized();
+		key += selection.pixName;
+		key += QLatin1Char(':');
+		key += QString::number(rect.x());
+		key += QLatin1Char(',');
+		key += QString::number(rect.y());
+		key += QLatin1Char(',');
+		key += QString::number(rect.width());
+		key += QLatin1Char(',');
+		key += QString::number(rect.height());
+		key += QLatin1Char(';');
+	}
+	return key;
 }
 
 hn2dPixWidget::~hn2dPixWidget()
 {
-	 
+
 }
 
 void hn2dPixWidget::slotDiseaseChanged()
 {
 	this->m_currentWidgetDiseases.clear();
+	markDiseaseCacheDirty();
 	this->update();
 }
 
 bool hn2dPixWidget::diseasePointToWidgetPointAfterBrowse(
 	const pixImagePoint& point,
 	bool up,
-	QPoint& widgetPoint) 
+	QPoint& widgetPoint)
 {
 	Q_UNUSED(up);
 
@@ -3972,45 +4074,32 @@ widgetPoint = QPoint(
 
 bool hn2dPixWidget::makeLittleFrameHn2dRect(const QRect&bigImageRect, hn2dRectI& hnRect)
 {
-	QRect rect = bigImageRect.normalized();
-
-	//用中心点确定小框属于哪个图
-	QString centerPixName;
-	QPoint centerSinglePoint = this->bigImagePointToSingleImagePoint(rect.center(), &centerPixName);
-
-	if (centerPixName.isEmpty()||centerSinglePoint.x() <0|| centerSinglePoint.y()<0)
+	QString pixName;
+	const QRect singleRect = this->bigImageRectToSingleImageRect(bigImageRect, &pixName);
+	if (pixName.isEmpty() || singleRect.isNull())
 	{
-		qWarning() << "makeLittleFrameHn2dRect invalid center" <<
-			"rect=" << rect
-			<< "centerPixName=" << centerPixName <<
-			"centerSinglePoint = " << centerSinglePoint;
+		qWarning() << "makeLittleFrameHn2dRect invalid rect" << "rect=" << bigImageRect << "pixName=" << pixName;
 		return false;
 	}
-	auto mileIter = m_pixNameHnMileMap.constFind(centerPixName);
+
+	auto mileIter = m_pixNameHnMileMap.constFind(pixName);
 	if (mileIter == m_pixNameHnMileMap.constEnd())
 	{
 		qWarning() << "makeLittleFrameHn2dRect mile not found"
-			<< "centerPixName = " << centerPixName
-			<< "rect = " << rect;
+			<< "pixName = " << pixName
+			<< "rect = " << bigImageRect;
 		return false;
 	}
 
 	const double dmi = mileIter.value().dEnclMile;
 
-	//当前图片在大图上的左上角位置
-	const QPoint imageTopLeft = this->singleImagePointToBigImagePoint(QPoint(0, 0), centerPixName);
-
-	auto toHnPoint = [&](const QPoint& bigPoint)->hn2dPointWithMileI
+	auto toHnPoint = [&](const QPoint& singlePoint)->hn2dPointWithMileI
 	{
-		int x = bigPoint.x() - imageTopLeft.x();
-		int y = bigPoint.y() - imageTopLeft.y();
-
-		x = qBound(0, x, m_pixWidth -1);
-		y = qBound(0, y, m_pixHeight-1);
+		int x = qBound(0, singlePoint.x(), m_pixWidth - 1);
+		int y = qBound(0, singlePoint.y(), m_pixHeight - 1);
 		if (m_isHMirrored)
 		{
 			x = m_pixWidth - 1 - x;
-
 		}
 		if (m_isVMirrored)
 		{
@@ -4023,10 +4112,10 @@ bool hn2dPixWidget::makeLittleFrameHn2dRect(const QRect&bigImageRect, hn2dRectI&
 		p.m_dmi = dmi;
 		return p;
 	};
-	hnRect.p0 = toHnPoint(rect.topLeft());
-	hnRect.p1 = toHnPoint(rect.topRight());
-	hnRect.p2 = toHnPoint(rect.bottomRight());
-	hnRect.p3 = toHnPoint(rect.bottomLeft());
+
+	hnRect.p0 = toHnPoint(singleRect.topLeft());
+	hnRect.p1 = toHnPoint(singleRect.topRight());
+	hnRect.p2 = toHnPoint(singleRect.bottomRight());
+	hnRect.p3 = toHnPoint(singleRect.bottomLeft());
 	return true;
 }
-

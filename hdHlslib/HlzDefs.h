@@ -29,9 +29,10 @@
 #include "inc\mydefs.hpp"
 
 using namespace std;
+#pragma  pack(push,1)
 namespace hd
 {
-#pragma  pack(push,1)
+
 
 	// Ç°ÖÃÉùÃ÷
 	class CHdBlockset;
@@ -803,5 +804,6 @@ namespace hd
 	typedef pair<U32,CHdBlockset*> HdBlockSetPair;
 	typedef pair<U16,CHdBlock*> HdBlockPair;
 	typedef pair<U16,CHdParcel*> HdParcelPair;
-#pragma  pack(pop)
+
 }
+#pragma  pack(pop)

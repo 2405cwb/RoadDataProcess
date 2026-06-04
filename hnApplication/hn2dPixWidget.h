@@ -247,6 +247,11 @@ private:
 	  bool isValidArea(QMouseEvent * event);
 
 	  void selectDisease(const QPoint & mousePoint);
+	  void markDiseaseCacheDirty();
+	  void requestOverlayUpdate();
+	  bool isDiseaseCacheValid() const;
+	  QString committedLittleFrameSelectionKey() const;
+	QVector<QRect> currentLittleRectDrawSelection() override;
 private slots:
        void slotDiseaseChanged();
 private:
@@ -269,5 +274,19 @@ private:
 	QString m_latitude = "";
 	QString m_longitude = "";
 	QString m_centerH = "";
+
+	bool m_diseaseCacheDirty = true;
+	double m_cachedDiseaseBeginMile = 0.0;
+	double m_cachedDiseaseEndMile = 0.0;
+	FrameMode m_cachedDiseaseFrameMode = FrameMode::BIG_FRAME;
+	std::vector<hnRoadDiseaseInfo> m_cachedRangeDiseases;
+
+	bool m_overlayUpdatePending = false;
+
+	bool m_tmpLittleFrameCacheValid = false;
+	QRect m_cachedTmpLittleBigRect;
+	QStringList m_cachedTmpVisiblePixNames;
+	QString m_cachedTmpCommittedSelectionKey;
+	QVector<QRect> m_cachedTmpLittleFrameDiseaseRects;
 
 };

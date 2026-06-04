@@ -18,13 +18,14 @@ logMgr *logMgr::instance()
 void logMgr::writeLog(QString msg)
 {
 	QMutexLocker locker(&m_mtx);
+	if (msg.contains("[HN_PERF]") && !enable_perf_log)
+	{
+		return;
+	}
 
-    this->checkLogSize();
-
-    this->formatLog(msg);
-
-    this->checkOutDirection(msg);
-
+	this->checkLogSize();
+	this->formatLog(msg);
+	this->checkOutDirection(msg);
 }
 
 QString logMgr::getFileName()
@@ -40,6 +41,22 @@ void logMgr::getOutDir()
 {
     //获取日志输出方向
     m_outDirection = this->getValueDft("LOG","LOG_OUTPUT_DIRECTION","File");
+}
+
+
+void logMgr::getOutPerfLog()
+{
+	//获取日志输出方向
+	QString value =  this->getValueDft("LOG", "ENABLE_PERF_LOG", "0");
+	if (value == "0")
+	{
+		enable_perf_log = false;
+	}
+	else
+	{
+		enable_perf_log = true;
+	}
+	
 }
 
 void logMgr::getLogMaxSize()
@@ -62,6 +79,7 @@ void logMgr::initlogMgr()
 
     this->openLogFile();
 
+	this->getOutPerfLog();
 }
 
 void logMgr::checkLogSize()
@@ -84,32 +102,24 @@ void logMgr::checkLogSize()
 
 void logMgr::checkOutDirection(QString msg)
 {
-	bool hasOutput = false;
-
     if(m_outDirection.indexOf("Console")>=0)
     {
         this->logToConsole(msg);
-		hasOutput = true;
     }
-
-    if(m_outDirection.indexOf("File")>=0)
+     if(m_outDirection.indexOf("File")>=0)
     {
         this->logToFile(msg);
-        m_logSize += msg.toUtf8().size();
-		hasOutput = true;
+        m_logSize += msg.toUtf8().size() + 1;
     }
-
-    if(m_outDirection.indexOf("Net")>=0)
+     if(m_outDirection.indexOf("Net")>=0)
     {
         this->logToTcp(msg,m_outDirection.section(":",1,1),m_outDirection.section(":",2,2).toUInt());
-		hasOutput = true;
     }
-
-    if(!hasOutput)
-    {
+    
+   /* {
         this->logToFile(msg);
-        m_logSize += msg.toUtf8().size();
-    }
+        m_logSize += msg.toUtf8().size() + 1;
+    }*/
 }
 
 void logMgr::formatLog(QString &msg)

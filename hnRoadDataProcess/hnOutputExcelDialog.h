@@ -36,6 +36,14 @@ private:
 	//初始化出表设置界面
 	void setSettingFrom();
 
+	void loadReportProjectInfo(hnPro::hnProject* project);
+
+	bool saveReportProjectInfo(hnPro::hnProject* project);
+
+	double getReportRoadWidthFromUi() const;
+
+	void setupReportProgressDialog(int maximum);
+
 
 	//初始化单表出表
 	void setSingleProjectFrom();
@@ -124,13 +132,13 @@ private:
 	//读取用户配置 设置进度 启动输出报表
 	void startOutExcelManager(const QString& excelDir, const QString&selectModelTxt, hnPro::hnProject*curProject, 
 		int & progressValue,
-		QProgressDialog* process);
+		QProgressDialog* process, int progressScale = 1);
 
 	void startOutExcelManager_Street(const QString& excelDir,
 		const QString&selectModelTxt, std::vector<hnPro::hnProject*>& allProject, 
 		const QMap<int, QVector<double>>&streetSelect,
 		int & progressValue,
-		QProgressDialog* process);
+		QProgressDialog* process, int progressScale = 1);
 
 	  
 

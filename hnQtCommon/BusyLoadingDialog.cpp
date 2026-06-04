@@ -134,6 +134,25 @@ void BusyLoadingDialog::setMessage(const QString& message)
 	processUiEvents();
 }
 
+void BusyLoadingDialog::setProgressRange(int minimum, int maximum)
+{
+	if (m_progressBar)
+	{
+		m_progressBar->setRange(minimum, maximum);
+	}
+
+	processUiEvents();
+}
+
+void BusyLoadingDialog::setProgressValue(int value)
+{
+	if (m_progressBar && m_progressBar->minimum() != m_progressBar->maximum())
+	{
+		m_progressBar->setValue(value);
+	}
+
+	processUiEvents();
+}
 void BusyLoadingDialog::showLoading(const QString& message)
 {
 	if (!message.isEmpty())
@@ -220,5 +239,20 @@ void BusyLoadingGuard::setMessage(const QString& message)
 	if (m_dialog)
 	{
 		m_dialog->setMessage(message);
+	}
+}
+void BusyLoadingGuard::setProgressRange(int minimum, int maximum)
+{
+	if (m_dialog)
+	{
+		m_dialog->setProgressRange(minimum, maximum);
+	}
+}
+
+void BusyLoadingGuard::setProgressValue(int value)
+{
+	if (m_dialog)
+	{
+		m_dialog->setProgressValue(value);
 	}
 }

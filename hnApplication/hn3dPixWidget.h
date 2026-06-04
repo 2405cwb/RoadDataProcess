@@ -294,6 +294,8 @@ private:
 	//计算某张图片的大张图的自动化模式数组
 	QVector<QRect> calculateBigImageRects(const QString &imageName);
 
+	QVector<QRect> currentLittleRectDrawSelection() override;
+
 private:
 	//创造单个图片的自动化模式数组	这里的自动化模式是针对小的image的
 	QVector<QRect> createSingleImageLittleFrameRect();

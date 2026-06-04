@@ -149,6 +149,10 @@ protected:
 	// Commit current D-rectangle selection before browsing to another page.
 	void commitCurrentLittleRectDrawSelection();
 
+
+	// Calculate current D-rectangle cells without drawing them.
+	virtual QVector<QRect> currentLittleRectDrawSelection() = 0;
+
 	// Append committed D-rectangle cells converted back to current big-image coordinates.
 	void appendCommittedLittleRectDrawSelection(QVector<QRect>& rects);
 

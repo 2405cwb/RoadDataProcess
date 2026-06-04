@@ -14,6 +14,8 @@ public:
 
 	void setTitleText(const QString& title);
 	void setMessage(const QString& message);
+	void setProgressRange(int minimum, int maximum);
+	void setProgressValue(int value);
 	void showLoading(const QString& message = QString());
 
 	static void processUiEvents();
@@ -45,6 +47,8 @@ public:
 
 	void setTitleText(const QString& title);
 	void setMessage(const QString& message);
+	void setProgressRange(int minimum, int maximum);
+	void setProgressValue(int value);
 
 private:
 	BusyLoadingDialog* m_dialog = nullptr;

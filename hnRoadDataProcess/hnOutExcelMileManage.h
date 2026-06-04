@@ -1,6 +1,7 @@
 #pragma once
 #include "HnProjectEnums.h"
 #include <QVector>
+#include <QStringList>
 #include "..\hnCommon\hnRoadStruct.h"
 #include "..\hnProject\hnProject.h"
 #include "hnOutExcelMile.h"
@@ -15,7 +16,7 @@ public:
 	//当前工程  起点桩号   终点桩号   分割区间
 	//道路标准 起点桩号 终点桩号  分割区间使用 传入的  其他的  如公路等级 采用 project获得
 	hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum standard, hnPro::hnProject * project, 
-		double sMile, double eMile, double splitValue,const MyQtCommon::MyEquipment& equips);
+		double sMile, double eMile, double splitValue,const MyQtCommon::MyEquipment& equips, double reportRoadWidth = 0);
 	~hnOutExcelMileManage();
 
 	double getStartMile() { return m_sMile; }
@@ -35,8 +36,13 @@ public:
 
 	bool getDataComplete() { return m_dataCompletion; }
 
+	static void beginCollectExportIssues();
+	static QStringList endCollectExportIssues();
+
 	QVector<hnCommon::hnRoadDiseaseInfo> getRutDis() { return rutDiss; }
 private:
+	void reportExportIssue(const QString& message) const;
+
 	//根据传入分段区间进行分段
 	QVector<hnOutExcelMile> m_roadSplietVec;
 
@@ -54,6 +60,8 @@ private:
 	double m_eMile;
 	//每段的长度
 	double m_xlslen;
+	//出表使用的路面宽度，和绘制宽度隔离
+	double m_reportRoadWidth;
 	//1 上行 -1 下行 
 	int m_direction; 
 	hnPro::hnProject * m_project;
@@ -168,5 +176,8 @@ private:
 	QVector<uint8_t> rbarr;
 	QVector<int16_t> profile;
 	QVector<float> profileZ;
-	QVector<float> profileZtmp; 
+	QVector<float> profileZtmp;
+
+	static bool s_collectExportIssues;
+	static QStringList s_exportIssues;
 };

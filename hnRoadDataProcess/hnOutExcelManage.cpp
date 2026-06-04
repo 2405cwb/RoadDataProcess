@@ -1,8 +1,13 @@
 ﻿#include "hnOutExcelManage.h"
 #include <QApplication>
+#include <QEventLoop>
 #include <QMessageBox> 
 #include "..\hnCommon\hnRoadStruct.h" 
 #include <QFileInfo>  
+#include <QFile>
+#include <QTextStream>
+#include <QTextCodec>
+#include <QDir>
 #include "hnDiseaseSumAreaCaculate.h" 
 #include "hnXlsxInterface.h"
 #include "..\hnQtCommon\MyCommonMethods.h"
@@ -10,6 +15,94 @@
 #include "hnOutExcelMile.h"
 #include "..\HighAccConvertPlane\HighAccuracyPositioning.h"
 #include "..\hnApplication\hnDiseaseService.h"
+namespace
+{
+	const QString kReportProjectSection = QStringLiteral("二三维设置信息");
+	const QString kReportRoadWidthKey = QStringLiteral("报表路面宽度");
+
+	QString reportProjectInfoPath(hnPro::hnProject* project)
+	{
+		if (!project)
+		{
+			return QString();
+		}
+		if (project->get2DProject())
+		{
+			return QDir::toNativeSeparators(project->get2DProject()->getBasePath() + QStringLiteral("/ProjectInfo.txt"));
+		}
+		QString projectPath = project->getAbsulotelyPath();
+		if (projectPath.isEmpty())
+		{
+			return QString();
+		}
+		return QDir::toNativeSeparators(projectPath + QStringLiteral("/ProjectInfo.txt"));
+	}
+
+	int keyValueSeparatorIndex(const QString& line)
+	{
+		int halfIndex = line.indexOf(':');
+		int fullIndex = line.indexOf(QStringLiteral("："));
+		if (halfIndex < 0)
+		{
+			return fullIndex;
+		}
+		if (fullIndex < 0)
+		{
+			return halfIndex;
+		}
+		return qMin(halfIndex, fullIndex);
+	}
+
+	double readReportRoadWidth(hnPro::hnProject* project)
+	{
+		if (!project)
+		{
+			return 0;
+		}
+
+		double defaultRoadWidth = project->getCurProSetInfo().dRoadWidth;
+		QFile file(reportProjectInfoPath(project));
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		{
+			return defaultRoadWidth;
+		}
+
+		QTextStream in(&file);
+		in.setCodec(QTextCodec::codecForName("UTF-8"));
+		QString currentSection;
+		while (!in.atEnd())
+		{
+			QString line = in.readLine().trimmed();
+			if (line.startsWith('[') && line.endsWith(']'))
+			{
+				currentSection = line.mid(1, line.length() - 2).trimmed();
+				continue;
+			}
+			if (currentSection != kReportProjectSection)
+			{
+				continue;
+			}
+
+			int sepIndex = keyValueSeparatorIndex(line);
+			if (sepIndex <= 0)
+			{
+				continue;
+			}
+			QString key = line.left(sepIndex).trimmed();
+			if (key != kReportRoadWidthKey && key != QStringLiteral("检测路面宽度"))
+			{
+				continue;
+			}
+			bool ok = false;
+			double reportRoadWidth = line.mid(sepIndex + 1).trimmed().toDouble(&ok);
+			if (ok && reportRoadWidth > 0)
+			{
+				return reportRoadWidth;
+			}
+		}
+		return defaultRoadWidth;
+	}
+}
 hnOutExcelManage::hnOutExcelManage()
 {
 	 
@@ -23,7 +116,8 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 	hnPro::hnProject*curProject,
 	double sMile, double eMile,
 	int & progressValue,
-	QProgressDialog* process
+	QProgressDialog* process,
+	int progressScale
 )
 {  
 	 
@@ -42,6 +136,12 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 		for each (QString  splitValueStr in segmentList)
 		{
 			double splitValue = splitValueStr.toDouble();
+			if (process)
+			{
+				process->setLabelText(QStringLiteral("正在生成报表：%1  分段：%2m").arg(reportItem->displayName).arg(splitValue));
+				process->setValue(progressValue * progressScale + qMax(1, progressScale / 4));
+				QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+			}
 
 			switch (standard)
 			{
@@ -115,8 +215,8 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 			if (process)
 			{ 
 				progressValue++;
-				process->setValue(progressValue);
-				QApplication::processEvents();
+				process->setValue(progressValue * progressScale);
+				QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 			}
 		} 
 }
@@ -131,12 +231,19 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 		double sMile,
 		double eMile ,
 		int & progressValue,
-		QProgressDialog* process
+		QProgressDialog* process,
+		int progressScale
 	)
 	{
 		PROJECT_TYPE projectType = curProject->getProjectType();
 		for each (double  splitValue in splits)
 		{
+			if (process)
+			{
+				process->setLabelText(QStringLiteral("正在生成景观报表：%1  分段：%2m").arg(key).arg(splitValue));
+				process->setValue(progressValue * progressScale + qMax(1, progressScale / 4));
+				QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+			}
 			switch (standard)
 			{
 			case HnProjectEnums::DegreeRoad2018:
@@ -167,8 +274,8 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 			if (process)
 			{
 				progressValue++;
-				process->setValue(progressValue);
-				QApplication::processEvents();
+				process->setValue(progressValue * progressScale);
+				QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 			}
 		}
 
@@ -185,7 +292,7 @@ bool hnOutExcelManage::initSegmentInterval(
 {
 	HnProjectEnums::StandardParmTypeEnum standard = project->getBaseStandard();
 	m_outExcelMileManage = QSharedPointer<hnOutExcelMileManage>
-		(new hnOutExcelMileManage(standard, project, sMile, eMile, lenth, equip));
+		(new hnOutExcelMileManage(standard, project, sMile, eMile, lenth, equip, readReportRoadWidth(project)));
 	
 	if (!m_outExcelMileManage->getDataComplete())
 	{
@@ -1653,7 +1760,7 @@ bool hnOutExcelManage::exportProjectInfoSheet(Document &xlsx, hnPro::hnProject*c
 	xlsx.write(QString("B17"), qAbs(m_outExcelMileManage->getStartMile() - m_outExcelMileManage->getEndMile()) * 0.001, contextFormat);
 
 	xlsx.write(QString("A18"), QStringLiteral("路面宽度（m）"), contextFormat);
-	xlsx.write(QString("B18"), projectInfo.dRoadWidth, contextFormat);
+	xlsx.write(QString("B18"), readReportRoadWidth(curProject), contextFormat);
 	QString standard = HnProjectEnums::roadTypeEnumToQString_ForExcel(curProject->getBaseStandard());
 
 	xlsx.write(QString("A19"), QStringLiteral("道路规范"), contextFormat);
@@ -4944,7 +5051,7 @@ bool hnOutExcelManage::WritePrj2CPMSXls(Document&xlsx, QString sheetName, hnPro:
 	xlsx.write(QString("H3"), date, xlsx.cellAt("H3")->format());
 	xlsx.write(QString("H4"), projectInfo.dBegMile, xlsx.cellAt("H4")->format());
 	xlsx.write(QString("M4"), projectInfo.dEndMile, xlsx.cellAt("M4")->format());
-	xlsx.write(QString("M5"), projectInfo.dRoadWidth, xlsx.cellAt("M5")->format());
+	xlsx.write(QString("M5"), readReportRoadWidth(curProject), xlsx.cellAt("M5")->format());
 
 	return true;
 }
@@ -5007,7 +5114,7 @@ bool hnOutExcelManage::writeDiseasesStatisticsSheet(Document &xlsx, int roadType
 	}
 
 	//车道宽度
-	double roadWidth = curProject->getCurProSetInfo().dRoadWidth;
+	double roadWidth = readReportRoadWidth(curProject);
 
 	//路段长度
 	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);
@@ -5136,7 +5243,7 @@ bool hnOutExcelManage::writeAsphaltDiseasesStatisticsSheet_Smart_QTDZ(Document &
 	}
 
 	//车道宽度
-	double roadWidth = curProject->getCurProSetInfo().dRoadWidth;
+	double roadWidth = readReportRoadWidth(curProject);
 
 	//路段长度
 	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);
@@ -5256,7 +5363,7 @@ bool hnOutExcelManage::writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &x
 	}
 
 	//车道宽度
-	double roadWidth = curProject->getCurProSetInfo().dRoadWidth;
+	double roadWidth = readReportRoadWidth(curProject);
 
 	//路段长度
 	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);

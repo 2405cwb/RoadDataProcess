@@ -12,6 +12,35 @@
 namespace  MyCommonMethods 
 { 
 
+	static int csharpRoundToInt(double value)
+	{
+		double intPart = 0.0;
+		double frac = std::modf(value, &intPart);
+
+		double absFrac = std::fabs(frac);
+		if (absFrac<0.5)
+		{
+			return static_cast<int>(intPart);
+		}
+		else if(absFrac>0.5)
+		{
+			return static_cast<int>(intPart + std::copysign(1.0, value));
+		}
+		else
+		{
+			int intValue = static_cast<int>(intPart);
+			if (intValue%2==0)
+			{
+				return intValue;
+			}
+			else
+			{
+				return static_cast<int>(intPart + std::copysign(1.0, value));
+			}
+		}
+
+	}
+
 	//获取或创建用户电脑数据目录
 	static QString  GetUserPath()
 	{

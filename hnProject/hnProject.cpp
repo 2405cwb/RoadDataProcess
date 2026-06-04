@@ -745,7 +745,7 @@ namespace hnPro
 
 		if (m_xrSetting->mile2dmiToInt)
 		{
-			return round(dTrueMile);
+			return  MyCommonMethods::csharpRoundToInt( dTrueMile);
 		}
 		else
 		{
@@ -828,7 +828,7 @@ namespace hnPro
 		}
 		if (m_xrSetting->mile2dmiToInt)
 		{
-			return round(dEnclMile);
+			return MyCommonMethods::csharpRoundToInt(dEnclMile);
 		}
 		else
 		{

@@ -43,9 +43,9 @@ namespace hnCommon
 			return "设计模式";
 			break;
 		default:
+			return "人工模式";
 			break;
 		}
-		return "";
 	}
 	static ROAD_WORK_TYPE qstringToWorkType(const char * standard)
 	{

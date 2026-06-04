@@ -85,7 +85,7 @@ signals:
 	void signal_road2dFrameIdxChanged(int frameNum);
 
 	//设置病害进入被选中模式
-	void signal_setDiseaseIsChecked(int id);
+	void signal_setDiseaseIsChecked(int id, const QString& tableName);
 signals:
 	void signal_road3dFrameIdxChanged(int frameNum);
 signals:
@@ -128,10 +128,10 @@ private slots:
 	
 private:
 	//路面病害跳转
-	void road2dDiseaseJump(const double encoderMile,const int diseaseID);
+	void road2dDiseaseJump(const double encoderMile, const int diseaseID, const QString& tableName);
 
 	//三维点云视图跳转
-	void road3dDiseaseJump(const double encoderMile, const int diseaseID);
+	void road3dDiseaseJump(const double encoderMile, const int diseaseID, const QString& tableName);
 
 	//景观图片跳转
 	void streetJump(const double encoderMile);

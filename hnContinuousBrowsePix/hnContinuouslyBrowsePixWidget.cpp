@@ -26,7 +26,6 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSplitter>
-#include <QElapsedTimer>
 hnContinuouslyBrowsePixWidget::hnContinuouslyBrowsePixWidget(QWidget *parent)
 	: QWidget(parent)
 {
@@ -375,18 +374,11 @@ void hnContinuouslyBrowsePixWidget::initSigSlot()
 {
 
 	//信号槽连接   当滚动条数值变化时，通知label  进行相关操作
-	connect(this->m_scrollbar, &QScrollBar::valueChanged,
-        [this](int value) {
-        QElapsedTimer timer;
-        timer.start();
-        m_browsePixWidget->slot_updateCurrentScrollBar(value);
-        qDebug().noquote() << "[HN_PERF][BrowseScrollValueChanged]"
-            << "value=" << value
-            << "minimum=" << m_scrollbar->minimum()
-            << "maximum=" << m_scrollbar->maximum()
-            << "elapsedMs=" << timer.elapsed();
+	connect(this->m_scrollbar, &QScrollBar::valueChanged, 
+		[this](int value) {
+		m_browsePixWidget->slot_updateCurrentScrollBar(value);
 
-    });
+	});
 
 	//信号槽连接   showpixlabel告诉滚动条 滚动条的最大值
 	connect(this->m_browsePixWidget, &hnBrowsePixWidget::sig_scrollBarMaxValueChanged, 
@@ -442,25 +434,17 @@ void hnContinuouslyBrowsePixWidget::slot_updateScrollBarValue(int buttomFrameIdx
 	this->m_scrollbar->setValue(this->m_scrollbar->maximum() - buttomFrameIdx * 2);
 }
 
-void hnContinuouslyBrowsePixWidget::slot_setSelectedDiseaseId(int id)
+void hnContinuouslyBrowsePixWidget::slot_setSelectedDiseaseId(int id, const QString& tableName)
 {
-	m_browsePixWidget->setSelectedDiseaseId(id);
+	m_browsePixWidget->setSelectedDiseaseId(id, tableName);
 }
 
 void hnContinuouslyBrowsePixWidget::slot_updateBrowser()
 {
-    qDebug().noquote() << "[HN_PERF][BrowseUpdateScheduled]"
-        << "delayMs=500"
-        << "scrollValue=" << (m_scrollbar ? m_scrollbar->value() : -1);
-    QTimer::singleShot(500, [this]() {
-        QElapsedTimer timer;
-        timer.start();
-        m_browsePixWidget->update();
-        qDebug().noquote() << "[HN_PERF][BrowseUpdateTriggered]"
-            << "scrollValue=" << (m_scrollbar ? m_scrollbar->value() : -1)
-            << "elapsedMs=" << timer.elapsed();
-    }
-    );
+	QTimer::singleShot(500, [this]() {
+		m_browsePixWidget->update();
+	}
+	);
 
 }
 
@@ -482,32 +466,22 @@ void hnContinuouslyBrowsePixWidget::loadPix(const QStringList & pixNames)
 
 void hnContinuouslyBrowsePixWidget::wheelEvent(QWheelEvent * event)
 {
-    QElapsedTimer timer;
-    timer.start();
-    if (!m_scrollbar)
-    {
-        qDebug().noquote() << "[HN_PERF][BrowseWheel]" << "reason=noScrollbar";
-        QWidget::wheelEvent(event);
-        return;
-    }
-    const int oldValue = m_scrollbar->value();
-    const int step = browseStep();
-    if (event->delta() > 0)// 当滚轮远离使用者时
-    {
+	if (!m_scrollbar)
+	{
+		QWidget::wheelEvent(event);
+		return;
+	}
+	const int step = browseStep();
+	if (event->delta() > 0)// 当滚轮远离使用者时
+	{
 
-        this->m_scrollbar->setValue(m_scrollbar->value() - step);
-    }
-    else// 当滚轮向使用者方向旋转时
-    {
-        this->m_scrollbar->setValue(m_scrollbar->value() + step);
-    }
-    qDebug().noquote() << "[HN_PERF][BrowseWheel]"
-        << "delta=" << event->delta()
-        << "step=" << step
-        << "oldValue=" << oldValue
-        << "newValue=" << m_scrollbar->value()
-        << "elapsedMs=" << timer.elapsed();
-    event->accept();
+		this->m_scrollbar->setValue(m_scrollbar->value() - step);
+	}
+	else// 当滚轮向使用者方向旋转时
+	{
+		this->m_scrollbar->setValue(m_scrollbar->value() + step);
+	}
+	event->accept();
 }
 
 

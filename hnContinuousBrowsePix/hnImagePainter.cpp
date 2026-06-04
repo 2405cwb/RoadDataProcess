@@ -29,7 +29,7 @@ void hnImagePainter::drawImageOnAnotherImage(QImage const  & const srcImage, QIm
 	QPainter painter(&dstImage);
 	if (!image.isNull())
 	{
-		painter.drawImage(QRectF(x, y, w, h), image, image.rect());
+		painter.drawPixmap(QRectF(x, y, w, h), QPixmap::fromImage(image), QRectF());
 	}
 
 }

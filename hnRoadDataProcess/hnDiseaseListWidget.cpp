@@ -289,12 +289,14 @@ void hnDiseaseListWidget::slot_itemDoubleClicked(const QModelIndex & index)
 
     QModelIndex regionIdx = index.sibling(index.row(), m_centerMileColumn);
     QModelIndex idIdx = index.sibling(index.row(), m_idColumn);
+    QModelIndex tableNameIdx = index.sibling(index.row(), m_tableNameColumn);
 
-    if (!regionIdx.isValid() || !idIdx.isValid())
+    if (!regionIdx.isValid() || !idIdx.isValid() || !tableNameIdx.isValid())
         return;
 
     double region = regionIdx.data().toDouble();
     int id = idIdx.data().toInt();
+    QString tableName = tableNameIdx.data().toString();
 
     auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
     if (!project)
@@ -304,11 +306,11 @@ void hnDiseaseListWidget::slot_itemDoubleClicked(const QModelIndex & index)
 
     if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
     {
-        road2dDiseaseJump(region, id);
+        road2dDiseaseJump(region, id, tableName);
     }
     else
     {
-        road3dDiseaseJump(region, id);
+        road3dDiseaseJump(region, id, tableName);
     }
 }
 
@@ -548,7 +550,7 @@ void hnDiseaseListWidget::keyPressEvent(QKeyEvent * event)
 	QWidget::keyPressEvent(event);
 }
 
-void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const int diseaseID)
+void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const int diseaseID, const QString& tableName)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
@@ -565,17 +567,17 @@ void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const int 
 
 	//发信号出去，病害角标
 	emit this->signal_road2dFrameIdxChanged(frameIdx);
-	emit this->signal_setDiseaseIsChecked(diseaseID);
+	emit this->signal_setDiseaseIsChecked(diseaseID, tableName);
 }
 
-void hnDiseaseListWidget::road3dDiseaseJump(const double encoderMile, const int diseaseID)
+void hnDiseaseListWidget::road3dDiseaseJump(const double encoderMile, const int diseaseID, const QString& tableName)
 {
 	const int roadHeight = 8;
 
 	const int frameIdx = encoderMile / roadHeight;
 
 	emit this->signal_road3dFrameIdxChanged(frameIdx);
-	emit this->signal_setDiseaseIsChecked(diseaseID);
+	emit this->signal_setDiseaseIsChecked(diseaseID, tableName);
 }
 
 void hnDiseaseListWidget::streetJump(const double encoderMile)

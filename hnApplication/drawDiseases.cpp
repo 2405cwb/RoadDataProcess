@@ -3,6 +3,7 @@
 #include <QFontMetrics>
 #include <QStringList>
 #include <qmath.h>
+#include <QLineF>
 drawDiseases::drawDiseases()
 {
 	m_encoderMile = -1;
@@ -272,7 +273,14 @@ void drawDiseases::drawDiseaseCalloutLabel(
 		labelAnchor = textRect.center();
 	}
 
-	painter.drawLine(rect.center(), labelAnchor);
+	QPoint calloutStart(
+		qBound(rect.left(), labelAnchor.x(), rect.right()),
+		qBound(rect.top(), labelAnchor.y(), rect.bottom()));
+
+	if (QLineF(calloutStart, labelAnchor).length() > 2.0)
+	{
+		painter.drawLine(calloutStart, labelAnchor);
+	}
 
 	QPen textPen(textColor);
 	textPen.setWidth(1);

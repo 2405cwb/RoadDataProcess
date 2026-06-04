@@ -2,9 +2,9 @@
 #include <QFileInfo>
 #include <QDir>
 logService::logService(QObject *parent)
-	: QObject(parent)
-	, m_socket(nullptr)
-	, m_mtx(QMutex::Recursive)
+    : QObject(parent),
+      m_socket(nullptr),
+      m_mtx(QMutex::Recursive)
 {
 
 }
@@ -14,19 +14,21 @@ void logService::logToFile(QString msg)
     QMutexLocker locker(&m_mtx);
 
     QWriteLocker writelock(&rwlock);
-	if (!m_logFile.isOpen())
-	{
-		m_logFile.open(QIODevice::ReadWrite | QIODevice::Append | QIODevice::Text);
-	}
-	if (!m_logFile.isOpen())
-	{
-		return;
-	}
+    if (!m_logFile.isOpen())
+    {
+        openLogFile();
+    }
+    if (!m_logFile.isOpen())
+    {
+        return;
+    }
+
     //写入
     QTextStream stream(&m_logFile);
     stream.setCodec("utf-8");
+    //m_logFile.write(msg.toLatin1());
     //写入到文件中时，要加换行
-    stream << msg << endl;
+    stream << msg.toUtf8() << endl;
     //刷新
     m_logFile.flush();
 }
@@ -84,9 +86,6 @@ void logService::setLogFileName(const QString name)
 			
 		} 
 	}
-	if (!m_logFile.open(QIODevice::WriteOnly |QIODevice::Text))
-	{
-		int a = 0;
-	}
+
 	 
 }

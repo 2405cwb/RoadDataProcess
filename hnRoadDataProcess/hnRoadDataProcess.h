@@ -1,4 +1,4 @@
-ï»¿#pragma once
+#pragma once
 
 #include <QtWidgets/QMainWindow>
 #include "ui_hnRoadDataProcess.h"
@@ -32,7 +32,7 @@
 #include "CustomBaiduMapView.h"
 using namespace hnApp;
 
-// å‰ç½®å£°æ˜
+// Ç°ÖÃÉùÃ÷
 class QTreeView;
 class QTreeWidget;
 class QStandardItemModel;
@@ -53,6 +53,7 @@ class QComboBox;
 class QLineEdit;
 class QLabel;
 class QCheckBox;
+class BusyLoadingGuard;
 class hnCreateImageThread;
 class hnWidget3DView;
 class hnView;
@@ -85,193 +86,193 @@ public:
 	~hnRoadDataProcess();
 	static bool progressCallback(float fval, const char* qstrName, bool bCancle);
 public:
-	//å•ä¾‹  å…¨å±€è®¾ç½®
+	//µ¥Àı  È«¾ÖÉèÖÃ
 	HnXRSettings* m_xrSetting;
 
 public slots:
-	// å½“å‰æ´»åŠ¨è§†å›¾;
+	// µ±Ç°»î¶¯ÊÓÍ¼;
 	void widgetviewActive(WId hwnd);
 
 protected:
-	//ç¨‹åºé€€å‡º
+	//³ÌĞòÍË³ö
 	void closeEvent(QCloseEvent * e);
 
 	void showEvent(QShowEvent *event);
 
 private:
-	// ä¿å­˜å¸ƒå±€ï¼›
+	// ±£´æ²¼¾Ö£»
 	void saveLayout();
 
-	// è¯»å–å¸ƒå±€;
+	// ¶ÁÈ¡²¼¾Ö;
 	void readLayout();
 
-	// åˆ›å»ºè§†å›¾
+	// ´´½¨ÊÓÍ¼
 	void createView();
 
-	//åˆå§‹åŒ–å¯¹è¯æ¡†	æœ¬å‡½æ•°æ˜¯ä¸ºäº†åˆå§‹åŒ–ä¿ç•™çŠ¶æ€çš„å¯¹è¯æ¡†ï¼Œå¯¹äºä¸´æ—¶å¯¹è¯æ¡†ï¼Œåªéœ€è¦ç”¨çš„æ—¶å€™åˆ›å»ºå¯¹è±¡å³å¯
+	//³õÊ¼»¯¶Ô»°¿ò	±¾º¯ÊıÊÇÎªÁË³õÊ¼»¯±£Áô×´Ì¬µÄ¶Ô»°¿ò£¬¶ÔÓÚÁÙÊ±¶Ô»°¿ò£¬Ö»ĞèÒªÓÃµÄÊ±ºò´´½¨¶ÔÏó¼´¿É
 	void initDlg();
 
-	// åˆ›å»ºå·¥å…·æ 
+	// ´´½¨¹¤¾ßÀ¸
 	void createAction();
 
-	//åˆå§‹åŒ–å¿«æ·é”®
+	//³õÊ¼»¯¿ì½İ¼ü
 	void initShortCuts();
 
-	// åˆ›å»ºè¿æ¥
+	// ´´½¨Á¬½Ó
 	void createConnect();
 
-	// æ ‘çŠ¶è§†å›¾è¿æ¥
+	// Ê÷×´ÊÓÍ¼Á¬½Ó
 	void createTreeConnect();
 
-	// åˆ›å»ºå·¥ç¨‹ç®¡ç†æ¨¡å—å·¥å…·æ 
+	// ´´½¨¹¤³Ì¹ÜÀíÄ£¿é¹¤¾ßÀ¸
 	void createProCategory(hnRibbonCategory* page);
 
-	// åˆ›å»ºæ•°æ®å¤„ç†æ¨¡å—å·¥å…·æ 
+	// ´´½¨Êı¾İ´¦ÀíÄ£¿é¹¤¾ßÀ¸
 	void createDataProcessCategory(hnRibbonCategory* page);
 
-	// åˆ›å»ºæ•°æ®åº“ç®¡ç†å·¥å…·æ 
+	// ´´½¨Êı¾İ¿â¹ÜÀí¹¤¾ßÀ¸
 	void createDataBaseMgrCategory(hnRibbonCategory* page);
 
-	// åˆ›å»ºæ•°æ®è¾“å‡ºæ¨¡å—å·¥å…·æ 
+	// ´´½¨Êı¾İÊä³öÄ£¿é¹¤¾ßÀ¸
 	void createOutputCategory(hnRibbonCategory* page);
 
-	// åˆ›å»ºç‚¹äº‘å¤„ç†æ¨¡å—å·¥å…·æ 
+	// ´´½¨µãÔÆ´¦ÀíÄ£¿é¹¤¾ßÀ¸
 	void createCloudCategory(hnRibbonCategory* page);
 
-	// åˆ›å»ºè§†å›¾ç®¡ç†å·¥å…·æ 
+	// ´´½¨ÊÓÍ¼¹ÜÀí¹¤¾ßÀ¸
 	void createViewsCategory(hnRibbonCategory* page);
 	 
-	// ç³»ç»Ÿ
+	// ÏµÍ³
 	void createSystemCategory(hnRibbonCategory* page);
 
-	//åŠ è½½æ ¹ç›®å½•æ•°æ®åº“ä¿¡æ¯
+	//¼ÓÔØ¸ùÄ¿Â¼Êı¾İ¿âĞÅÏ¢
 	bool loadConfigData();
 
  
 
-	//åˆå§‹åŒ–å·¥ç¨‹ç›¸å…³ä¿¡æ¯ 
+	//³õÊ¼»¯¹¤³ÌÏà¹ØĞÅÏ¢ 
 	bool initProject();
 
 
 private slots:
-	// æ‰“å¼€å·¥ç¨‹
+	// ´ò¿ª¹¤³Ì
 	void openProjectSlot();
 
-	//æœ€è¿‘å·¥ç¨‹
+	//×î½ü¹¤³Ì
 	void openLastProjectSlot();
 
-	//æ‰“å¼€å½“å‰å·¥ç¨‹æ–‡ä»¶å¤¹
+	//´ò¿ªµ±Ç°¹¤³ÌÎÄ¼ş¼Ğ
 	void slot_openCurrentProjectDir();
 
-	//å¯¼å‡ºç®€æ˜“å·¥ç¨‹
+	//µ¼³ö¼òÒ×¹¤³Ì
 	void slot_outSimpleProject();
 
-	//gpsæ¡©å·åŒ¹é…
+	//gps×®ºÅÆ¥Åä
 	void slot_gpsMatching();
 
-	// æ£€æŸ¥æ•°æ®
+	// ¼ì²éÊı¾İ
 	void checkProSlot();
 	 
-	// å½±åƒç”Ÿæˆ
+	// Ó°ÏñÉú³É
 	void createImageSlot();
 
-	// é‡Œç¨‹æ ¡å‡†
+	// Àï³ÌĞ£×¼
 	void slot_mileCorrectSlot();
 
-	// é‡‡é›†æ‰“æ ‡
+	// ²É¼¯´ò±ê
 	void slot_markInfoSlot();
 
-	// æ¸…é™¤å·¥ç¨‹
+	// Çå³ı¹¤³Ì
 	void slot_clearProjectSlot();
 
-	//ç—…å®³é‡Œç¨‹è·³è½¬
+	//²¡º¦Àï³ÌÌø×ª
 	void slot_regionJump();
 
-	//æ‰“å¼€è®¾ç½®ç•Œé¢
+	//´ò¿ªÉèÖÃ½çÃæ
 	void slot_openConfigWidget();
 
-	//ä½¿ç”¨è¯´æ˜
+	//Ê¹ÓÃËµÃ÷
 	void slot_oepnCourseDocument();
 
-	//å…³äºä¿¡æ¯
+	//¹ØÓÚĞÅÏ¢
 	void slot_aboutInfosWidget();
 
-	//è¾“å‡ºæŠ¥è¡¨ 
+	//Êä³ö±¨±í 
 	void slot_outputExcel();
 
 
-	//è¾“å‡ºç»“æœæ•°æ®
+	//Êä³ö½á¹ûÊı¾İ
 	void slot_outAllResultDatas();
 
-	//è¾“å‡ºå¤šå·¥ç¨‹åˆå¹¶æŠ¥è¡¨
+	//Êä³ö¶à¹¤³ÌºÏ²¢±¨±í
 	void slot_outMergeExcel();
 
-	//åŒå‡»æ ‘çŠ¶å·¥ç¨‹èœå•
+	//Ë«»÷Ê÷×´¹¤³Ì²Ëµ¥
 	void slot_dClickTreeItem(QTreeWidgetItem *item, int column);
 
 	void slot_selectNodeChange();
 
-	//å³é”®æ ‘èœå•
+	//ÓÒ¼üÊ÷²Ëµ¥
 	void slot_showContextMenu(const QPoint pos);
 
-	//è§†å›¾æ§åˆ¶
+	//ÊÓÍ¼¿ØÖÆ
 	void slot_toStandard2View();
 
 	void slot_toStandard23View();
 
 	void slot_toStandard3View();
-	//è®¡ç®—irm
+	//¼ÆËãirm
 	void slot_calculateIrm();
 
-	//æ¸…ç©ºirm
+	//Çå¿Õirm
 	void slot_clearIrm();
 
 
 	void slot_compute();
 
-	//æ§½å‡½æ•° åˆ‡æ¢ä¸ºæ·»åŠ ç—…å®³æ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»ÎªÌí¼Ó²¡º¦Ä£Ê½
 	void slot_changeToAddDiseaseMode();
 
-	//æ§½å‡½æ•° åˆ‡æ¢ä¸ºåˆ é™¤ç—…å®³æ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»ÎªÉ¾³ı²¡º¦Ä£Ê½
 	void slot_changeToDeleteDiseaseMode();
 
-	//æ§½å‡½æ•°  åˆ‡æ¢ä¸ºç¼–è¾‘ç—…å®³æ¨¡å¼
+	//²Ûº¯Êı  ÇĞ»»Îª±à¼­²¡º¦Ä£Ê½
 	void slot_changeToEditDiseaseMode();
 
-	//æ§½å‡½æ•° åˆ‡æ¢ä¸ºç§»åŠ¨ç—…å®³æ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»ÎªÒÆ¶¯²¡º¦Ä£Ê½
 	void slot_changeToMoveDiseaseMode();
 
-	//æ§½å‡½æ•°  åˆ‡æ¢ä¸ºåˆå¹¶ç—…å®³æ¨¡å¼
+	//²Ûº¯Êı  ÇĞ»»ÎªºÏ²¢²¡º¦Ä£Ê½
 	void slot_changeToMergeDiseaseMode();
 
-	//æ§½å‡½æ•° åˆ‡æ¢ä¸ºäºŒä¸‰ç»´é‡Œç¨‹çŸ«æ­£æ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»Îª¶şÈıÎ¬Àï³Ì½ÃÕıÄ£Ê½
 	void slot_changeTo23dMileCorrectMode();
 
-	// æ§½å‡½æ•° åˆ‡æ¢ä¸ºæ·»åŠ æ§åˆ¶ç‚¹æ¨¡å¼
+	// ²Ûº¯Êı ÇĞ»»ÎªÌí¼Ó¿ØÖÆµãÄ£Ê½
 	void slot_changeAddCtrlPointMode();
 
-	// åˆ‡æ¢ä¸ºæ·»åŠ é¢çŠ¶ç—…å®³æ¨¡å¼
+	// ÇĞ»»ÎªÌí¼ÓÃæ×´²¡º¦Ä£Ê½
 	void slot_addFacetsDiseaseMode();
 
-	// åˆ‡æ¢ä¸ºæ·»åŠ çº¿çŠ¶ç—…å®³æ¨¡å¼
+	// ÇĞ»»ÎªÌí¼ÓÏß×´²¡º¦Ä£Ê½
 	void slot_addLineDiseaseMode();
 
-	//å¯¼å…¥äºŒç»´è½¯ä»¶ç»˜åˆ¶è¯†åˆ«ç—…å®³
+	//µ¼Èë¶şÎ¬Èí¼ş»æÖÆÊ¶±ğ²¡º¦
 	void slot_import2dDiseases();
 
-	//å¯¼å‡ºä¸ºäºŒç»´è½¯ä»¶ç—…å®³
+	//µ¼³öÎª¶şÎ¬Èí¼ş²¡º¦
 	void slot_output2dDiseases();
 
-	//å¯¼å…¥è‡ªåŠ¨è¯†åˆ«ç—…å®³
+	//µ¼Èë×Ô¶¯Ê¶±ğ²¡º¦
 	void slot_importAidcDiseases();
 
-	//æ§½å‡½æ•° åˆ‡æ¢ç°åº¦å›¾æµè§ˆæ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»»Ò¶ÈÍ¼ä¯ÀÀÄ£Ê½
 	void slot_changeGray3dMode();
 
-	//æ§½å‡½æ•° åˆ‡æ¢æ·±åº¦å›¾æµè§ˆæ¨¡å¼
+	//²Ûº¯Êı ÇĞ»»Éî¶ÈÍ¼ä¯ÀÀÄ£Ê½
 	void slot_changeRgb3dMode();
 
-	//æ§½å‡½æ•° è£åˆ‡åŠŸèƒ½
+	//²Ûº¯Êı ²ÃÇĞ¹¦ÄÜ
 	void slot_cutImage();
 
 	bool UTCT2GPST(const DATE_TIME_INFO& stTime, int& nGpsWeek,
@@ -279,85 +280,85 @@ private slots:
 
 	void slot_backupsDatabase();
 
-	//æ§½å‡½æ•° æ¸…ç©ºæ‰€æœ‰ç—…å®³
+	//²Ûº¯Êı Çå¿ÕËùÓĞ²¡º¦
 	void slot_clearAllDiseases();
 
-	//æ›´æ–°é…ç½®æ•°æ®åº“
+	//¸üĞÂÅäÖÃÊı¾İ¿â
 	void slot_updateDatabase();
 
-	//æ›´æ–°ç—…å®³æ•°æ®åº“
+	//¸üĞÂ²¡º¦Êı¾İ¿â
 	void slot_updateDiseaseDatabase();
 
-	//æ§½å‡½æ•° æ›´æ–°ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡
+	//²Ûº¯Êı ¸üĞÂÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ
 	void slot_update3dViewScrollBar(int value2d);
 
-	// æ§½å‡½æ•° æ›´æ–°äºŒç»´è§†å›¾æ»šåŠ¨æ¡
+	// ²Ûº¯Êı ¸üĞÂ¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ
 	void slot_update2dViewScrollBar(int value3d);
 
-	//æ§½å‡½æ•° äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–æ—¶
+	//²Ûº¯Êı ¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯Ê±
 	void slot_2dWidgetScrollBarValueChanged(int scrollBarValue2d);
 
-	//æ§½å‡½æ•°  æ™¯è§‚å¸§åºå·å˜åŒ–æ—¶
+	//²Ûº¯Êı  ¾°¹ÛÖ¡ĞòºÅ±ä»¯Ê±
 	void slot_streetWidgetFrameIdxChanged(int streetFrameIdx);
 
-	//æ”¾å¤§é•œæŒ‰é’®ç‚¹å‡»
+	//·Å´ó¾µ°´Å¥µã»÷
 	void slot_onMagnifyActionClicked();
 
-	//æ”¾å¤§é•œè®¾ç½®æŒ‰é’®ç‚¹å‡»
+	//·Å´ó¾µÉèÖÃ°´Å¥µã»÷
 	void slot_onMagnifySettingActionClicked();
 
-	//æ˜¯å¦è¿›è¡Œæ·±åº¦è®¡ç®—
+	//ÊÇ·ñ½øĞĞÉî¶È¼ÆËã
 	void slot_setDepthCaculate(bool isCaculate);
 
-	//è§†å›¾é•œåƒå¤„ç†
+	//ÊÓÍ¼¾µÏñ´¦Àí
 	void slot_widgetMirrored(bool isH2dMirrored, bool isV2dMirrored, bool isH3dMirrored, bool isV3dMirrored);
 
-	//å¯¼å‡ºDXF
+	//µ¼³öDXF
 	void slot_exportDXf();
 
-	//å¯¼å‡ºç—…å®³DXF
+	//µ¼³ö²¡º¦DXF
 	void slot_exportDiseaseDXf();
 
 
-	//å¯¼å‡ºé«˜ç²¾åº¦ç—…å®³DXF
+	//µ¼³ö¸ß¾«¶È²¡º¦DXF
 	void slot_exportHighAccuracyDiseaseDXf();
 
-	//å¯¼å‡ºå›½æ£€è½¬æ¢ä¸­é—´æ•°æ®
+	//µ¼³ö¹ú¼ì×ª»»ÖĞ¼äÊı¾İ
 	void slot_exportGjDatas();
 
-	// å¯¼å…¥æ§åˆ¶ç‚¹
+	// µ¼Èë¿ØÖÆµã
 	void slot_importCtrlPoints();
 
-	// å¯¼å‡ºæ§åˆ¶ç‚¹
+	// µ¼³ö¿ØÖÆµã
 	void slot_exportCtrlPoints();
 	
-	//æ‹¼æ¥ç—…å®³
+	//Æ´½Ó²¡º¦
 	void slot_mergeAutoDisease();
 	 
-	//ç•Œé¢è·³è½¬åˆ°æŒ‡å®šæ¡©å·
+	//½çÃæÌø×ªµ½Ö¸¶¨×®ºÅ
 	void slot_jumpToMile(double mile);
 private:
-	//æ›´æ–°æ‰€æœ‰è§†å›¾
+	//¸üĞÂËùÓĞÊÓÍ¼
 	void updateAllWidget();
 
 	void updatePixWidget();
 
-	//æ›´æ–°æ ‘çŠ¶è§†å›¾
+	//¸üĞÂÊ÷×´ÊÓÍ¼
 	void updateTreeWidget();
 
-	//æ‰€æœ‰è§†å›¾é‡æ–°åŠ è½½å›¾ç‰‡
-	void allWidgetLoadPictures();
+	//ËùÓĞÊÓÍ¼ÖØĞÂ¼ÓÔØÍ¼Æ¬
+	void allWidgetLoadPictures(BusyLoadingGuard* loading = nullptr);
 
-	// æ¸…ç©ºæ‰€æœ‰è§†å›¾å›¾ç‰‡
+	// Çå¿ÕËùÓĞÊÓÍ¼Í¼Æ¬
 	void clearAllWidgetPixs();
 
-	//è®¾ç½®å¸ƒå±€
+	//ÉèÖÃ²¼¾Ö
 	void setLayout(PROJECT_TYPE projectType);
 
-	//æ£€æŸ¥å·¥ç¨‹äººå·¥æ¨¡å¼è‡ªåŠ¨åŒ–æ¨¡å¼å†²çªï¼Œåšé™åˆ¶å¤„ç†ï¼Œä¸å…è®¸äººå·¥æ¨¡å¼è‡ªåŠ¨åŒ–æ¨¡å¼åŒæ—¶å­˜åœ¨ å†²çªè¿”å›false ä¸å†²çªæˆ–è€…è§£å†³å®Œå†²çª è¿”å›true
+	//¼ì²é¹¤³ÌÈË¹¤Ä£Ê½×Ô¶¯»¯Ä£Ê½³åÍ»£¬×öÏŞÖÆ´¦Àí£¬²»ÔÊĞíÈË¹¤Ä£Ê½×Ô¶¯»¯Ä£Ê½Í¬Ê±´æÔÚ ³åÍ»·µ»Øfalse ²»³åÍ»»òÕß½â¾öÍê³åÍ» ·µ»Øtrue
 	bool checkProjectFrameTypeConflict(const QString& projectName);
 
-	// å¤„ç†å†²çª
+	// ´¦Àí³åÍ»
 	bool handleConflict(QString standard, int drawType);
 
 	void MappingGPS2Mile(hnPro::hnProject* project, QString baseProjectPath);
@@ -375,153 +376,153 @@ signals:
 	void  signal_jumpScrollValue(int value);
 
 	void signal_jumpRoad3dFrameIdxChanged(int value);
-	//é€šçŸ¥å·¥ç¨‹ç•Œé¢æ›´æ–°
+	//Í¨Öª¹¤³Ì½çÃæ¸üĞÂ
 	void signal_updateProject(hnCommon::hnProjectSetInfo, QVector<hnCommon::hnMarkInfo>, QVector<hnCommon::hnMilePile>);
 
 private:
-	// æ‰“å¼€å·¥ç¨‹
+	// ´ò¿ª¹¤³Ì
 	QAction* m_openProjectAct;
 
-	//æœ€è¿‘å·¥ç¨‹
+	//×î½ü¹¤³Ì
 	QAction * m_lastProjectAct;
 
-	// æ‰“å¼€å½“å‰å·¥ç¨‹æ–‡ä»¶å¤¹
+	// ´ò¿ªµ±Ç°¹¤³ÌÎÄ¼ş¼Ğ
 	QAction* m_openCurrentProjectDirAction;
 
-	//å¯¼å‡ºç®€æ˜“å·¥ç¨‹
+	//µ¼³ö¼òÒ×¹¤³Ì
 	QAction * m_outSimpleProjectAction;
 
 	QAction * m_gpsMatchingAct;
 
-	// æ£€æŸ¥æ•°æ®
+	// ¼ì²éÊı¾İ
 	QAction* m_checkProAct;
 
-	//ä¿®æ”¹å·¥ç¨‹æœ‰æ•ˆæ¡©å·(ç»˜åˆ¶ç—…å®³ï¼Œå‡ºè¡¨æ¡©å·)
+	//ĞŞ¸Ä¹¤³ÌÓĞĞ§×®ºÅ(»æÖÆ²¡º¦£¬³ö±í×®ºÅ)
 	QAction* m_changeProjectOutMileAct;
 
-	// å½±åƒç”Ÿæˆ
+	// Ó°ÏñÉú³É
 	QAction* m_createImageAct;
 
-	//è£åˆ‡å›¾ç‰‡
+	//²ÃÇĞÍ¼Æ¬
 	QAction* m_cutImageAct;
 
-	// é‡Œç¨‹æ ¡å‡†
+	// Àï³ÌĞ£×¼
 	//QAction* m_mileCorrectAct;
 
-	// é‡‡é›†æ‰“æ ‡
+	// ²É¼¯´ò±ê
 	QAction* m_markInfoAct;
 
-	// æ¸…é™¤å·¥ç¨‹
+	// Çå³ı¹¤³Ì
 	QAction* m_clearProjectAct;
 
-	//ç—…å®³æ‹¼æ¥
+	//²¡º¦Æ´½Ó
 	QAction * m_autoDiseaseMerge;
 
-	// é‡Œç¨‹è·³è½¬
+	// Àï³ÌÌø×ª
 	QAction* m_regionJumpAct;
 
-	// æ ‡å‡†äºŒç»´è§†å›¾
+	// ±ê×¼¶şÎ¬ÊÓÍ¼
 	QAction* m_oShapeViewportAct;
 
-	// æ ‡å‡†ä¸‰ç»´è§†å›¾
+	// ±ê×¼ÈıÎ¬ÊÓÍ¼
 	QAction* m_o3ShapeViewportAct;
 
-	// æ ‡å‡†äºŒä¸‰ç»´è§†å›¾
+	// ±ê×¼¶şÈıÎ¬ÊÓÍ¼
 	QAction* m_oDViewportAct;
 
-	//å¹³æ•´åº¦ è½¦è¾™ç­‰è®¡ç®—
+	//Æ½Õû¶È ³µÕŞµÈ¼ÆËã
 	QAction* m_calculateAct;
 
-	//æ¸…é™¤IRMè®¡ç®—ç»“æœæŒ‰é’®
+	//Çå³ıIRM¼ÆËã½á¹û°´Å¥
 	QAction* m_clearIRMAct;
 
-	//æ·»åŠ ç—…å®³æ¨¡å¼
+	//Ìí¼Ó²¡º¦Ä£Ê½
 	QAction* m_addDiseaseAct;
 
-	//åˆ é™¤ç—…å®³æ¨¡å¼
+	//É¾³ı²¡º¦Ä£Ê½
 	QAction* m_deleteDiseaseAct;
 
-	//ç¼–è¾‘ç—…å®³æ¨¡å¼
+	//±à¼­²¡º¦Ä£Ê½
 	QAction* m_editDiseaseAct;
 
-	// åˆå¹¶ç—…å®³æ¨¡å¼
+	// ºÏ²¢²¡º¦Ä£Ê½
 	QAction* m_combineDiseaseAct;
 
-	// æ·»åŠ æ§åˆ¶ç‚¹æ¨¡å¼
+	// Ìí¼Ó¿ØÖÆµãÄ£Ê½
 	QAction *m_addCtrlPointAct;
 
-	// æ·»åŠ é¢çŠ¶ç—…å®³
+	// Ìí¼ÓÃæ×´²¡º¦
 	QAction *m_addFacetsDiseaseAct;
 
-	// æ·»åŠ çº¿çŠ¶ç—…å®³
+	// Ìí¼ÓÏß×´²¡º¦
 	QAction *m_addLineDiseaseAct;
 
-	//äºŒä¸‰ç»´é‡Œç¨‹çŸ«æ­£æ¨¡å¼
+	//¶şÈıÎ¬Àï³Ì½ÃÕıÄ£Ê½
 	QAction* m_2d3dMileCorrentAct;
 
-	//ä¸‰ç»´ç°åº¦å›¾æ¨¡å¼
+	//ÈıÎ¬»Ò¶ÈÍ¼Ä£Ê½
 	QAction* m_3dGrayModeAct;
 
-	//ä¸‰ç»´æ·±åº¦å›¾æ¨¡å¼
+	//ÈıÎ¬Éî¶ÈÍ¼Ä£Ê½
 	QAction* m_3dRgbModeAct;
 
  
 
-	//å¤‡ä»½æ•°æ®åº“
+	//±¸·İÊı¾İ¿â
 	QAction * m_backupsDatabaseAct;
 
-	//æ¸…ç©ºç—…å®³
+	//Çå¿Õ²¡º¦
 	QAction* m_clearAllDiseasesAct;
 
-	//æ›´æ–°ç—…å®³
+	//¸üĞÂ²¡º¦
 	QAction* m_updateAllDiseasesAct;
 
-	//å¤šè½¦é“å·¥ç¨‹åˆå¹¶
+	//¶à³µµÀ¹¤³ÌºÏ²¢
 	QAction * m_mergeProjectExcelAct;
 
-	//æ‰‹åŠ¨æ›´æ–°æ•°æ®åº“
+	//ÊÖ¶¯¸üĞÂÊı¾İ¿â
 	QAction* m_updateDatabase;
 
-	//å¯¼å…¥äºŒç»´è½¯ä»¶ç—…å®³
+	//µ¼Èë¶şÎ¬Èí¼ş²¡º¦
 	QAction* m_input2dDiseaseAct;
 
-	//å¯¼å‡ºäºŒç»´è½¯ä»¶ç—…å®³
+	//µ¼³ö¶şÎ¬Èí¼ş²¡º¦
 	QAction* m_output2dDiseaseAct;
 
-	//å¯¼å…¥è‡ªåŠ¨è¯†åˆ«ç—…å®³
+	//µ¼Èë×Ô¶¯Ê¶±ğ²¡º¦
 	QAction* m_inputSmartDiseaseAct;
 
-	// æ”¾å¤§é•œ
+	// ·Å´ó¾µ
 	QAction* m_magnifyAction;
 
-	// æ”¾å¤§é•œè®¾ç½®
+	// ·Å´ó¾µÉèÖÃ
 	QAction *m_magnifySettingAction; 
 
-	// å¯¼å‡ºdxf
+	// µ¼³ödxf
 	QAction *m_exportDxfAction;
 
-   //å¯¼å‡ºç—…å®³dxf
+   //µ¼³ö²¡º¦dxf
 	QAction *m_exportDiseaseDxfAction;
 
-	//å¯¼å‡ºé«˜ç²¾åº¦ç—…å®³å®šä½dxf
+	//µ¼³ö¸ß¾«¶È²¡º¦¶¨Î»dxf
 	QAction *m_exportHighAccuracyDiseaseDxfAction;
 
 	QAction * m_ComputeGeoaligAction;
 
-	// å¯¼å…¥æ§åˆ¶ç‚¹
+	// µ¼Èë¿ØÖÆµã
 	QAction *m_importCtrlPointsAction;
 
-	// å¯¼å‡ºæ§åˆ¶ç‚¹
+	// µ¼³ö¿ØÖÆµã
 	QAction *m_exportCtrlPointsAction;
 
 	QAction *m_allResultDatasAction;
 
-	//å¯¼å‡ºå›½æ£€è½¬æ¢æ•°æ®
+	//µ¼³ö¹ú¼ì×ª»»Êı¾İ
 	QAction * m_exportGJDatasAction;
 
-	//é«˜ç²¾åº¦å®šä½
+	//¸ß¾«¶È¶¨Î»
 private:
-	//å·¥ç¨‹è®¾ç½®
+	//¹¤³ÌÉèÖÃ
 	QAction* m_config;
 
 	QAction* m_HelperAct;
@@ -531,22 +532,22 @@ private:
 	QAction * m_AboutInfoAct;
 	
 private:
-	// ç”¨äºæ§åˆ¶é¢æ¿æ˜¾ç¤ºéšè—;
+	// ÓÃÓÚ¿ØÖÆÃæ°åÏÔÊ¾Òş²Ø;
 	QMenu* m_pShowPaneMenu;
 
 private:
-	// docké¢æ¿ç®¡ç†å™¨;
+	// dockÃæ°å¹ÜÀíÆ÷;
 	hn::CDockManager* m_DockManager;
 
-	//ç—…å®³ä¿¡æ¯è§†å›¾
+	//²¡º¦ĞÅÏ¢ÊÓÍ¼
 	hnDiseaseListWidget *m_diseaseListWidget;
 	hn::CDockWidget* m_diseaseListWidgetDockWidget;
 
-	//IRMæ•ˆæœå›¾
+	//IRMĞ§¹ûÍ¼
 	IrmActualTimeShow* m_IrmShowWidget;
 	hn::CDockWidget* m_irmChartDockWidget;
 
-	//åœ°å›¾æ˜¾ç¤º
+	//µØÍ¼ÏÔÊ¾
 	CustomBaiduMapView * m_mapWidget;
 	hn::CDockWidget* m_winMapDockWidget;
 
@@ -558,61 +559,61 @@ private:
 
 
 
-	// ä¸‰ç»´ç›¸å¯¹ç‚¹äº‘è§†å›¾
+	// ÈıÎ¬Ïà¶ÔµãÔÆÊÓÍ¼
 	hnWidget3DView* m_pRel3dView;
 	hn::CDockWidget *m_Doc3dOtherViewDock;
 
-	// ä¸‰ç»´ç»å¯¹è§†å›¾
+	// ÈıÎ¬¾ø¶ÔÊÓÍ¼
 	hnWidget3DView* m_pHn3dView;
 	hn::CDockWidget *m_Doc3dViewDock;
 
-	// è·¯é¢å½±åƒè§†å›¾
+	// Â·ÃæÓ°ÏñÊÓÍ¼
 	hn2dPixScrollWidget* m_2dPixScrollWidget;
 	hn::CDockWidget*  m_2dPixScrollDocWidget;
 
-	// ç‚¹äº‘å½±åƒè§†å›¾
+	// µãÔÆÓ°ÏñÊÓÍ¼
 	hn3dPixScrollWidget* m_3dPixScrollWidget;
 	hn::CDockWidget* m_3dPixScrollDocWidget;
 
-	// æ™¯è§‚å½±åƒè§†å›¾
+	// ¾°¹ÛÓ°ÏñÊÓÍ¼
 	hnStreetWidget *m_pStreetViewWidget;
 	hn::CDockWidget* m_pDocStreetImageViewDock;
 
-	//è°ƒæ•´å›¾ç‰‡è§†å›¾
+	//µ÷ÕûÍ¼Æ¬ÊÓÍ¼
 	adjustImageWidget *m_adjustImageWidget;
 	hn::CDockWidget* m_padjustImageDock;
 
 
 
-	// åŸå§‹æ¯”ä¾‹æ˜¾ç¤ºçª—å£
+	// Ô­Ê¼±ÈÀıÏÔÊ¾´°¿Ú
 	hnOriginalScalePixShowWidget *m_originalWidget;
 	hn::CDockWidget *m_originalDocWidget;
 
-	// å·¥ç¨‹åˆ—è¡¨æ ‘çŠ¶è§†å›¾;
+	// ¹¤³ÌÁĞ±íÊ÷×´ÊÓÍ¼;
 	QTreeWidget* m_projectListTreeWidget;
 	hn::CDockWidget *m_pDoctreeViewDock;
-	QMenu *m_treeWidgetRightButtonMenu;		//å·¥ç¨‹æ ‘çŠ¶å›¾å³é”®èœå•
+	QMenu *m_treeWidgetRightButtonMenu;		//¹¤³ÌÊ÷×´Í¼ÓÒ¼ü²Ëµ¥
 
-	//å¯¹è¯æ¡†
+	//¶Ô»°¿ò
 private:
 
 
 private:
-	//é‡Œç¨‹è·³è½¬å¯¹è¯æ¡†
+	//Àï³ÌÌø×ª¶Ô»°¿ò
 	hnRegionJumpDlg *m_regionJumpDlg;
-	//å¯¼å‡ºdxfå¯¹è¯æ¡†
+	//µ¼³ödxf¶Ô»°¿ò
 	hnDxfCaculateDialog *m_dxfExportDialog;
-	// è‡ªåŠ¨åŒ–æ¨¡å¼ç—…å®³åˆå¹¶å¯¹è¯æ¡†
+	// ×Ô¶¯»¯Ä£Ê½²¡º¦ºÏ²¢¶Ô»°¿ò
 	hnMergeLittleFrameThresholdDlg *m_mergeLittleFrameDlg;
 
 private:
 	hnDataManager* m_projects;
 	std::vector<hnProjectDataInfo> m_projectDataInfos;
 	hnOutputExcelDialog* m_outExcelDialog;
-	//è½¯ä»¶è®¾ç½®å¯¹è¯æ¡†
+	//Èí¼şÉèÖÃ¶Ô»°¿ò
 	hnProjectConfig * m_projectConfgDialog;
 
-	//æ•°æ®è¾“å‡ºç”Ÿæˆç®¡ç†
+	//Êı¾İÊä³öÉú³É¹ÜÀí
 	QSharedPointer<hnOutExcelMileManage> m_outExcelManage;
 
 	

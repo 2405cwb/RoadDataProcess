@@ -1,4 +1,4 @@
-ï»¿#define åœ°å›¾
+#define µØÍ¼
 #include "hnRoadDataProcess.h"
 #include <QDockWidget>
 #include <QTreeWidget>
@@ -10,6 +10,8 @@
 #include <QString>
 #include <QThreadPool>
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QDateTime>
 #include "..\hnQtRibbonUI\hnRibbonBar.h"
 #include "..\hnQtRibbonUI\hnRibbonCategory.h"
 #include "..\hnQtRibbonUI\hnRibbonPannel.h"
@@ -40,7 +42,7 @@
 #include "hnMileAdjustDlg.h"
 #include "..\hnCommon\hnRoadTypeDef.h"
 #include <QCursor>
-#include "hnRegionJumpDlg.h"	//é‡Œç¨‹è·³è½¬å¯¹è¯æ¡†
+#include "hnRegionJumpDlg.h"	//Àï³ÌÌø×ª¶Ô»°¿ò
 #include "../QHotkey/qhotkey.h"
 #include "mergeAidcDiseases.h"
 #include "../hnCommon/hn3dPointDef.h"
@@ -73,6 +75,100 @@ using namespace hnPro;
 
 static QProgressDialog * g_pgDlg = nullptr;
 
+namespace
+{
+	enum class DiseaseToastMode
+	{
+		Add,
+		Delete,
+		Edit
+	};
+
+	QString drawModeName(int drawType)
+	{
+		switch (drawType)
+		{
+		case 0:
+			return QStringLiteral("ÈË¹¤Ä£Ê½");
+		case 1:
+			return QStringLiteral("×Ô¶¯»¯Ä£Ê½");
+		case 2:
+			return QStringLiteral("Éè¼ÆÄ£Ê½");
+		default:
+			return QStringLiteral("Î´ÖªÄ£Ê½");
+		}
+	}
+
+	QString diseaseToastTitle(DiseaseToastMode mode, int drawType)
+	{
+		QString commandName;
+		switch (mode)
+		{
+		case DiseaseToastMode::Add:
+			commandName = QStringLiteral("Ìí¼Ó²¡º¦ F1");
+			break;
+		case DiseaseToastMode::Delete:
+			commandName = QStringLiteral("É¾³ı²¡º¦ F2");
+			break;
+		case DiseaseToastMode::Edit:
+			commandName = QStringLiteral("±à¼­²¡º¦ F3");
+			break;
+		}
+		return QStringLiteral("%1 - %2").arg(commandName, drawModeName(drawType));
+	}
+
+	QString diseaseToastContent(DiseaseToastMode mode, int drawType)
+	{
+		QString currentCommand;
+		switch (mode)
+		{
+		case DiseaseToastMode::Add:
+			currentCommand = QStringLiteral("µ±Ç°²Ù×÷£ºÌí¼Ó²¡º¦ F1");
+			break;
+		case DiseaseToastMode::Delete:
+			currentCommand = QStringLiteral("µ±Ç°²Ù×÷£ºÉ¾³ı²¡º¦ F2");
+			break;
+		case DiseaseToastMode::Edit:
+			currentCommand = QStringLiteral("µ±Ç°²Ù×÷£º±à¼­²¡º¦ F3");
+			break;
+		}
+
+		QStringList lines;
+		lines << QStringLiteral("µ±Ç°¹¤³Ì£º%1").arg(drawModeName(drawType));
+		lines << currentCommand;
+		lines << QStringLiteral("");
+
+		switch (drawType)
+		{
+		case 0:
+			lines << QStringLiteral("Ìí¼Ó£ºF1 ºó×ó¼üÍÏ¿ò/µãÑ¡»æÖÆ£¬ÓÒ¼üÈ¡Ïûµ±Ç°»æÖÆ");
+			lines << QStringLiteral("É¾³ı£ºF2 ºó×ó¼üµã»÷²¡º¦É¾³ı");
+			lines << QStringLiteral("±à¼­£ºF3 ºó×ó¼üµã»÷²¡º¦ÇøÓò±à¼­");
+			lines << QStringLiteral("ÆÕÍ¨Ä£Ê½£º×ó¼üÑ¡ÖĞ²¡º¦£¬Delete É¾³ıµ±Ç°Ñ¡ÖĞ²¡º¦");
+			break;
+		case 1:
+			lines << QStringLiteral("Ìí¼Ó£ºF1 ºó×ó¼ü¿ªÊ¼/Íê³É×Ô¶¯»¯Ğ¡¿ò²¡º¦");
+			lines << QStringLiteral("D£ºÇĞ»»À­¿òÌî³äĞ¡·½¸ñ£»ÍÏ¶¯Ê±Ö»ÏÔÊ¾´ó¿ò£¬È·ÈÏºóÏÔÊ¾Ğ¡·½¸ñ²¡º¦");
+			lines << QStringLiteral("B£ºÇĞ»»Ïß×´Ğ¡¿ò»æÖÆ£»N ½áÊøÏß×´»æÖÆ²¢½øÈë²¡º¦Ñ¡Ôñ");
+			lines << QStringLiteral("É¾³ı£ºF2 ºó×ó¼üÉ¾³ıÕû¸ö²¡º¦£¬ÓÒ¼üÉ¾³ıµ¥¸öĞ¡·½¸ñ£¬°´×¡ÓÒ¼üÍÏ¶¯Á¬ĞøÉ¾³ıĞ¡·½¸ñ");
+			lines << QStringLiteral("±à¼­£ºF3 ºó×ó¼üµã»÷²¡º¦ÇøÓò±à¼­");
+			lines << QStringLiteral("ÆÕÍ¨Ä£Ê½£º×ó¼üÑ¡ÖĞ²¡º¦£¬Delete É¾³ıµ±Ç°Ñ¡ÖĞ²¡º¦");
+			break;
+		case 2:
+			lines << QStringLiteral("Ìí¼Ó£ºÇëÊ¹ÓÃÌí¼ÓÃæ×´²¡º¦/Ìí¼ÓÏß×´²¡º¦°´Å¥");
+			lines << QStringLiteral("É¾³ı£ºF2 ºó×ó¼üµã»÷Éè¼Æ²¡º¦É¾³ı");
+			lines << QStringLiteral("±à¼­£ºF3 ºó×ó¼üµã»÷Éè¼Æ²¡º¦±à¼­");
+			lines << QStringLiteral("ÆÕÍ¨Ä£Ê½£º×ó¼üÑ¡ÖĞ²¡º¦£¬Delete É¾³ıµ±Ç°Ñ¡ÖĞ²¡º¦");
+			break;
+		default:
+			lines << QStringLiteral("µ±Ç°¹¤³Ì»æÖÆÄ£Ê½Î´Öª£¬Çë¼ì²é¹¤³ÌÉèÖÃ");
+			break;
+		}
+
+		return lines.join(QStringLiteral("\n"));
+	}
+}
+
 hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 	: hnRibbonMainWindow(parent), m_pRel3dView(NULL), m_pHn3dView(NULL), m_DockManager(NULL), m_2dPixScrollWidget(NULL),
 	m_3dPixScrollWidget(NULL), m_diseaseListWidgetDockWidget(NULL), m_diseaseListWidget(NULL), m_pStreetViewWidget(NULL)
@@ -81,40 +177,40 @@ hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 	m_centerToast = new hnCenterToast(this);
 	m_DockManager = new hn::CDockManager(this);
 
-	// åˆ›å»ºå·¥å…·æ 
+	// ´´½¨¹¤¾ßÀ¸
 	this->createAction();
 
-	//åˆå§‹åŒ–å·¥ç¨‹ç›¸å…³ä¿¡æ¯
+	//³õÊ¼»¯¹¤³ÌÏà¹ØĞÅÏ¢
 	if (!this->initProject())
 	{
-		qWarning() << QString::fromLocal8Bit("åˆå§‹åŒ–å·¥ç¨‹ä¿¡æ¯å¤±è´¥");
+		qWarning() << QString::fromLocal8Bit("³õÊ¼»¯¹¤³ÌĞÅÏ¢Ê§°Ü");
 	}
 
-	// åˆ›å»ºè§†å›¾;
+	// ´´½¨ÊÓÍ¼;
 	this->createView();
 
-	//åˆå§‹åŒ–å¯¹è¯æ¡†
+	//³õÊ¼»¯¶Ô»°¿ò
 	this->initDlg();
 
-	// åˆ›å»ºè¿æ¥
+	// ´´½¨Á¬½Ó
 	this->createConnect();
 
-	// æ ‘çŠ¶è§†å›¾è¿æ¥
+	// Ê÷×´ÊÓÍ¼Á¬½Ó
 	this->createTreeConnect();
 
-	//åˆå§‹åŒ–å¿«æ·é”®
+	//³õÊ¼»¯¿ì½İ¼ü
 	this->initShortCuts();
 
-	//çŠ¶æ€æ æ˜¾ç¤º
+	//×´Ì¬À¸ÏÔÊ¾
 	this->statusBar()->show();
 
-	//æœ€å¤§åŒ–
+	//×î´ó»¯
 	this->showMaximized();
 
-	// è¯»å–å·²æœ‰å¸ƒå±€ï¼Œæ— æ•ˆï¼Œéœ€è¦å®ç°å„ä¸ªdockpaneçš„å­˜å‚¨;
+	// ¶ÁÈ¡ÒÑÓĞ²¼¾Ö£¬ÎŞĞ§£¬ĞèÒªÊµÏÖ¸÷¸ödockpaneµÄ´æ´¢;
 	this->readLayout();
 
-	//è®¾ç½®è½¯ä»¶å›¾æ ‡
+	//ÉèÖÃÈí¼şÍ¼±ê
 	this->setWindowIcon(QIcon(":/icons/iconsNew/logo_xroe.ico"));
 
 }
@@ -144,7 +240,7 @@ bool hnRoadDataProcess::progressCallback(float fval, const char* qstrName, bool 
 
 bool hnRoadDataProcess::initProject()
 {
-	//åŠ è½½æ ¹ç›®å½•  å·¥ç¨‹ç›¸å…³ä¿¡æ¯
+	//¼ÓÔØ¸ùÄ¿Â¼  ¹¤³ÌÏà¹ØĞÅÏ¢
 	if (!loadConfigData())
 		return false;
 	m_projects = hnDataManager::getDataManager();
@@ -153,16 +249,16 @@ bool hnRoadDataProcess::initProject()
 }
 void hnRoadDataProcess::widgetviewActive(WId hwnd)
 {
-	// å½“å‰è§†å›¾çª—å£å¥æŸ„;
+	// µ±Ç°ÊÓÍ¼´°¿Ú¾ä±ú;
 	HWND active_view = (HWND)hwnd;
 
-	// åˆ¤æ–­å½“å‰è§†å›¾æ˜¯å¦ä¸ºæ´»åŠ¨è§†å›¾ï¼Œå¦‚æœä¸æ˜¯åˆ™åˆ‡æ¢;
+	// ÅĞ¶Ïµ±Ç°ÊÓÍ¼ÊÇ·ñÎª»î¶¯ÊÓÍ¼£¬Èç¹û²»ÊÇÔòÇĞ»»;
 	if (hnApplication::getApp()->GetActiveView()->GetHWnd() != active_view)
 	{
-		// é€šè¿‡çª—å£å¥æŸ„å¾—åˆ°å½“å‰æ´»åŠ¨è§†å›¾;
+		// Í¨¹ı´°¿Ú¾ä±úµÃµ½µ±Ç°»î¶¯ÊÓÍ¼;
 		IHdView* pView = hnApplication::getApp()->getViewByHwnd(active_view);
 
-		// è®¾ç½®åˆ‡æ¢æ´»åŠ¨è§†å›¾ï¼Œä¸æ¸…ç©ºè§†å›¾å·¥å…·;
+		// ÉèÖÃÇĞ»»»î¶¯ÊÓÍ¼£¬²»Çå¿ÕÊÓÍ¼¹¤¾ß;
 		if (pView)
 		{
 			hnApplication::getApp()->SetActiveView(pView);
@@ -202,7 +298,6 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 	}
 
 	hnPro::hnProject * lastProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
-	//è®°å½•æœ€åå·¥ç¨‹å¸§å·
 	const int frameNum = (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
 		? m_2dPixScrollWidget->getPixWidget()->getButtomFrameNumber()
 		: 0;
@@ -215,8 +310,6 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 
 	m_projects->closeProject();
 	this->saveLayout();
-
-	//ä¿å­˜å·¥ç¨‹ä¿¡æ¯ ä¾›æœ€è¿‘å·¥ç¨‹ä½¿ç”¨ 
 	m_xrSetting->writeData();
 	if (e)
 	{
@@ -226,13 +319,21 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 
 void hnRoadDataProcess::showEvent(QShowEvent *event)
 {
+	qDebug().noquote() << "[HN_PERF][MainWindowShow]"
+		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
+		<< "visible=" << isVisible()
+		<< "active=" << isActiveWindow()
+		<< "minimized=" << isMinimized()
+		<< "maximized=" << isMaximized()
+		<< "fullScreen=" << isFullScreen()
+		<< "geo=" << QString("%1,%2,%3,%4").arg(geometry().x()).arg(geometry().y()).arg(geometry().width()).arg(geometry().height());
 	this->setAttribute(Qt::WA_Mapped);
 	QWidget::showEvent(event);
 }
 
 void hnRoadDataProcess::saveLayout()
 {
-	// è®¾ç½®é…ç½®å‚æ•°è·¯å¾„;
+	// ÉèÖÃÅäÖÃ²ÎÊıÂ·¾¶;
 	//QString strAppDirPath = QCoreApplication::applicationDirPath();
 	QString strAppDirPath = MyCommonMethods::GetUserPath();
 	QString strLayoutPath = strAppDirPath + "/Layout.ini";
@@ -252,7 +353,7 @@ void hnRoadDataProcess::readLayout()
 	QString strLayoutPath = strAppDirPath + "/Layout.ini";
 	if (QFileInfo::exists(strLayoutPath) == false)
 	{
-		//ä¸å­˜åœ¨å°±å¤åˆ¶è¿‡å»
+		//²»´æÔÚ¾Í¸´ÖÆ¹ıÈ¥
 		QFile::copy(baseAppDirPath, strLayoutPath);
 		if (QFileInfo::exists(strLayoutPath) == false)
 		{
@@ -260,7 +361,7 @@ void hnRoadDataProcess::readLayout()
 		}
 	}
 
-	// è¯»å–æ•°æ®;
+	// ¶ÁÈ¡Êı¾İ;
 	QFile file(strLayoutPath);
 	if (file.open(QIODevice::ReadOnly))
 	{
@@ -273,19 +374,19 @@ void hnRoadDataProcess::readLayout()
 	}
 }
 
-// åˆ›å»ºè§†å›¾
+// ´´½¨ÊÓÍ¼
 void hnRoadDataProcess::createView()
 {
-	// åˆ›å»ºå±€éƒ¨ç‚¹äº‘è§†å›¾;
+	// ´´½¨¾Ö²¿µãÔÆÊÓÍ¼;
 	if (!m_pRel3dView)
 	{
 		m_pRel3dView = new hnWidget3DView(this);
 	}
 
-	// åˆ›å»ºDock
-	m_Doc3dOtherViewDock = new hn::CDockWidget(QStringLiteral("å±€éƒ¨ç‚¹äº‘è§†å›¾"), this);
+	// ´´½¨Dock
+	m_Doc3dOtherViewDock = new hn::CDockWidget(QStringLiteral("¾Ö²¿µãÔÆÊÓÍ¼"), this);
 
-	// è®¾ç½®å¯¹è±¡åœé å±æ€§;
+	// ÉèÖÃ¶ÔÏóÍ£¿¿ÊôĞÔ;
 	hn::CDockWidget::DockWidgetFeatures tFeatures = hn::CDockWidget::NoDockWidgetFeatures;
 	tFeatures |= hn::CDockWidget::DockWidgetFloatable;
 	tFeatures |= hn::CDockWidget::DockWidgetMovable;
@@ -296,165 +397,165 @@ void hnRoadDataProcess::createView()
 	m_Doc3dOtherViewDock->setWidget(m_pRel3dView);
 	m_Doc3dOtherViewDock->setHidden(false);
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_Doc3dOtherViewDock);
 	m_pShowPaneMenu->addAction(m_Doc3dOtherViewDock->toggleViewAction());
 
-	// åˆå§‹åŒ–å…¨å±€ç‚¹äº‘å¯¹è±¡;
+	// ³õÊ¼»¯È«¾ÖµãÔÆ¶ÔÏó;
 	if (m_pRel3dView != NULL)
 	{
-		// åˆå§‹åŒ–è§†å›¾;
+		// ³õÊ¼»¯ÊÓÍ¼;
 		IHdView* pView = hnApplication::getApp()->new3DView((HWND)m_pRel3dView->winId());
 
-		// åˆå§‹åŒ–å¤±è´¥é€€å‡º;
+		// ³õÊ¼»¯Ê§°ÜÍË³ö;
 		if (pView == NULL)
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("åˆå§‹åŒ–è§†å›¾å¤±è´¥"),
-				QString::fromLocal8Bit("ç¡®å®š"));
+			QMessageBox::information(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("³õÊ¼»¯ÊÓÍ¼Ê§°Ü"),
+				QString::fromLocal8Bit("È·¶¨"));
 			exit(0);
 		}
 
-		// è§†å›¾åç§°è®¾ç½®;
-		pView->SetName("å±€éƒ¨ç‚¹äº‘è§†å›¾");
+		// ÊÓÍ¼Ãû³ÆÉèÖÃ;
+		pView->SetName("¾Ö²¿µãÔÆÊÓÍ¼");
 
-		// è®¾ç½®å½“å‰è§†å›¾å·¥å…·ä¸º"hdFramework.hdToolFly";
+		// ÉèÖÃµ±Ç°ÊÓÍ¼¹¤¾ßÎª"hdFramework.hdToolFly";
 		hnApplication::getApp()->SetCurrentTool(COMMAND_3D_CAMERA);
 	}
 
-	// ä¸‰ç»´ç»å¯¹è§†å›¾;
+	// ÈıÎ¬¾ø¶ÔÊÓÍ¼;
 	if (!m_pHn3dView)
 	{
 		m_pHn3dView = new hnWidget3DView(this);
 	}
 
-	// åœé ä¸‰ç»´ç»å¯¹è§†å›¾;
-	m_Doc3dViewDock = new hn::CDockWidget(QStringLiteral("å…¨å±€ç‚¹äº‘è§†å›¾"), this);
+	// Í£¿¿ÈıÎ¬¾ø¶ÔÊÓÍ¼;
+	m_Doc3dViewDock = new hn::CDockWidget(QStringLiteral("È«¾ÖµãÔÆÊÓÍ¼"), this);
 	m_Doc3dViewDock->setFeatures(tFeatures);
 	m_Doc3dViewDock->setWidget(m_pHn3dView);
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_Doc3dViewDock);
 	m_pShowPaneMenu->addAction(m_Doc3dViewDock->toggleViewAction());
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_Doc3dViewDock);
 
 	auto action = m_pHn3dView->toggleViewAction();
-	action->setText(QStringLiteral("ä¸‰ç»´ç»å¯¹è§†å›¾"));
+	action->setText(QStringLiteral("ÈıÎ¬¾ø¶ÔÊÓÍ¼"));
 	m_pShowPaneMenu->addAction(action);
 
-	// åˆå§‹åŒ–ä¸‰ç»´widgetå¯¹è±¡;
+	// ³õÊ¼»¯ÈıÎ¬widget¶ÔÏó;
 	if (m_pHn3dView != NULL)
 	{
-		// åˆå§‹åŒ–è§†å›¾;
+		// ³õÊ¼»¯ÊÓÍ¼;
 		IHdView* pView = hnApplication::getApp()->new3DView((HWND)m_pHn3dView->winId());
 
-		// åˆå§‹åŒ–å¤±è´¥é€€å‡º;
+		// ³õÊ¼»¯Ê§°ÜÍË³ö;
 		if (pView == NULL)
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("è­¦å‘Š"),
-				QString::fromLocal8Bit("åˆå§‹åŒ–ä¸‰ç»´ç»å¯¹è§†å›¾å¤±è´¥"),
-				QString::fromLocal8Bit("ç¡®å®š"));
+			QMessageBox::information(this, QString::fromLocal8Bit("¾¯¸æ"),
+				QString::fromLocal8Bit("³õÊ¼»¯ÈıÎ¬¾ø¶ÔÊÓÍ¼Ê§°Ü"),
+				QString::fromLocal8Bit("È·¶¨"));
 			exit(0);
 		}
 
-		// è§†å›¾åç§°è®¾ç½®;
-		pView->SetName("å…¨å±€ç‚¹äº‘è§†å›¾");
+		// ÊÓÍ¼Ãû³ÆÉèÖÃ;
+		pView->SetName("È«¾ÖµãÔÆÊÓÍ¼");
 
-		// è®¾ç½®å½“å‰è§†å›¾å·¥å…·ä¸º"hdFramework.hdToolFly";
+		// ÉèÖÃµ±Ç°ÊÓÍ¼¹¤¾ßÎª"hdFramework.hdToolFly";
 		hnApplication::getApp()->SetCurrentTool(COMMAND_3D_CAMERA);
 	}
 
-	// è·¯é¢ç ´æŸå½±åƒè§†å›¾;
+	// Â·ÃæÆÆËğÓ°ÏñÊÓÍ¼;
 	if (!m_2dPixScrollWidget)
 	{
 		//hnApplication::getApp()->newRaodDamageContinousBrowserPixWidget();
 		m_2dPixScrollWidget = hnApplication::getApp()->newRaodDamageContinousBrowserPixWidget();
 	}
 
-	// åœé è·¯é¢å½±åƒè§†å›¾;
-	m_2dPixScrollDocWidget = new hn::CDockWidget(QStringLiteral("è·¯é¢å½±åƒè§†å›¾"), this);
+	// Í£¿¿Â·ÃæÓ°ÏñÊÓÍ¼;
+	m_2dPixScrollDocWidget = new hn::CDockWidget(QStringLiteral("Â·ÃæÓ°ÏñÊÓÍ¼"), this);
 	m_2dPixScrollDocWidget->setFeatures(tFeatures);
 	m_2dPixScrollDocWidget->setWidget(m_2dPixScrollWidget);
 	//m_2dPixScrollDocWidget->setMinimumWidth(550);
 
 #if 0
-	// åœ¨ç»˜å›¾åŒºä¸Šæ–¹æ·»åŠ å·¥å…·æŒ‰é’®
+	// ÔÚ»æÍ¼ÇøÉÏ·½Ìí¼Ó¹¤¾ß°´Å¥
 	QToolBar *toolBar = new QToolBar();
 	const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥å·¥ç¨‹.png")));
-	QAction *act = new QAction(projectIcon, QStringLiteral("&å¯¼å…¥"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë¹¤³Ì.png")));
+	QAction *act = new QAction(projectIcon, QStringLiteral("&µ¼Èë"), this);
 	toolBar->addAction(act);
 	m_2dPixScrollDocWidget->setToolBar(toolBar);
 #endif
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_2dPixScrollDocWidget);
 	m_pShowPaneMenu->addAction(m_2dPixScrollDocWidget->toggleViewAction());
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_2dPixScrollDocWidget);
 	m_pShowPaneMenu->addAction(m_2dPixScrollDocWidget->toggleViewAction());
 
-	// ç‚¹äº‘å½±åƒè§†å›¾;
+	// µãÔÆÓ°ÏñÊÓÍ¼;
 	if (!m_3dPixScrollWidget)
 	{
 		m_3dPixScrollWidget = hnApplication::getApp()->new3DImageViewWidget();
 	}
 
-	// åœé ç‚¹äº‘å½±åƒè§†å›¾;
-	m_3dPixScrollDocWidget = new hn::CDockWidget(QStringLiteral("ç‚¹äº‘å½±åƒè§†å›¾"), this);
+	// Í£¿¿µãÔÆÓ°ÏñÊÓÍ¼;
+	m_3dPixScrollDocWidget = new hn::CDockWidget(QStringLiteral("µãÔÆÓ°ÏñÊÓÍ¼"), this);
 	m_3dPixScrollDocWidget->setFeatures(tFeatures);
 	m_3dPixScrollDocWidget->setWidget(m_3dPixScrollWidget);
 	//m_3dPixScrollDocWidget->setMinimumWidth(550);
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_3dPixScrollDocWidget);
 	m_pShowPaneMenu->addAction(m_3dPixScrollDocWidget->toggleViewAction());
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_3dPixScrollDocWidget);
 	m_pShowPaneMenu->addAction(m_3dPixScrollDocWidget->toggleViewAction());
 
 
-	//æ™¯è§‚å½±åƒè§†å›¾;
+	//¾°¹ÛÓ°ÏñÊÓÍ¼;
 	if (!m_pStreetViewWidget)
 	{
 		m_pStreetViewWidget = new hnStreetWidget();
 	}
 
-	//// æ™¯è§‚å½±åƒè§†å›¾
-	m_pDocStreetImageViewDock = new hn::CDockWidget(QStringLiteral("æ™¯è§‚å½±åƒè§†å›¾"), this);
+	//// ¾°¹ÛÓ°ÏñÊÓÍ¼
+	m_pDocStreetImageViewDock = new hn::CDockWidget(QStringLiteral("¾°¹ÛÓ°ÏñÊÓÍ¼"), this);
 	m_pDocStreetImageViewDock->setFeatures(tFeatures);
 	m_pDocStreetImageViewDock->setWidget(m_pStreetViewWidget);
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_pDocStreetImageViewDock);
 	m_pShowPaneMenu->addAction(m_pDocStreetImageViewDock->toggleViewAction());
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_pDocStreetImageViewDock);
 	m_pShowPaneMenu->addAction(m_pDocStreetImageViewDock->toggleViewAction());
-	//åŸå§‹æ¯”ä¾‹å›¾ç‰‡æ˜¾ç¤ºçª—å£
+	//Ô­Ê¼±ÈÀıÍ¼Æ¬ÏÔÊ¾´°¿Ú
 	m_originalWidget = new hnOriginalScalePixShowWidget(this);
-	m_originalDocWidget = new hn::CDockWidget(QString::fromLocal8Bit("åŸå§‹æ¯”ä¾‹æ˜¾ç¤ºè§†å›¾"), this);
+	m_originalDocWidget = new hn::CDockWidget(QString::fromLocal8Bit("Ô­Ê¼±ÈÀıÏÔÊ¾ÊÓÍ¼"), this);
 	m_originalDocWidget->setFeatures(tFeatures);
 	m_originalDocWidget->setWidget(m_originalWidget);
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_originalDocWidget);
 	m_pShowPaneMenu->addAction(m_originalDocWidget->toggleViewAction());
 
 
-	//ç—…å®³åˆ—è¡¨çª—å£
+	//²¡º¦ÁĞ±í´°¿Ú
 	if (!m_diseaseListWidget)
 	{
 		m_diseaseListWidget = new hnDiseaseListWidget(this);
-		m_diseaseListWidget->setWindowTitle(QStringLiteral("ç—…å®³ç®¡ç†"));
+		m_diseaseListWidget->setWindowTitle(QStringLiteral("²¡º¦¹ÜÀí"));
 	}
 
-	m_diseaseListWidgetDockWidget = new hn::CDockWidget(QStringLiteral("ç—…å®³ç®¡ç†è§†å›¾"), this);
+	m_diseaseListWidgetDockWidget = new hn::CDockWidget(QStringLiteral("²¡º¦¹ÜÀíÊÓÍ¼"), this);
 	m_diseaseListWidgetDockWidget->setFeatures(tFeatures);
 	m_diseaseListWidgetDockWidget->setWidget(m_diseaseListWidget);
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_diseaseListWidgetDockWidget);
 	m_pShowPaneMenu->addAction(m_diseaseListWidgetDockWidget->toggleViewAction());
 
@@ -462,49 +563,49 @@ void hnRoadDataProcess::createView()
 	if (!m_IrmShowWidget)
 	{
 		m_IrmShowWidget = new IrmActualTimeShow(this);
-		m_IrmShowWidget->setWindowTitle(QStringLiteral("IRMç•Œé¢"));
+		m_IrmShowWidget->setWindowTitle(QStringLiteral("IRM½çÃæ"));
 	}
 
-	m_irmChartDockWidget = new hn::CDockWidget(QStringLiteral("IRMå®æ—¶æ˜¾ç¤º"), this);
+	m_irmChartDockWidget = new hn::CDockWidget(QStringLiteral("IRMÊµÊ±ÏÔÊ¾"), this);
 	m_irmChartDockWidget->setFeatures(tFeatures);
 	m_irmChartDockWidget->setWidget(m_IrmShowWidget);
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_irmChartDockWidget);
 	m_pShowPaneMenu->addAction(m_irmChartDockWidget->toggleViewAction());
-#ifdef åœ°å›¾
+#ifdef µØÍ¼
 
 	if (!m_mapWidget)
 	{
 	m_mapWidget = new  CustomBaiduMapView(this);
-	m_mapWidget->setWindowTitle(QStringLiteral("åœ°å›¾æ˜¾ç¤º"));
+	m_mapWidget->setWindowTitle(QStringLiteral("µØÍ¼ÏÔÊ¾"));
 	}
 
-	m_winMapDockWidget = new hn::CDockWidget(QStringLiteral("åœ°å›¾æ˜¾ç¤º"), this);
+	m_winMapDockWidget = new hn::CDockWidget(QStringLiteral("µØÍ¼ÏÔÊ¾"), this);
 	m_winMapDockWidget->setFeatures(tFeatures);
 	m_winMapDockWidget->setWidget(m_mapWidget);
 	m_DockManager->addDockWidget(hn::RightDockWidgetArea, m_winMapDockWidget);
 	m_pShowPaneMenu->addAction(m_winMapDockWidget->toggleViewAction());
-#endif // åœ°å›¾
-	// åˆ›å»ºå·¥ç¨‹ç®¡ç†æ ‘çŠ¶è§†å›¾;
+#endif // µØÍ¼
+	// ´´½¨¹¤³Ì¹ÜÀíÊ÷×´ÊÓÍ¼;
 	m_projectListTreeWidget = new QTreeWidget(this);
 	m_projectListTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 
-	//å³é”®èœå•
+	//ÓÒ¼ü²Ëµ¥
 	m_treeWidgetRightButtonMenu = new QMenu(this);
 
-	// æ ‘çŠ¶å›¾è®¾ç½®ä¸ºä¸¤åˆ—ï¼Œ ç¬¬äºŒåˆ—è®°å½•å·¥ç¨‹è·¯å¾„å¹¶éšè—;
+	// Ê÷×´Í¼ÉèÖÃÎªÁ½ÁĞ£¬ µÚ¶şÁĞ¼ÇÂ¼¹¤³ÌÂ·¾¶²¢Òş²Ø;
 	m_projectListTreeWidget->setColumnCount(2);
 	m_projectListTreeWidget->setColumnHidden(1, true);
 
-	m_projectListTreeWidget->setHeaderLabel(QStringLiteral("å·¥ç¨‹åˆ—è¡¨"));
+	m_projectListTreeWidget->setHeaderLabel(QStringLiteral("¹¤³ÌÁĞ±í"));
 	m_projectListTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 
-	// åˆ›å»ºDock
-	m_pDoctreeViewDock = new hn::CDockWidget(QStringLiteral("å·¥ç¨‹ç®¡ç†è§†å›¾"), this);
+	// ´´½¨Dock
+	m_pDoctreeViewDock = new hn::CDockWidget(QStringLiteral("¹¤³Ì¹ÜÀíÊÓÍ¼"), this);
 	m_pDoctreeViewDock->setFeatures(tFeatures);
 	m_pDoctreeViewDock->setWidget(m_projectListTreeWidget);
 	m_pDoctreeViewDock->setHidden(false);
 
-	// æ ¹æ®è®¾å®šçš„åœé ä½ç½®ï¼Œå°†dockpaneæ·»åŠ åˆ°widgetä¸­è¿›è¡Œç®¡ç†;
+	// ¸ù¾İÉè¶¨µÄÍ£¿¿Î»ÖÃ£¬½«dockpaneÌí¼Óµ½widgetÖĞ½øĞĞ¹ÜÀí;
 	m_DockManager->addDockWidget(hn::LeftDockWidgetArea, m_pDoctreeViewDock);
 	m_pShowPaneMenu->addAction(m_pDoctreeViewDock->toggleViewAction());
 
@@ -516,7 +617,7 @@ void hnRoadDataProcess::createView()
 
 	}
 
-	m_projectDockWidget = new hn::CDockWidget(QStringLiteral("ä¿¡æ¯_æ ¡æ¡©_æ‰“æ ‡"), this);
+	m_projectDockWidget = new hn::CDockWidget(QStringLiteral("ĞÅÏ¢_Ğ£×®_´ò±ê"), this);
 	m_projectDockWidget->setFeatures(tFeatures);
 	m_projectDockWidget->setWidget(m_projectWidget);
 	m_projectWidget->setHidden(false);
@@ -530,7 +631,7 @@ void hnRoadDataProcess::createView()
 
 	}
 
-	m_padjustImageDock = new hn::CDockWidget(QStringLiteral("å›¾ç‰‡è°ƒæ•´"), this);
+	m_padjustImageDock = new hn::CDockWidget(QStringLiteral("Í¼Æ¬µ÷Õû"), this);
 	m_padjustImageDock->setFeatures(tFeatures);
 	m_padjustImageDock->setWidget(m_adjustImageWidget);
 	m_adjustImageWidget->setHidden(false);
@@ -551,50 +652,50 @@ void hnRoadDataProcess::initDlg()
 
 
 
-// åˆ›å»ºå·¥å…·æ 
+// ´´½¨¹¤¾ßÀ¸
 void hnRoadDataProcess::createAction()
 {
-	// è½¯ä»¶åç§°
-	//è®¾ç½®ä¸»çª—å£æ ‡é¢˜
-	setWindowTitle(QStringLiteral("å…¬è·¯äºŒä¸‰ç»´ä¸€ä½“åŒ–æ•°æ®å¤„ç†å¹³å°"));
-	//åˆ›å»ºä¸€ä¸ªhnRibbonBaræ¡†æ¶
+	// Èí¼şÃû³Æ
+	//ÉèÖÃÖ÷´°¿Ú±êÌâ
+	setWindowTitle(QStringLiteral("¹«Â·¶şÈıÎ¬Ò»Ìå»¯Êı¾İ´¦ÀíÆ½Ì¨"));
+	//´´½¨Ò»¸öhnRibbonBar¿ò¼Ü
 	hnRibbonBar* ribbon = ribbonBar();
-	//è®¾ç½®å­—ä½“å±æ€§
+	//ÉèÖÃ×ÖÌåÊôĞÔ
 	QFont f = ribbon->font();
 	f.setFamily("Microsoft YaHei");
 	f.setPixelSize(15);
 	ribbon->setFont(f);
 	//ribbon->applitionButton()->setText(QStringLiteral("File"));
 
-	// å·¥ç¨‹ç®¡ç†
-	//ç”¨æ¡†æ¶åˆ›å»ºä¸€ä¸ªåˆ†ç±»çš„åŠŸèƒ½æ tab
-	hnRibbonCategory* categoryProject = ribbon->addCategoryPage(QStringLiteral("å·¥ç¨‹ç®¡ç†"));
-	//åˆ›å»ºåŠŸèƒ½æ ä¸‹çš„å·¥å…·æ 
+	// ¹¤³Ì¹ÜÀí
+	//ÓÃ¿ò¼Ü´´½¨Ò»¸ö·ÖÀàµÄ¹¦ÄÜÀ¸tab
+	hnRibbonCategory* categoryProject = ribbon->addCategoryPage(QStringLiteral("¹¤³Ì¹ÜÀí"));
+	//´´½¨¹¦ÄÜÀ¸ÏÂµÄ¹¤¾ßÀ¸
 	createProCategory(categoryProject);
-	// æ•°æ®å¤„ç†
-	hnRibbonCategory* categoryGD = ribbon->addCategoryPage(QStringLiteral("ç—…å®³å¤„ç†"));
+	// Êı¾İ´¦Àí
+	hnRibbonCategory* categoryGD = ribbon->addCategoryPage(QStringLiteral("²¡º¦´¦Àí"));
 	createDataProcessCategory(categoryGD);
 	this->createDataBaseMgrCategory(categoryGD);
-	//// æ•°æ®åº“ç®¡ç†
-	//hnRibbonCategory* dataBaseMgrCategory = ribbon->addCategoryPage(QStringLiteral("æ•°æ®åº“ç®¡ç†"));
+	//// Êı¾İ¿â¹ÜÀí
+	//hnRibbonCategory* dataBaseMgrCategory = ribbon->addCategoryPage(QStringLiteral("Êı¾İ¿â¹ÜÀí"));
 
 
-	// æ•°æ®è¾“å‡º
-	hnRibbonCategory* categoryView = ribbon->addCategoryPage(QStringLiteral("æ•°æ®è¾“å‡º"));
+	// Êı¾İÊä³ö
+	hnRibbonCategory* categoryView = ribbon->addCategoryPage(QStringLiteral("Êı¾İÊä³ö"));
 	createOutputCategory(categoryView);
 
-	// ç‚¹äº‘å¤„ç†
-#if 0	//åŠŸèƒ½æš‚æœªå®ç° æš‚ä¸æ˜¾ç¤º
-	hnRibbonCategory* categoryTool = ribbon->addCategoryPage(QStringLiteral("ç‚¹äº‘å¤„ç†"));
+	// µãÔÆ´¦Àí
+#if 0	//¹¦ÄÜÔİÎ´ÊµÏÖ Ôİ²»ÏÔÊ¾
+	hnRibbonCategory* categoryTool = ribbon->addCategoryPage(QStringLiteral("µãÔÆ´¦Àí"));
 	createCloudCategory(categoryTool);
 #endif
 
-	//è§†å›¾ç®¡ç†
-	hnRibbonCategory* categoryOView = ribbon->addCategoryPage(QStringLiteral("è§†å›¾ç®¡ç†"));
+	//ÊÓÍ¼¹ÜÀí
+	hnRibbonCategory* categoryOView = ribbon->addCategoryPage(QStringLiteral("ÊÓÍ¼¹ÜÀí"));
 	createViewsCategory(categoryOView);
 
-	// ç³»ç»Ÿ
-	hnRibbonCategory* categoryHelp = ribbon->addCategoryPage(QStringLiteral("ç³»ç»Ÿ"));
+	// ÏµÍ³
+	hnRibbonCategory* categoryHelp = ribbon->addCategoryPage(QStringLiteral("ÏµÍ³"));
 	createSystemCategory(categoryHelp);
 	this->m_statusBarWidget = new statusBarWidget();
 	this->statusBar()->addWidget(m_statusBarWidget);
@@ -602,31 +703,32 @@ void hnRoadDataProcess::createAction()
 
 void hnRoadDataProcess::initShortCuts()
 {
-	//æ·»åŠ ç—…å®³
+	//Ìí¼Ó²¡º¦
 	QHotkey *addDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F1 ), true, this);
 	connect(addDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 
-	//åˆ é™¤ç—…å®³
+	//É¾³ı²¡º¦
 	QHotkey *deleteDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F2 ), true, this);
 	connect(deleteDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 
-	//ç¼–è¾‘ç—…å®³
+	//±à¼­²¡º¦
 	QHotkey *editDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F3 ), true, this);
 	connect(editDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 
-	//ç§»åŠ¨ç—…å®³
+
+	//ÒÆ¶¯²¡º¦
 	QHotkey *moveDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier), true, this);
 	connect(moveDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToMoveDiseaseMode);
 
-	//æ”¾å¤§é•œ
+	//·Å´ó¾µ
 	QHotkey *magnifyDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier | Qt::AltModifier), true, this);
 	connect(magnifyDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_onMagnifyActionClicked);
 
-	//åˆå¹¶ç—…å®³
+	//ºÏ²¢²¡º¦
 	QHotkey *mergeDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_U | Qt::ShiftModifier), true, this);
 	connect(mergeDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToMergeDiseaseMode);
 
-	//äºŒä¸‰ç»´è§†å›¾çŸ«æ­£
+	//¶şÈıÎ¬ÊÓÍ¼½ÃÕı
 	QHotkey *enterHotKey = new QHotkey(QKeySequence(Qt::Key_C | Qt::ShiftModifier), true, this);
 
 	connect(enterHotKey, &QHotkey::activated, [this]() {
@@ -642,19 +744,19 @@ void hnRoadDataProcess::initShortCuts()
 					m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
 					m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
 					hnDataManager::getDataManager()->getDataManager()->getCurrentProject()->set2d3dMileDiff(diff);
-					QMessageBox::information(nullptr, QString::fromLocal8Bit("æç¤º"),
-						QString::fromLocal8Bit("å·²ç»å¯¹äºŒä¸‰ç»´é‡Œç¨‹å·®å€¼è¿›è¡ŒçŸ«æ­£"),
-						QString::fromLocal8Bit("ç¡®å®š"));
+					QMessageBox::information(nullptr, QString::fromLocal8Bit("ÌáÊ¾"),
+						QString::fromLocal8Bit("ÒÑ¾­¶Ô¶şÈıÎ¬Àï³Ì²îÖµ½øĞĞ½ÃÕı"),
+						QString::fromLocal8Bit("È·¶¨"));
 				}
 			}
 		}
 	});
 }
 
-// åˆ›å»ºè¿æ¥
+// ´´½¨Á¬½Ó
 void hnRoadDataProcess::createConnect()
 {
-	// æ‰“å¼€å·¥ç¨‹
+	// ´ò¿ª¹¤³Ì
 	connect(m_openProjectAct, &QAction::triggered, this, &hnRoadDataProcess::openProjectSlot);
 	connect(m_lastProjectAct, &QAction::triggered, this, &hnRoadDataProcess::openLastProjectSlot);
 	connect(m_checkProAct, &QAction::triggered, this, &hnRoadDataProcess::checkProSlot);
@@ -688,13 +790,13 @@ void hnRoadDataProcess::createConnect()
 	connect(m_clearIRMAct, &QAction::triggered, this, &hnRoadDataProcess::slot_clearIrm);
 	connect(m_ComputeGeoaligAction, &QAction::triggered, this, &hnRoadDataProcess::slot_compute);
 
-	//å½±åƒç”Ÿæˆ
+	//Ó°ÏñÉú³É
 	connect(m_createImageAct, &QAction::triggered, this, &hnRoadDataProcess::createImageSlot);
 
-	//è£åˆ‡åŠŸèƒ½
+	//²ÃÇĞ¹¦ÄÜ
 	connect(m_cutImageAct, &QAction::triggered, this, &hnRoadDataProcess::slot_cutImage);
 
-	//åˆ—è¡¨åˆ é™¤ç—…å®³å,ç•Œé¢åˆ·æ–° 
+	//ÁĞ±íÉ¾³ı²¡º¦ºó,½çÃæË¢ĞÂ 
 	connect(this->m_diseaseListWidget,
 		&hnDiseaseListWidget::deleteDisease,
 		this->m_2dPixScrollWidget->getPixWidget(),
@@ -706,7 +808,7 @@ void hnRoadDataProcess::createConnect()
 		&hn3dPixWidget::slot_deleteDisease
 	);
 
-	//æ·»åŠ ç—…å®³åï¼Œç—…å®³åˆ—è¡¨åˆ·æ–°
+	//Ìí¼Ó²¡º¦ºó£¬²¡º¦ÁĞ±íË¢ĞÂ
 	//connect(this->m_2dPixScrollWidget->getPixWidget(),
 	//	&hn2dPixWidget::signal_addDisease,
 	//	this->m_diseaseListWidget,
@@ -720,7 +822,7 @@ void hnRoadDataProcess::createConnect()
 
 
 
-	// æ·»åŠ ç—…å®³åï¼Œ æ‰€æœ‰çª—å£éƒ½åˆ·æ–°
+	// Ìí¼Ó²¡º¦ºó£¬ ËùÓĞ´°¿Ú¶¼Ë¢ĞÂ
 	/*connect(this->m_2dPixScrollWidget->getPixWidget(),
 		&hn2dPixWidget::signal_addDisease, this, &hnRoadDataProcess::updatePixWidget);
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_addDisease,
@@ -729,7 +831,7 @@ void hnRoadDataProcess::createConnect()
 		this, &hnRoadDataProcess::updatePixWidget);
 	*/
 
-	//é€‰ä¸­ç—…å®³åï¼Œç—…å®³åˆ—è¡¨æ»šåŠ¨
+	//Ñ¡ÖĞ²¡º¦ºó£¬²¡º¦ÁĞ±í¹ö¶¯
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
 
@@ -738,7 +840,7 @@ void hnRoadDataProcess::createConnect()
 	
 
 
-	//åˆ é™¤ç—…å®³åï¼Œç—…å®³åˆ—è¡¨åˆ·æ–°
+	//É¾³ı²¡º¦ºó£¬²¡º¦ÁĞ±íË¢ĞÂ
 	//connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_deleteDisease,
 	//	this->m_diseaseListWidget, QOverload<const hnRoadDiseaseInfo &>::of(&hnDiseaseListWidget::deleteDisease));
 	//connect(this->m_2dPixScrollWidget->getPixWidget(),
@@ -748,21 +850,21 @@ void hnRoadDataProcess::createConnect()
 	/*connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_deleteDisease,
 		this->m_diseaseListWidget, &hnDiseaseListWidget::deleteDisease);*/
 
-	//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ‰“æ ‡ è¾ƒæ¡©ç•Œé¢
+	//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ´ò±ê ½Ï×®½çÃæ
 	connect(this->m_2dPixScrollWidget, &hn2dPixScrollWidget::signal_roadMileAndDmiChanged,
 		m_projectWidget, &projectView::slot_updateMileAndDmi);
-	//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°IRMç•Œé¢
+	//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂIRM½çÃæ
 	connect(this->m_2dPixScrollWidget, &hn2dPixScrollWidget::signal_roadMileAndDmiChanged,
 		m_IrmShowWidget, &IrmActualTimeShow::slot_updateIriFormSlots);
 
 	connect(m_projectWidget, &projectView::signal_updateAllWidget, [this]()
 	{
 
-		//// åŠ è½½å½“å‰å·¥ç¨‹è·¯é¢å½±åƒ
+		//// ¼ÓÔØµ±Ç°¹¤³ÌÂ·ÃæÓ°Ïñ
 		this->m_2dPixScrollWidget->loadRoadPicture();
 
 
-		// åŠ è½½ä¸‰ç»´å½±åƒ
+		// ¼ÓÔØÈıÎ¬Ó°Ïñ
 		if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 		{
 			m_3dPixScrollWidget->load3dImage();
@@ -772,19 +874,19 @@ void hnRoadDataProcess::createConnect()
 
 	connect(m_projectWidget, &projectView::signal_updateAllWidget, this, &hnRoadDataProcess::updateAllWidget);
 
-	//ç—…å®³åˆ—è¡¨å‘å‡ºå¸§åºå·æ”¹å˜çš„ä¿¡å·   è·¯é¢æ˜¾ç¤ºçª—å£å¯¹åº”è·³è½¬
+	//²¡º¦ÁĞ±í·¢³öÖ¡ĞòºÅ¸Ä±äµÄĞÅºÅ   Â·ÃæÏÔÊ¾´°¿Ú¶ÔÓ¦Ìø×ª
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_road2dFrameIdxChanged,
 		[this](int frameIdx) {
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//½ûÓÃÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
@@ -792,68 +894,68 @@ void hnRoadDataProcess::createConnect()
 	});
 	
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_setDiseaseIsChecked,
-		[this](int diseaseId) {
-		this->m_2dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId);
-		this->m_3dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId);
+		[this](int diseaseId, const QString& tableName) {
+		this->m_2dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId, tableName);
+		this->m_3dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId, tableName);
 		updatePixWidget();
 	});
 
-	//ä¸‰ç»´
+	//ÈıÎ¬
 	connect(m_diseaseListWidget, &hnDiseaseListWidget::signal_road3dFrameIdxChanged, [this](int frameIdx) {
 		m_3dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
 	});
 
-	//è·¯é¢æ˜¾ç¤ºçª—å£å‘é€çŠ¶æ€æ ä¿¡æ¯å˜åŒ–ï¼ŒçŠ¶æ€æ è¿›è¡Œæ›´æ–°
+	//Â·ÃæÏÔÊ¾´°¿Ú·¢ËÍ×´Ì¬À¸ĞÅÏ¢±ä»¯£¬×´Ì¬À¸½øĞĞ¸üĞÂ
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_statusInfoChanged,
 		this->m_statusBarWidget, QOverload<const QString&>::of(&statusBarWidget::updateLabelTextSlot));
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_statusInfoChanged,
 		this->m_statusBarWidget, QOverload<const QString&>::of(&statusBarWidget::updateLabelTextSlot));
 
-	//åˆ‡æ¢ä¸‰ç»´æµè§ˆæ¨¡å¼
+	//ÇĞ»»ÈıÎ¬ä¯ÀÀÄ£Ê½
 	connect(this->m_3dGrayModeAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeGray3dMode);
 	connect(this->m_3dRgbModeAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeRgb3dMode);
 
-	//æ¸…ç©ºæ‰€æœ‰ç—…å®³
+	//Çå¿ÕËùÓĞ²¡º¦
 	connect(this->m_backupsDatabaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_backupsDatabase);
 	connect(this->m_clearAllDiseasesAct, &QAction::triggered, this, &hnRoadDataProcess::slot_clearAllDiseases);
 	//	connect(this->m_updateAllDiseasesAct, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDiseaseDatabase);
 	connect(this->m_updateDatabase, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDatabase);
 
-#pragma region äºŒç»´ ä¸‰ç»´ æ™¯è§‚ è§†å›¾æµè§ˆæ˜ å°„ å·²ç»åšäº†é˜²æ­¢å†²çªçš„å¤„ç†
+#pragma region ¶şÎ¬ ÈıÎ¬ ¾°¹Û ÊÓÍ¼ä¯ÀÀÓ³Éä ÒÑ¾­×öÁË·ÀÖ¹³åÍ»µÄ´¦Àí
 	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_enterWidget,
 		[this]() {
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//½ûÓÃ ÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
-		//ç¦ç”¨æ™¯è§‚å¸§åºå·å˜åŒ–æ—¶,æ›´æ–°äºŒç»´çª—å£
+		//½ûÓÃ¾°¹ÛÖ¡ĞòºÅ±ä»¯Ê±,¸üĞÂ¶şÎ¬´°¿Ú
 		disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
 			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
 	});
 
 	connect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_enterWidget,
 		[this]() {
-		//ç¦ç”¨ äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//½ûÓÃ ¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		disconnect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ æ™¯è§‚å¸§åºå·å˜åŒ–æ—¶,æ›´æ–°äºŒç»´çª—å£
+		//½ûÓÃ ¾°¹ÛÖ¡ĞòºÅ±ä»¯Ê±,¸üĞÂ¶şÎ¬´°¿Ú
 		disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
 			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
 
-		//ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//ÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		connect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 	});
@@ -861,19 +963,19 @@ void hnRoadDataProcess::createConnect()
 	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_enterWidget,
 		[this]() {
 
-		//æ™¯è§‚å¸§åºå·å˜åŒ–æ—¶,æ›´æ–°äºŒç»´çª—å£
+		//¾°¹ÛÖ¡ĞòºÅ±ä»¯Ê±,¸üĞÂ¶şÎ¬´°¿Ú
 		connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
 			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
 
-		//ç¦ç”¨ äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//½ûÓÃ ¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		disconnect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//½ûÓÃ ÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 	});
@@ -881,7 +983,7 @@ void hnRoadDataProcess::createConnect()
 
 #pragma endregion
 
-	//äºŒç»´ä¸‰ç»´å‘é€ä¿¡å·ï¼ŒåŸå§‹æ¯”ä¾‹æ›´æ–°è§†å›¾
+	//¶şÎ¬ÈıÎ¬·¢ËÍĞÅºÅ£¬Ô­Ê¼±ÈÀı¸üĞÂÊÓÍ¼
 	connect(m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::sig_mousePosImageChanged,
 		m_originalWidget, &hnOriginalScalePixShowWidget::slot_updatePix);
 	connect(m_3dPixScrollWidget->getPixWidget(), &hn2dPixWidget::sig_mousePosImageChanged,
@@ -892,7 +994,7 @@ void hnRoadDataProcess::createConnect()
 	connect(m_pStreetViewWidget->getRightPixWidget(), &hnStreetCameraView::sig_mousePosImageChanged,
 		m_originalWidget, &hnOriginalScalePixShowWidget::slot_updatePix);
 
-	//åŸå§‹æ¯”ä¾‹çª—å£å¤§å°å˜åŒ–ï¼Œé€šçŸ¥äºŒç»´ä¸‰ç»´è§†å›¾
+	//Ô­Ê¼±ÈÀı´°¿Ú´óĞ¡±ä»¯£¬Í¨Öª¶şÎ¬ÈıÎ¬ÊÓÍ¼
 	connect(m_originalWidget, &hnOriginalScalePixShowWidget::sig_widgetSizeChanged, [=](int w, int h) {
 		m_3dPixScrollWidget->getPixWidget()->setOriginalWidgetWidthHeight(w, h);
 		m_2dPixScrollWidget->getPixWidget()->setOriginalWidgetWidthHeight(w, h);
@@ -903,71 +1005,71 @@ void hnRoadDataProcess::createConnect()
 
 
 
-	//äºŒç»´ å¯¹è¯æ¡†å¯¹æ¯”åº¦è°ƒæ•´  å¯¹åº”è§†å›¾æ›´æ–°
+	//¶şÎ¬ ¶Ô»°¿ò¶Ô±È¶Èµ÷Õû  ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dContrastIntensityChanged, [this](double intensity)
 	{
 		m_2dPixScrollWidget->getPixWidget()->setContrastIntensity(intensity);
 		m_2dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//äºŒç»´ å¯¹æ¯”åº¦é‡ç½® å¯¹åº”è§†å›¾æ›´æ–°
+	//¶şÎ¬ ¶Ô±È¶ÈÖØÖÃ ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dResetContrastIntensity, [this]() {
 		m_2dPixScrollWidget->getPixWidget()->resetContrastIntensity();
 		m_2dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//ä¸‰ç»´ å¯¹è¯æ¡†å¯¹æ¯”åº¦è°ƒæ•´  å¯¹åº”è§†å›¾æ›´æ–°
+	//ÈıÎ¬ ¶Ô»°¿ò¶Ô±È¶Èµ÷Õû  ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dContrastIntensityChanged, [this](double intensity)
 	{
 		m_3dPixScrollWidget->getPixWidget()->setContrastIntensity(intensity);
 		m_3dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//ä¸‰ç»´ å¯¹æ¯”åº¦é‡ç½® å¯¹åº”è§†å›¾æ›´æ–°
+	//ÈıÎ¬ ¶Ô±È¶ÈÖØÖÃ ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dResetContrastIntensity, [this]() {
 		m_3dPixScrollWidget->getPixWidget()->resetContrastIntensity();
 		m_3dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//äºŒç»´ å¯¹è¯æ¡†äº®åº¦è°ƒæ•´  å¯¹åº”è§†å›¾æ›´æ–°
+	//¶şÎ¬ ¶Ô»°¿òÁÁ¶Èµ÷Õû  ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dBrightnessIntensityChanged, [this](double intensity)
 	{
 		m_2dPixScrollWidget->getPixWidget()->setBrightness(intensity);
 		m_2dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//äºŒç»´ äº®åº¦é‡ç½® å¯¹åº”è§†å›¾æ›´æ–°
+	//¶şÎ¬ ÁÁ¶ÈÖØÖÃ ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dResetBrightnessIntensity, [this]() {
 		m_2dPixScrollWidget->getPixWidget()->resetBrightness();
 		m_2dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//ä¸‰ç»´ å¯¹è¯æ¡†äº®åº¦è°ƒæ•´  å¯¹åº”è§†å›¾æ›´æ–°
+	//ÈıÎ¬ ¶Ô»°¿òÁÁ¶Èµ÷Õû  ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dBrightnessIntensityChanged, [this](double intensity)
 	{
 		m_3dPixScrollWidget->getPixWidget()->setBrightness(intensity);
 		m_3dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//ä¸‰ç»´ äº®åº¦é‡ç½® å¯¹åº”è§†å›¾æ›´æ–°
+	//ÈıÎ¬ ÁÁ¶ÈÖØÖÃ ¶ÔÓ¦ÊÓÍ¼¸üĞÂ
 	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dResetBrightnessIntensity, [this]() {
 		m_3dPixScrollWidget->getPixWidget()->resetBrightness();
 		m_3dPixScrollWidget->getPixWidget()->update();
 	});
 
-	//é‡Œç¨‹è·³è½¬å¯¹è¯æ¡† å‘é€è·³è½¬ä¿¡å·ï¼ŒäºŒç»´è§†å›¾è·³è½¬
-	// todoä¸‰ç»´è·³è½¬
+	//Àï³ÌÌø×ª¶Ô»°¿ò ·¢ËÍÌø×ªĞÅºÅ£¬¶şÎ¬ÊÓÍ¼Ìø×ª
+	// todoÈıÎ¬Ìø×ª
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_updateScrollValue,
 		[this](int frameIdx) {
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//½ûÓÃÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
@@ -984,15 +1086,15 @@ void hnRoadDataProcess::createConnect()
 
 	connect(this, &hnRoadDataProcess::signal_jumpScrollValue,
 		[this](int frameIdx) {
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-		//ç¦ç”¨ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+		//½ûÓÃÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-		//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+		//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
@@ -1007,230 +1109,230 @@ void hnRoadDataProcess::createConnect()
 
 
 	connect(this, &hnRoadDataProcess::signal_updateProject, this->m_projectWidget, &projectView::slot_updateProjectSetting);
-	//é•œåƒ
+	//¾µÏñ
 	connect(m_projectConfgDialog, &hnProjectConfig::signal_Mirrored, this, &hnRoadDataProcess::slot_widgetMirrored);
 
-	//æ·±åº¦è®¡ç®—è®¾ç½®
+	//Éî¶È¼ÆËãÉèÖÃ
 	connect(m_projectConfgDialog, &hnProjectConfig::signal_isDepthCaculate, this, &hnRoadDataProcess::slot_setDepthCaculate);
 
-#ifdef åœ°å›¾
+#ifdef µØÍ¼
 	
 		connect(this, &hnRoadDataProcess::signal_loadBaiduMap, m_mapWidget, &CustomBaiduMapView::signal_loadBaiDuMap);
 
-#endif // ç™¾åº¦åœ°å›¾
+#endif // °Ù¶ÈµØÍ¼
 	 
 
 }
 
-// æ ‘çŠ¶è§†å›¾è¿æ¥
+// Ê÷×´ÊÓÍ¼Á¬½Ó
 void hnRoadDataProcess::createTreeConnect()
 {
 
 }
 
-// åˆ›å»ºå·¥ç¨‹ç®¡ç†æ¨¡å—å·¥å…·æ 
+// ´´½¨¹¤³Ì¹ÜÀíÄ£¿é¹¤¾ßÀ¸
 void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 {
 	//
-	hnRibbonPannel* projectPanel = page->addPannel(QStringLiteral("å·¥ç¨‹ç®¡ç†"));
+	hnRibbonPannel* projectPanel = page->addPannel(QStringLiteral("¹¤³Ì¹ÜÀí"));
 
-	{// æ‰“å¼€å·¥ç¨‹
+	{// ´ò¿ª¹¤³Ì
 
 		const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥å·¥ç¨‹.png")));
-		m_openProjectAct = new QAction(projectIcon, QStringLiteral("&å¯¼å…¥å·¥ç¨‹"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë¹¤³Ì.png")));
+		m_openProjectAct = new QAction(projectIcon, QStringLiteral("&µ¼Èë¹¤³Ì"), this);
 		projectPanel->addLargeAction(m_openProjectAct);
 	}
 
 	{
 		const QIcon openProjectDirIcon = QIcon::fromTheme(QStringLiteral("openProjectDirIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/æ‰“å¼€å·¥ç¨‹æ–‡ä»¶å¤¹.png")));
-		m_openCurrentProjectDirAction = new QAction(openProjectDirIcon, QStringLiteral("&æ‰“å¼€å·¥ç¨‹æ–‡ä»¶å¤¹"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/´ò¿ª¹¤³ÌÎÄ¼ş¼Ğ.png")));
+		m_openCurrentProjectDirAction = new QAction(openProjectDirIcon, QStringLiteral("&´ò¿ª¹¤³ÌÎÄ¼ş¼Ğ"), this);
 		projectPanel->addLargeAction(m_openCurrentProjectDirAction);
 	}
 	{
 
 		const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/æœ€è¿‘å·¥ç¨‹.png")));
-		m_lastProjectAct = new QAction(projectIcon, QStringLiteral("&æœ€è¿‘å·¥ç¨‹"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/×î½ü¹¤³Ì.png")));
+		m_lastProjectAct = new QAction(projectIcon, QStringLiteral("&×î½ü¹¤³Ì"), this);
 		projectPanel->addLargeAction(m_lastProjectAct);
 	}
 	{
-		//å¯¼å‡ºç®€æ˜“å·¥ç¨‹
+		//µ¼³ö¼òÒ×¹¤³Ì
 		const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/icons/è¯†åˆ«CP3.png")));
-		m_outSimpleProjectAction = new QAction(projectIcon, QStringLiteral("&å¯¼å‡ºç®€æ˜“å·¥ç¨‹"), this);
+			QIcon(QStringLiteral(":/icons/icons/Ê¶±ğCP3.png")));
+		m_outSimpleProjectAction = new QAction(projectIcon, QStringLiteral("&µ¼³ö¼òÒ×¹¤³Ì"), this);
 		projectPanel->addLargeAction(m_outSimpleProjectAction);
 	}
 
 
-	hnRibbonPannel* dataHandelPanel = page->addPannel(QStringLiteral("æ•°æ®å¤„ç†"));
+	hnRibbonPannel* dataHandelPanel = page->addPannel(QStringLiteral("Êı¾İ´¦Àí"));
 	{
-		//æ£€æŸ¥æ•°æ®
+		//¼ì²éÊı¾İ
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/icons/è¯†åˆ«CP3.png")));
-		m_checkProAct = new QAction(projectIcon, QStringLiteral("&æ£€æŸ¥æ•°æ®"), this);
+			QIcon(QStringLiteral(":/icons/icons/Ê¶±ğCP3.png")));
+		m_checkProAct = new QAction(projectIcon, QStringLiteral("&¼ì²éÊı¾İ"), this);
 		dataHandelPanel->addLargeAction(m_checkProAct);
 
 	}
 	{
 
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/icons/è¯†åˆ«CP3.png")));
-		m_gpsMatchingAct = new QAction(projectIcon, QStringLiteral("&GPSæ¡©å·åŒ¹é…"), this);
+			QIcon(QStringLiteral(":/icons/icons/Ê¶±ğCP3.png")));
+		m_gpsMatchingAct = new QAction(projectIcon, QStringLiteral("&GPS×®ºÅÆ¥Åä"), this);
 		dataHandelPanel->addLargeAction(m_gpsMatchingAct);
 	}
-	{// irmè®¡ç®—
+	{// irm¼ÆËã
 
 	  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/IRMè®¡ç®—.png")));
-		m_calculateAct = new QAction(projectIcon, QStringLiteral("&IRMè®¡ç®—"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/IRM¼ÆËã.png")));
+		m_calculateAct = new QAction(projectIcon, QStringLiteral("&IRM¼ÆËã"), this);
 		dataHandelPanel->addLargeAction(m_calculateAct);
 	}
 	{
-		// irmè®¡ç®— 
+		// irm¼ÆËã 
 		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/IRMè®¡ç®—.png")));
-		m_ComputeGeoaligAction = new QAction(projectIcon, QStringLiteral("&è®¡ç®—è·¯é¢å‡ ä½•çŠ¶å†µ"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/IRM¼ÆËã.png")));
+		m_ComputeGeoaligAction = new QAction(projectIcon, QStringLiteral("&¼ÆËãÂ·Ãæ¼¸ºÎ×´¿ö"), this);
 		dataHandelPanel->addLargeAction(m_ComputeGeoaligAction);
 	}
-	{// irmè®¡ç®—
+	{// irm¼ÆËã
 
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/æ¸…ç©ºIRM.png")));
-		m_clearIRMAct = new QAction(projectIcon, QStringLiteral("&æ¸…ç©ºIRM"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/Çå¿ÕIRM.png")));
+		m_clearIRMAct = new QAction(projectIcon, QStringLiteral("&Çå¿ÕIRM"), this);
 		dataHandelPanel->addLargeAction(m_clearIRMAct);
 	}
 
 	
 
-	hnRibbonPannel* projectChangePanel = page->addPannel(QStringLiteral("å·¥ç¨‹ä¿¡æ¯ä¿®æ”¹"));
+	hnRibbonPannel* projectChangePanel = page->addPannel(QStringLiteral("¹¤³ÌĞÅÏ¢ĞŞ¸Ä"));
 	{
-		//é‡Œç¨‹æ ¡å‡†
+		//Àï³ÌĞ£×¼
 		/*const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/é‡Œç¨‹æ ¡å‡†.png")));
-		m_mileCorrectAct = new QAction(projectIcon, QStringLiteral("&é‡Œç¨‹æ ¡å‡†"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/Àï³ÌĞ£×¼.png")));
+		m_mileCorrectAct = new QAction(projectIcon, QStringLiteral("&Àï³ÌĞ£×¼"), this);
 		projectChangePanel->addLargeAction(m_mileCorrectAct);*/
 
 	}
 	{
 
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/é‡‡é›†æ‰“æ ‡.png")));
-		m_markInfoAct = new QAction(projectIcon, QStringLiteral("&æ‰“æ ‡ä¿¡æ¯è¾“å‡º"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/²É¼¯´ò±ê.png")));
+		m_markInfoAct = new QAction(projectIcon, QStringLiteral("&´ò±êĞÅÏ¢Êä³ö"), this);
 		projectChangePanel->addLargeAction(m_markInfoAct);
 	}
 	{
-		//äºŒä¸‰ç»´é‡Œç¨‹çŸ«æ­£
+		//¶şÈıÎ¬Àï³Ì½ÃÕı
 		  QIcon mileCorrectIcon = QIcon::fromTheme(QStringLiteral(""),
-			QIcon(QStringLiteral(":/icons/iconsNew/é‡Œç¨‹æ ¡æ­£.png")));
-		this->m_2d3dMileCorrentAct = new QAction(mileCorrectIcon, QStringLiteral("äºŒä¸‰ç»´é‡Œç¨‹çŸ«æ­£"), this);
+			QIcon(QStringLiteral(":/icons/iconsNew/Àï³ÌĞ£Õı.png")));
+		this->m_2d3dMileCorrentAct = new QAction(mileCorrectIcon, QStringLiteral("¶şÈıÎ¬Àï³Ì½ÃÕı"), this);
 		connect(this->m_2d3dMileCorrentAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeTo23dMileCorrectMode);
 		projectChangePanel->addLargeAction(m_2d3dMileCorrentAct);
 	}
 
 	{
-		//ä¿®æ”¹å·¥ç¨‹æœ‰æ•ˆæ¡©å·(ç»˜åˆ¶ç—…å®³ï¼Œå‡ºè¡¨æ¡©å·) 
+		//ĞŞ¸Ä¹¤³ÌÓĞĞ§×®ºÅ(»æÖÆ²¡º¦£¬³ö±í×®ºÅ) 
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/icons/è¯†åˆ«CP3.png")));
-		m_changeProjectOutMileAct = new QAction(projectIcon, QStringLiteral("&å¤šå·¥ç¨‹æ¡©å·è®¾ç½®"), this);
+			QIcon(QStringLiteral(":/icons/icons/Ê¶±ğCP3.png")));
+		m_changeProjectOutMileAct = new QAction(projectIcon, QStringLiteral("&¶à¹¤³Ì×®ºÅÉèÖÃ"), this);
 		projectChangePanel->addLargeAction(m_changeProjectOutMileAct);
 
 	}
 
 
-	hnRibbonPannel* dataStartHandelPanel = page->addPannel(QStringLiteral("æ•°æ®é¢„å¤„ç†å·¥å…·"));
+	hnRibbonPannel* dataStartHandelPanel = page->addPannel(QStringLiteral("Êı¾İÔ¤´¦Àí¹¤¾ß"));
 	{
-		//å½±åƒç”Ÿæˆ
+		//Ó°ÏñÉú³É
 		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-			QIcon(QStringLiteral(":/icons/iconsNew/å½±åƒç”Ÿæˆ.png")));
-		m_createImageAct = new QAction(projectIcon, QStringLiteral("&å½±åƒç”Ÿæˆ"), this);
-		m_createImageAct->setToolTip(QString::fromLocal8Bit("ä¸‰ç»´å½±åƒç”Ÿæˆ"));
+			QIcon(QStringLiteral(":/icons/iconsNew/Ó°ÏñÉú³É.png")));
+		m_createImageAct = new QAction(projectIcon, QStringLiteral("&Ó°ÏñÉú³É"), this);
+		m_createImageAct->setToolTip(QString::fromLocal8Bit("ÈıÎ¬Ó°ÏñÉú³É"));
 		dataStartHandelPanel->addLargeAction(m_createImageAct);
 	}
 
-	//è£åˆ‡å›¾ç‰‡
+	//²ÃÇĞÍ¼Æ¬
 	  QIcon cutImageIcon = QIcon::fromTheme(QStringLiteral("cutImageIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/å½±åƒè£åˆ‡.png")));
-	m_cutImageAct = new QAction(cutImageIcon, QStringLiteral("&å½±åƒè£åˆ‡"), this);
-	m_cutImageAct->setToolTip(QString::fromLocal8Bit("äºŒç»´å½±åƒè£åˆ‡"));
+		QIcon(QStringLiteral(":/icons/iconsNew/Ó°Ïñ²ÃÇĞ.png")));
+	m_cutImageAct = new QAction(cutImageIcon, QStringLiteral("&Ó°Ïñ²ÃÇĞ"), this);
+	m_cutImageAct->setToolTip(QString::fromLocal8Bit("¶şÎ¬Ó°Ïñ²ÃÇĞ"));
 	dataStartHandelPanel->addLargeAction(m_cutImageAct);
 
 
 	{
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/Resources/icons/æ£€æŸ¥æ•°æ®.png")));
-		m_clearProjectAct = new QAction(projectIcon, QStringLiteral("&æ¸…é™¤å·¥ç¨‹"), this);
-#if 0	//åŠŸèƒ½æœªå®ç° æš‚ä¸å¯ç”¨
+		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/Resources/icons/¼ì²éÊı¾İ.png")));
+		m_clearProjectAct = new QAction(projectIcon, QStringLiteral("&Çå³ı¹¤³Ì"), this);
+#if 0	//¹¦ÄÜÎ´ÊµÏÖ Ôİ²»ÆôÓÃ
 		projectPanel->addLargeAction(m_clearProjectAct);
 #endif	
 	}
-	////é‡Œç¨‹è·³è½¬
-	//const QIcon rigionJumpIcon = QIcon::fromTheme(QStringLiteral("rigionJumpIcon"), QIcon(QStringLiteral(":/icons/iconsNew/é‡Œç¨‹è·³è½¬.png")));
-	//m_regionJumpAct = new QAction(rigionJumpIcon, QStringLiteral("&é‡Œç¨‹è·³è½¬"), this);
+	////Àï³ÌÌø×ª
+	//const QIcon rigionJumpIcon = QIcon::fromTheme(QStringLiteral("rigionJumpIcon"), QIcon(QStringLiteral(":/icons/iconsNew/Àï³ÌÌø×ª.png")));
+	//m_regionJumpAct = new QAction(rigionJumpIcon, QStringLiteral("&Àï³ÌÌø×ª"), this);
 	//projectPanel->addLargeAction(m_regionJumpAct); 
 	//connect(m_regionJumpAct, &QAction::triggered, this, &hnRoadDataProcess::slot_regionJump); 
 }
 
-// åˆ›å»ºæ•°æ®å¤„ç†æ¨¡å—å·¥å…·æ 
+// ´´½¨Êı¾İ´¦ÀíÄ£¿é¹¤¾ßÀ¸
 void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 {
 
-	hnRibbonPannel* diseaseRibbonPannel = page->addPannel(QStringLiteral("ç—…å®³ç®¡ç†"));
-	//å¯¼å…¥äºŒç»´è½¯ä»¶ç—…å®³
+	hnRibbonPannel* diseaseRibbonPannel = page->addPannel(QStringLiteral("²¡º¦¹ÜÀí"));
+	//µ¼Èë¶şÎ¬Èí¼ş²¡º¦
 	  QIcon  twoDDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥ç—…å®³.png")));
-	this->m_input2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("å¯¼å…¥äºŒç»´è½¯ä»¶ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë²¡º¦.png")));
+	this->m_input2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("µ¼Èë¶şÎ¬Èí¼ş²¡º¦"), this);
 	connect(m_input2dDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_import2dDiseases);
 	diseaseRibbonPannel->addLargeAction(m_input2dDiseaseAct);
 
-	//å¯¼å‡ºäºŒç»´è½¯ä»¶ç—…å®³
+	//µ¼³ö¶şÎ¬Èí¼ş²¡º¦
 
 	  QIcon  twoOutDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥ç—…å®³.png")));
-	this->m_output2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("å¯¼å‡ºäºŒç»´è½¯ä»¶ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë²¡º¦.png")));
+	this->m_output2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("µ¼³ö¶şÎ¬Èí¼ş²¡º¦"), this);
 	connect(m_output2dDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_output2dDiseases);
 	diseaseRibbonPannel->addLargeAction(m_output2dDiseaseAct);
 
-	//å¯¼å…¥è‡ªåŠ¨è¯†åˆ«ç—…å®³
+	//µ¼Èë×Ô¶¯Ê¶±ğ²¡º¦
 	  QIcon smartDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥ç—…å®³.png")));
-	this->m_inputSmartDiseaseAct = new QAction(smartDiseaseIcon, QStringLiteral("å¯¼å…¥è‡ªåŠ¨è¯†åˆ«ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë²¡º¦.png")));
+	this->m_inputSmartDiseaseAct = new QAction(smartDiseaseIcon, QStringLiteral("µ¼Èë×Ô¶¯Ê¶±ğ²¡º¦"), this);
 	connect(m_inputSmartDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_importAidcDiseases);
 	diseaseRibbonPannel->addLargeAction(m_inputSmartDiseaseAct);
 
 
-	hnRibbonPannel* diseaseMgrRibbonPannel = page->addPannel(QStringLiteral("ç—…å®³äº¤äº’"));
+	hnRibbonPannel* diseaseMgrRibbonPannel = page->addPannel(QStringLiteral("²¡º¦½»»¥"));
 
-	//æ·»åŠ ç—…å®³
+	//Ìí¼Ó²¡º¦
 	  QIcon addDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ·»åŠ ç—…å®³.png")));
-	this->m_addDiseaseAct = new QAction(addDiseaseIcon, QStringLiteral("æ·»åŠ ç—…å®³(F1)"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/Ìí¼Ó²¡º¦.png")));
+	this->m_addDiseaseAct = new QAction(addDiseaseIcon, QStringLiteral("Ìí¼Ó²¡º¦(F1)"), this);
 	m_addDiseaseAct->setToolTip(QStringLiteral("F1"));
 	connect(m_addDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_addDiseaseAct);
 
-	//åˆ é™¤ç—…å®³
+	//É¾³ı²¡º¦
 	  QIcon deleteDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/åˆ é™¤ç—…å®³.png")));
-	this->m_deleteDiseaseAct = new QAction(deleteDiseaseIcon, QStringLiteral("åˆ é™¤ç—…å®³(F2)"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/É¾³ı²¡º¦.png")));
+	this->m_deleteDiseaseAct = new QAction(deleteDiseaseIcon, QStringLiteral("É¾³ı²¡º¦(F2)"), this);
 	m_deleteDiseaseAct->setToolTip(QStringLiteral("F2"));
 	connect(m_deleteDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_deleteDiseaseAct);
 
-	//ç¼–è¾‘ç—…å®³
+	//±à¼­²¡º¦
 	  QIcon editDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/ç¼–è¾‘ç—…å®³.png")));
+		QIcon(QStringLiteral(":/icons/iconsNew/±à¼­²¡º¦.png")));
 
-	this->m_editDiseaseAct = new QAction(editDiseaseIcon, QStringLiteral("ç¼–è¾‘ç—…å®³(F3)"), this);
+	this->m_editDiseaseAct = new QAction(editDiseaseIcon, QStringLiteral("±à¼­²¡º¦(F3)"), this);
 	m_editDiseaseAct->setToolTip(QStringLiteral("F3"));
 
 	connect(this->m_editDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_editDiseaseAct);
 
-	//åˆå¹¶ç—…å®³
+	//ºÏ²¢²¡º¦
 	  QIcon combineDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/åˆå¹¶ç—…å®³.png")));
-	this->m_combineDiseaseAct = new QAction(combineDiseaseIcon, QStringLiteral("åˆå¹¶ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/ºÏ²¢²¡º¦.png")));
+	this->m_combineDiseaseAct = new QAction(combineDiseaseIcon, QStringLiteral("ºÏ²¢²¡º¦"), this);
 	connect(this->m_combineDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToMergeDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_combineDiseaseAct);
 
@@ -1239,46 +1341,46 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 
 
-	hnRibbonPannel* diseaseSjModeRibbonPannel = page->addPannel(QStringLiteral("è®¾è®¡æ¨¡å¼ç—…å®³å¤„ç†"));
-	//æ·»åŠ æ§åˆ¶ç‚¹
+	hnRibbonPannel* diseaseSjModeRibbonPannel = page->addPannel(QStringLiteral("Éè¼ÆÄ£Ê½²¡º¦´¦Àí"));
+	//Ìí¼Ó¿ØÖÆµã
 	  QIcon addCtrlPointIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ·»åŠ æ§åˆ¶ç‚¹.png")));
-	m_addCtrlPointAct = new QAction(addCtrlPointIcon, QStringLiteral("æ·»åŠ æ§åˆ¶ç‚¹"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/Ìí¼Ó¿ØÖÆµã.png")));
+	m_addCtrlPointAct = new QAction(addCtrlPointIcon, QStringLiteral("Ìí¼Ó¿ØÖÆµã"), this);
 	connect(m_addCtrlPointAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeAddCtrlPointMode);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addCtrlPointAct);
 
-	// æ·»åŠ é¢çŠ¶ç—…å®³
+	// Ìí¼ÓÃæ×´²¡º¦
 	  QIcon addFacetsIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ·»åŠ ç—…å®³.png")));
-	m_addFacetsDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("æ·»åŠ é¢çŠ¶ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/Ìí¼Ó²¡º¦.png")));
+	m_addFacetsDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("Ìí¼ÓÃæ×´²¡º¦"), this);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addFacetsDiseaseAct);
 	connect(m_addFacetsDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_addFacetsDiseaseMode);
 
-	// æ·»åŠ çº¿çŠ¶ç—…å®³
+	// Ìí¼ÓÏß×´²¡º¦
 	  QIcon addLineIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ·»åŠ ç—…å®³.png")));
-	m_addLineDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("æ·»åŠ çº¿çŠ¶ç—…å®³"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/Ìí¼Ó²¡º¦.png")));
+	m_addLineDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("Ìí¼ÓÏß×´²¡º¦"), this);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addLineDiseaseAct);
 	connect(m_addLineDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_addLineDiseaseMode);
 
-	// å¯¼å…¥æ§åˆ¶ç‚¹
+	// µ¼Èë¿ØÖÆµã
 	  QIcon importCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å…¥æ§åˆ¶ç‚¹.png")));
-	this->m_importCtrlPointsAction = new QAction(importCtrlPointsIcon, QStringLiteral("å¯¼å…¥æ§åˆ¶ç‚¹"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼Èë¿ØÖÆµã.png")));
+	this->m_importCtrlPointsAction = new QAction(importCtrlPointsIcon, QStringLiteral("µ¼Èë¿ØÖÆµã"), this);
 	connect(m_importCtrlPointsAction, &QAction::triggered, this, &hnRoadDataProcess::slot_importCtrlPoints);
 	diseaseSjModeRibbonPannel->addLargeAction(m_importCtrlPointsAction);
 
-	// å¯¼å‡ºæ§åˆ¶ç‚¹
+	// µ¼³ö¿ØÖÆµã
 	  QIcon exportCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å‡ºæ§åˆ¶ç‚¹.png")));
-	this->m_exportCtrlPointsAction = new QAction(exportCtrlPointsIcon, QStringLiteral("å¯¼å‡ºæ§åˆ¶ç‚¹"), this);
+		QIcon(QStringLiteral(":/icons/iconsNew/µ¼³ö¿ØÖÆµã.png")));
+	this->m_exportCtrlPointsAction = new QAction(exportCtrlPointsIcon, QStringLiteral("µ¼³ö¿ØÖÆµã"), this);
 	connect(m_exportCtrlPointsAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportCtrlPoints);
 	diseaseSjModeRibbonPannel->addLargeAction(m_exportCtrlPointsAction);
 	{
-		////æ£€æŸ¥æ•°æ®
+		////¼ì²éÊı¾İ
 		//const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
-		//	QIcon(QStringLiteral(":/icons/icons/è¯†åˆ«CP3.png")));
-		//m_autoDiseaseMerge = new QAction(projectIcon, QStringLiteral("&è‡ªåŠ¨ç—…å®³æ‹¼æ¥"), this);
+		//	QIcon(QStringLiteral(":/icons/icons/Ê¶±ğCP3.png")));
+		//m_autoDiseaseMerge = new QAction(projectIcon, QStringLiteral("&×Ô¶¯²¡º¦Æ´½Ó"), this);
 		//diseaseMgrRibbonPannel->addLargeAction(m_autoDiseaseMerge);
 	}
 
@@ -1289,87 +1391,87 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 void hnRoadDataProcess::createDataBaseMgrCategory(hnRibbonCategory * page)
 {
-	hnRibbonPannel* dataBaseMgrPanel = page->addPannel(QStringLiteral("æ•°æ®åº“ç®¡ç†"));
+	hnRibbonPannel* dataBaseMgrPanel = page->addPannel(QStringLiteral("Êı¾İ¿â¹ÜÀí"));
 	{
-		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/æ‰“å¼€å·¥ç¨‹æ–‡ä»¶å¤¹.png")));
-		this->m_backupsDatabaseAct = new QAction(dataBaseMgrIcon, QStringLiteral("&ç®¡ç†æ•°æ®åº“"), this);
-		m_backupsDatabaseAct->setToolTip(QString::fromLocal8Bit("å¤‡ä»½æ•°æ®åº“ï¼Œæ”¯æŒå¤šäººåŒæ—¶æ“ä½œ!"));
+		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/´ò¿ª¹¤³ÌÎÄ¼ş¼Ğ.png")));
+		this->m_backupsDatabaseAct = new QAction(dataBaseMgrIcon, QStringLiteral("&¹ÜÀíÊı¾İ¿â"), this);
+		m_backupsDatabaseAct->setToolTip(QString::fromLocal8Bit("±¸·İÊı¾İ¿â£¬Ö§³Ö¶àÈËÍ¬Ê±²Ù×÷!"));
 		dataBaseMgrPanel->addLargeAction(this->m_backupsDatabaseAct);
 	}
 	{
-		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/æ¸…ç©ºç—…å®³.png")));
-		this->m_clearAllDiseasesAct = new QAction(dataBaseMgrIcon, QStringLiteral("&æ¸…ç©ºç—…å®³"), this);
-		m_clearAllDiseasesAct->setToolTip(QString::fromLocal8Bit("æ¸…ç©ºæ•°æ®åº“ä¸­çš„æ‰€æœ‰ç—…å®³ï¼Œè¯·è°¨æ…æ“ä½œ"));
+		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/Çå¿Õ²¡º¦.png")));
+		this->m_clearAllDiseasesAct = new QAction(dataBaseMgrIcon, QStringLiteral("&Çå¿Õ²¡º¦"), this);
+		m_clearAllDiseasesAct->setToolTip(QString::fromLocal8Bit("Çå¿ÕÊı¾İ¿âÖĞµÄËùÓĞ²¡º¦£¬Çë½÷É÷²Ù×÷"));
 		dataBaseMgrPanel->addLargeAction(this->m_clearAllDiseasesAct);
 	}
 
 
-	/*const QIcon updateBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/ç¼–è¾‘ç—…å®³.png")));
-	this->m_clearAllDiseasesAct = new QAction(updateBaseMgrIcon, QStringLiteral("&æ¢å¤å·²åˆ é™¤ç—…å®³"), this);
-	m_clearAllDiseasesAct->setToolTip(QString::fromLocal8Bit("æ¢å¤æ•°æ®åº“ä¸­æ‰€æœ‰å·²åˆ é™¤äººå·¥ç—…å®³ï¼Œè¯·è°¨æ…æ“ä½œ"));
+	/*const QIcon updateBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/±à¼­²¡º¦.png")));
+	this->m_clearAllDiseasesAct = new QAction(updateBaseMgrIcon, QStringLiteral("&»Ö¸´ÒÑÉ¾³ı²¡º¦"), this);
+	m_clearAllDiseasesAct->setToolTip(QString::fromLocal8Bit("»Ö¸´Êı¾İ¿âÖĞËùÓĞÒÑÉ¾³ıÈË¹¤²¡º¦£¬Çë½÷É÷²Ù×÷"));
 	dataBaseMgrPanel->addLargeAction(this->m_clearAllDiseasesAct);*/
 
 
-	/*const QIcon  dataBaseMgrIcon1 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/æ›´æ–°ç—…å®³.png")));
-	this->m_updateAllDiseasesAct = new QAction(dataBaseMgrIcon1,QStringLiteral("&æ›´æ–°ç—…å®³"), this);
-	m_updateAllDiseasesAct->setToolTip(QString::fromLocal8Bit("å°†å¯¹æ•°æ®è·¯ä¸­ç—…å®³å‡ ä½•ä¿¡æ¯é‡æ–°è®¡ç®—ï¼Œè¯·è°¨æ…æ“ä½œ"));
+	/*const QIcon  dataBaseMgrIcon1 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/¸üĞÂ²¡º¦.png")));
+	this->m_updateAllDiseasesAct = new QAction(dataBaseMgrIcon1,QStringLiteral("&¸üĞÂ²¡º¦"), this);
+	m_updateAllDiseasesAct->setToolTip(QString::fromLocal8Bit("½«¶ÔÊı¾İÂ·ÖĞ²¡º¦¼¸ºÎĞÅÏ¢ÖØĞÂ¼ÆËã£¬Çë½÷É÷²Ù×÷"));
 	dataBaseMgrPanel->addLargeAction(this->m_updateAllDiseasesAct);
 */
 
-	  QIcon dataBaseMgrIcon0 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/icons/ç§»é™¤å·¥ç¨‹.png")));
-	this->m_updateDatabase = new QAction(dataBaseMgrIcon0, QStringLiteral("&æ›´æ–°æ•°æ®åº“"), this);
+	  QIcon dataBaseMgrIcon0 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/icons/ÒÆ³ı¹¤³Ì.png")));
+	this->m_updateDatabase = new QAction(dataBaseMgrIcon0, QStringLiteral("&¸üĞÂÊı¾İ¿â"), this);
 #if 0
 	dataBaseMgrPanel->addLargeAction(this->m_updateDatabase);
 #endif 
 }
 
-// åˆ›å»ºæ•°æ®è¾“å‡ºæ¨¡å—å·¥å…·æ 
+// ´´½¨Êı¾İÊä³öÄ£¿é¹¤¾ßÀ¸
 void hnRoadDataProcess::createOutputCategory(hnRibbonCategory* page)
 {
-	hnRibbonPannel* exportResult = page->addPannel(QStringLiteral("æŠ¥è¡¨è¾“å‡º"));
+	hnRibbonPannel* exportResult = page->addPannel(QStringLiteral("±¨±íÊä³ö"));
 
 
 #ifdef DEBUG
-	  QIcon projectDatasIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/è¾“å‡ºæŠ¥è¡¨.png")));
-	m_allResultDatasAction = new QAction(projectDatasIcon, QStringLiteral("&å¯¼å‡ºå®šåˆ¶æŠ¥è¡¨"), this);
+	  QIcon projectDatasIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/Êä³ö±¨±í.png")));
+	m_allResultDatasAction = new QAction(projectDatasIcon, QStringLiteral("&µ¼³ö¶¨ÖÆ±¨±í"), this);
 	exportResult->addLargeAction(m_allResultDatasAction);
 #endif // DEBUG
 
-	// è¾“å‡ºæŠ¥è¡¨
-	  QIcon projectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/è¾“å‡ºæŠ¥è¡¨.png")));
-	m_outExcel = new QAction(projectIcon, QStringLiteral("&è¾“å‡ºæ ‡å‡†æŠ¥è¡¨"), this);
+	// Êä³ö±¨±í
+	  QIcon projectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/Êä³ö±¨±í.png")));
+	m_outExcel = new QAction(projectIcon, QStringLiteral("&Êä³ö±ê×¼±¨±í"), this);
 	exportResult->addLargeAction(m_outExcel);
 
-	// å¤šå·¥ç¨‹æŠ¥è¡¨åˆå¹¶
-	  QIcon mergeProjectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/è¾“å‡ºæŠ¥è¡¨.png")));
-	m_mergeProjectExcelAct = new QAction(mergeProjectIcon, QStringLiteral("&å¤šå·¥ç¨‹åˆå¹¶å·¥å…·"), this);
+	// ¶à¹¤³Ì±¨±íºÏ²¢
+	  QIcon mergeProjectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/Êä³ö±¨±í.png")));
+	m_mergeProjectExcelAct = new QAction(mergeProjectIcon, QStringLiteral("&¶à¹¤³ÌºÏ²¢¹¤¾ß"), this);
 	exportResult->addLargeAction(m_mergeProjectExcelAct);
 
-	hnRibbonPannel* exportDxfResult = page->addPannel(QStringLiteral("DXFè¾“å‡º"));
-	//å¯¼å‡ºdxf
-	  QIcon exportDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å‡ºdxf.png")));
-	m_exportDxfAction = new QAction(exportDxfIcon, QStringLiteral("&å¯¼å‡ºç—…å®³å±•å¸ƒå›¾"), this);
+	hnRibbonPannel* exportDxfResult = page->addPannel(QStringLiteral("DXFÊä³ö"));
+	//µ¼³ödxf
+	  QIcon exportDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/µ¼³ödxf.png")));
+	m_exportDxfAction = new QAction(exportDxfIcon, QStringLiteral("&µ¼³ö²¡º¦Õ¹²¼Í¼"), this);
 	exportDxfResult->addLargeAction(m_exportDxfAction);
 	connect(m_exportDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportDXf);
 
-	  QIcon exportDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å‡ºdxf.png")));
-	m_exportDiseaseDxfAction = new QAction(exportDiseaseDxfIcon, QStringLiteral("&å¯¼å‡ºç—…å®³çŸ¢é‡å›¾"), this);
+	  QIcon exportDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/µ¼³ödxf.png")));
+	m_exportDiseaseDxfAction = new QAction(exportDiseaseDxfIcon, QStringLiteral("&µ¼³ö²¡º¦Ê¸Á¿Í¼"), this);
 	exportDxfResult->addLargeAction(m_exportDiseaseDxfAction);
 	connect(m_exportDiseaseDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportDiseaseDXf);
 
-	  QIcon exportHighAccuracyDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/å¯¼å‡ºdxf.png")));
-	m_exportHighAccuracyDiseaseDxfAction = new QAction(exportHighAccuracyDiseaseDxfIcon, QStringLiteral("&å¯¼å‡ºé«˜ç²¾åº¦ç—…å®³çŸ¢é‡å›¾"), this);
+	  QIcon exportHighAccuracyDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/µ¼³ödxf.png")));
+	m_exportHighAccuracyDiseaseDxfAction = new QAction(exportHighAccuracyDiseaseDxfIcon, QStringLiteral("&µ¼³ö¸ß¾«¶È²¡º¦Ê¸Á¿Í¼"), this);
 	exportDxfResult->addLargeAction(m_exportHighAccuracyDiseaseDxfAction);
 	connect(m_exportHighAccuracyDiseaseDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf);
 
-	hnRibbonPannel* GJOutResult = page->addPannel(QStringLiteral("å›½æ£€è½¬æ¢è¾“å‡º"));
-	  QIcon gjIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/è¾“å‡ºæŠ¥è¡¨.png")));
-	m_exportGJDatasAction = new QAction(gjIcon, QStringLiteral("&è®¡ç®—å›½æ£€è½¬æ¢ä¸­é—´æ•°æ®"), this);
+	hnRibbonPannel* GJOutResult = page->addPannel(QStringLiteral("¹ú¼ì×ª»»Êä³ö"));
+	  QIcon gjIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/Êä³ö±¨±í.png")));
+	m_exportGJDatasAction = new QAction(gjIcon, QStringLiteral("&¼ÆËã¹ú¼ì×ª»»ÖĞ¼äÊı¾İ"), this);
 	GJOutResult->addLargeAction(m_exportGJDatasAction);
 	connect(m_exportGJDatasAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportGjDatas);
 }
 
-// åˆ›å»ºç‚¹äº‘å¤„ç†æ¨¡å—å·¥å…·æ 
+// ´´½¨µãÔÆ´¦ÀíÄ£¿é¹¤¾ßÀ¸
 void hnRoadDataProcess::createCloudCategory(hnRibbonCategory* page)
 {
 
@@ -1377,94 +1479,94 @@ void hnRoadDataProcess::createCloudCategory(hnRibbonCategory* page)
 
 void hnRoadDataProcess::createViewsCategory(hnRibbonCategory* page)
 {
-	hnRibbonPannel* widgetMgrPanel = page->addPannel(QStringLiteral("è§†å›¾ç®¡ç†"));
+	hnRibbonPannel* widgetMgrPanel = page->addPannel(QStringLiteral("ÊÓÍ¼¹ÜÀí"));
 
-	{// è§†å›¾
+	{// ÊÓÍ¼
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/äºŒç»´æ ‡å‡†è§†å›¾.png")));
-		m_oShapeViewportAct = new QAction(projectIcon, QStringLiteral("&äºŒç»´æ ‡å‡†è§†å›¾"), this);
+		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/¶şÎ¬±ê×¼ÊÓÍ¼.png")));
+		m_oShapeViewportAct = new QAction(projectIcon, QStringLiteral("&¶şÎ¬±ê×¼ÊÓÍ¼"), this);
 		widgetMgrPanel->addLargeAction(m_oShapeViewportAct);
 	}
 
-	{// è§†å›¾
+	{// ÊÓÍ¼
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/äºŒä¸‰ç»´æ ‡å‡†è§†å›¾.png")));
-		m_o3ShapeViewportAct = new QAction(projectIcon, QStringLiteral("&ä¸‰ç»´æ ‡å‡†è§†å›¾"), this);
+		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/¶şÈıÎ¬±ê×¼ÊÓÍ¼.png")));
+		m_o3ShapeViewportAct = new QAction(projectIcon, QStringLiteral("&ÈıÎ¬±ê×¼ÊÓÍ¼"), this);
 		widgetMgrPanel->addLargeAction(m_o3ShapeViewportAct);
 	}
-	{// è§†å›¾
+	{// ÊÓÍ¼
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/äºŒä¸‰ç»´æ ‡å‡†è§†å›¾.png")));
-		m_oDViewportAct = new QAction(projectIcon, QStringLiteral("&äºŒä¸‰ç»´æ ‡å‡†è§†å›¾"), this);
+		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/¶şÈıÎ¬±ê×¼ÊÓÍ¼.png")));
+		m_oDViewportAct = new QAction(projectIcon, QStringLiteral("&¶şÈıÎ¬±ê×¼ÊÓÍ¼"), this);
 		widgetMgrPanel->addLargeAction(m_oDViewportAct);
 	}
 
 	 
 
-	//ä¸‰ç»´è§†å›¾æµè§ˆæ¨¡å¼
-	hnRibbonPannel* image3dModePannel = page->addPannel(QStringLiteral("ä¸‰ç»´è§†å›¾æµè§ˆæ¨¡å¼"));
+	//ÈıÎ¬ÊÓÍ¼ä¯ÀÀÄ£Ê½
+	hnRibbonPannel* image3dModePannel = page->addPannel(QStringLiteral("ÈıÎ¬ÊÓÍ¼ä¯ÀÀÄ£Ê½"));
 
-	//ç°åº¦å›¾æ¨¡å¼Action
-	  QIcon grayModeIcon = QIcon::fromTheme(QStringLiteral("grayModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/ç°åº¦å›¾æ¨¡å¼.png")));
-	this->m_3dGrayModeAct = new QAction(grayModeIcon, QStringLiteral("&ç°åº¦å›¾æ¨¡å¼"));
+	//»Ò¶ÈÍ¼Ä£Ê½Action
+	  QIcon grayModeIcon = QIcon::fromTheme(QStringLiteral("grayModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/»Ò¶ÈÍ¼Ä£Ê½.png")));
+	this->m_3dGrayModeAct = new QAction(grayModeIcon, QStringLiteral("&»Ò¶ÈÍ¼Ä£Ê½"));
 	image3dModePannel->addLargeAction(m_3dGrayModeAct);
 
-	//æ·±åº¦å›¾æ¨¡å¼Action
-	  QIcon rgbModeIcon = QIcon::fromTheme(QStringLiteral("rgbModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/æ·±åº¦å›¾æ¨¡å¼.png")));
-	this->m_3dRgbModeAct = new QAction(rgbModeIcon, QStringLiteral("&æ·±åº¦å›¾æ¨¡å¼"));
+	//Éî¶ÈÍ¼Ä£Ê½Action
+	  QIcon rgbModeIcon = QIcon::fromTheme(QStringLiteral("rgbModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/Éî¶ÈÍ¼Ä£Ê½.png")));
+	this->m_3dRgbModeAct = new QAction(rgbModeIcon, QStringLiteral("&Éî¶ÈÍ¼Ä£Ê½"));
 	image3dModePannel->addLargeAction(m_3dRgbModeAct);
 
-	//æ”¾å¤§é•œ Pannel
-	hnRibbonPannel* magnifyPannel = page->addPannel(QStringLiteral("æ”¾å¤§é•œ"));
+	//·Å´ó¾µ Pannel
+	hnRibbonPannel* magnifyPannel = page->addPannel(QStringLiteral("·Å´ó¾µ"));
 
-	//æ”¾å¤§é•œæ‰“å¼€/å…³é—­
+	//·Å´ó¾µ´ò¿ª/¹Ø±Õ
 	  QIcon magnifyIcon = QIcon::fromTheme(QStringLiteral("magnifyIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ‰“å¼€æ”¾å¤§é•œ.png")));
-	m_magnifyAction = new QAction(magnifyIcon, QString::fromLocal8Bit("æ‰“å¼€æ”¾å¤§é•œ"));
+		QIcon(QStringLiteral(":/icons/iconsNew/´ò¿ª·Å´ó¾µ.png")));
+	m_magnifyAction = new QAction(magnifyIcon, QString::fromLocal8Bit("´ò¿ª·Å´ó¾µ"));
 	magnifyPannel->addLargeAction(m_magnifyAction);
 	connect(m_magnifyAction, &QAction::triggered,
 		this, &hnRoadDataProcess::slot_onMagnifyActionClicked);
 
-	//æ”¾å¤§é•œè®¾ç½®
+	//·Å´ó¾µÉèÖÃ
 	  QIcon magnifySettingIcon = QIcon::fromTheme(QStringLiteral("magnifySettingIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/æ”¾å¤§é•œè®¾ç½®.png")));
-	m_magnifySettingAction = new QAction(magnifySettingIcon, QString::fromLocal8Bit("æ”¾å¤§é•œè®¾ç½®"));
+		QIcon(QStringLiteral(":/icons/iconsNew/·Å´ó¾µÉèÖÃ.png")));
+	m_magnifySettingAction = new QAction(magnifySettingIcon, QString::fromLocal8Bit("·Å´ó¾µÉèÖÃ"));
 	magnifyPannel->addLargeAction(m_magnifySettingAction);
 	connect(m_magnifySettingAction, &QAction::triggered,
 		this, &hnRoadDataProcess::slot_onMagnifySettingActionClicked);
 
 }
 
-// ç³»ç»Ÿ
+// ÏµÍ³
 void hnRoadDataProcess::createSystemCategory(hnRibbonCategory* page)
 {
-	hnRibbonPannel* sysPannel = page->addPannel(QStringLiteral("ç³»ç»Ÿ"));
+	hnRibbonPannel* sysPannel = page->addPannel(QStringLiteral("ÏµÍ³"));
 
-	// èœå•é¡¹ï¼Œç”¨äºç®¡ç†é¢æ¿æ˜¾ç¤ºéšè—;
-	  QIcon showPaneIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/äºŒä¸‰ç»´æ ‡å‡†è§†å›¾.png")));
+	// ²Ëµ¥Ïî£¬ÓÃÓÚ¹ÜÀíÃæ°åÏÔÊ¾Òş²Ø;
+	  QIcon showPaneIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/¶şÈıÎ¬±ê×¼ÊÓÍ¼.png")));
 	m_pShowPaneMenu = new QMenu(this);
 	//m_pShowPaneMenu->setStyleSheet();
-	m_pShowPaneMenu->setTitle(QStringLiteral("æ˜¾éšé¢æ¿"));
+	m_pShowPaneMenu->setTitle(QStringLiteral("ÏÔÒşÃæ°å"));
 	m_pShowPaneMenu->setIcon(showPaneIcon);
-	m_pShowPaneMenu->menuAction()->setStatusTip(QStringLiteral("æ˜¾éšé¢æ¿"));
+	m_pShowPaneMenu->menuAction()->setStatusTip(QStringLiteral("ÏÔÒşÃæ°å"));
 	sysPannel->addLargeAction(m_pShowPaneMenu->menuAction());
 
-	// ç³»ç»Ÿè®¾ç½®
-	  QIcon configPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/è½¯ä»¶è®¾ç½®.png")));
-	m_config = new QAction(configPaneIcon, QStringLiteral("è½¯ä»¶è®¾ç½®"));
+	// ÏµÍ³ÉèÖÃ
+	  QIcon configPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/Èí¼şÉèÖÃ.png")));
+	m_config = new QAction(configPaneIcon, QStringLiteral("Èí¼şÉèÖÃ"));
 	sysPannel->addLargeAction(m_config);
 
-	// ç³»ç»Ÿè®¾ç½®
-	  QIcon HelperPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/è½¯ä»¶è®¾ç½®.png")));
-	m_HelperAct = new QAction(HelperPaneIcon, QStringLiteral("ä½¿ç”¨è¯´æ˜"));
+	// ÏµÍ³ÉèÖÃ
+	  QIcon HelperPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/Èí¼şÉèÖÃ.png")));
+	m_HelperAct = new QAction(HelperPaneIcon, QStringLiteral("Ê¹ÓÃËµÃ÷"));
 	sysPannel->addLargeAction(m_HelperAct);
 
-	  QIcon AuoutInfoPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/è½¯ä»¶è®¾ç½®.png")));
-	m_AboutInfoAct = new QAction(AuoutInfoPaneIcon, QStringLiteral("å…³äºä¿¡æ¯"));
+	  QIcon AuoutInfoPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/Èí¼şÉèÖÃ.png")));
+	m_AboutInfoAct = new QAction(AuoutInfoPaneIcon, QStringLiteral("¹ØÓÚĞÅÏ¢"));
 	sysPannel->addLargeAction(m_AboutInfoAct);
 
 
-#if 0	//åŠŸèƒ½æœªå®ç°ï¼Œæš‚ä¸å¯ç”¨
+#if 0	//¹¦ÄÜÎ´ÊµÏÖ£¬Ôİ²»ÆôÓÃ
 	sysPannel->addLargeAction(m_config);
 #endif
 }
@@ -1476,8 +1578,8 @@ bool hnRoadDataProcess::loadConfigData()
 	QDir baseDirs(configDbPath);
 	if (!baseDirs.exists())
 	{ 
-		QMessageBox::warning(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("ç¨‹åºç›®å½•ä¸‹ç¼ºå°‘configæ–‡ä»¶å¤¹ï¼"),
-			QStringLiteral("ç¡®å®š"));
+		QMessageBox::warning(this, QStringLiteral("¾¯¸æ"), QStringLiteral("³ÌĞòÄ¿Â¼ÏÂÈ±ÉÙconfigÎÄ¼ş¼Ğ£¡"),
+			QStringLiteral("È·¶¨"));
 		return false;
 	}
 
@@ -1489,7 +1591,7 @@ bool hnRoadDataProcess::loadConfigData()
 
 	if (!QFile::exists(configPath))
 	{
-		//å¦‚æœä¸å­˜åœ¨å¤åˆ¶è¿‡å»
+		//Èç¹û²»´æÔÚ¸´ÖÆ¹ıÈ¥
 
 		if (QFile::copy(baseConfigPath, configPath))
 		{
@@ -1499,8 +1601,8 @@ bool hnRoadDataProcess::loadConfigData()
 		}
 		else
 		{
-			QMessageBox::warning(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("å…³é”®é…ç½®æ–‡ä»¶XRSetting.iniæ‹·è´å¤±è´¥ï¼"),
-				QStringLiteral("ç¡®å®š"));
+			QMessageBox::warning(this, QStringLiteral("¾¯¸æ"), QStringLiteral("¹Ø¼üÅäÖÃÎÄ¼şXRSetting.ini¿½±´Ê§°Ü£¡"),
+				QStringLiteral("È·¶¨"));
 			return false;
 		}
 	}
@@ -1525,7 +1627,7 @@ bool hnRoadDataProcess::loadConfigData()
 		}
 	
 	}
-	//è®°å½•ç”¨æˆ·è·¯å¾„
+	//¼ÇÂ¼ÓÃ»§Â·¾¶
 	return true;
 }
 
@@ -1534,38 +1636,66 @@ bool hnRoadDataProcess::loadConfigData()
 
 void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 {
+	QElapsedTimer totalTimer;
+	totalTimer.start();
 	 
 	QString selectedItemText = item->text(0);
+	qDebug().noquote() << "[HN_PERF][TreeProjectOpenStart]"
+		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
+		<< "item=" << selectedItemText
+		<< "column=" << column;
 	int grade = item->data(1, Qt::UserRole).value<int>();
-	if (grade == 1)  //ç”¨æˆ·ç‚¹å‡»çš„æ˜¯æœ‰æ•ˆèŠ‚ç‚¹  äºŒç»´å·¥ç¨‹å
+	if (grade == 1)  //ÓÃ»§µã»÷µÄÊÇÓĞĞ§½Úµã  ¶şÎ¬¹¤³ÌÃû
 	{
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
+			<< "reason=grade1"
+			<< "item=" << selectedItemText
+			<< "totalMs=" << totalTimer.elapsed();
 		return;
 	}
 
 	QString projectName = selectedItemText;
 
-	//æ£€æŸ¥å·¥ç¨‹ äººå·¥æ¨¡å¼è‡ªåŠ¨åŒ–æ¨¡å¼ç±»å‹å†²çª
+	//¼ì²é¹¤³Ì ÈË¹¤Ä£Ê½×Ô¶¯»¯Ä£Ê½ÀàĞÍ³åÍ»
 	if (!this->checkProjectFrameTypeConflict(projectName))
 	{
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
+			<< "reason=frameTypeConflict"
+			<< "item=" << selectedItemText
+			<< "totalMs=" << totalTimer.elapsed();
 		return;
 	}
 	auto curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
-	BusyLoadingGuard loading(this, QStringLiteral("æ‰“å¼€åŠ è½½å…·ä½“å·¥ç¨‹"), QStringLiteral("æ­£åœ¨æ‰“å¼€å·¥ç¨‹ï¼Œè¯·ç¨å......"));
+	BusyLoadingGuard loading(this, QStringLiteral("´ò¿ª¼ÓÔØ¾ßÌå¹¤³Ì"), QStringLiteral("ÕıÔÚ´ò¿ª¹¤³Ì£¬ÇëÉÔºó......"));
+	loading.setProgressRange(0, 100);
+	loading.setProgressValue(5);
 	if (curProject)
 	{
+		QElapsedTimer stepTimer;
 		hnCommon::hnProjectSetInfo setting = curProject->getCurProSetInfo();
-		// æ¸…ç©ºæ‰€æœ‰è§†å›¾å›¾ç‰‡
+		// Çå¿ÕËùÓĞÊÓÍ¼Í¼Æ¬
+		stepTimer.start();
 		this->clearAllWidgetPixs();
-		loading.setMessage(QStringLiteral("æ‰€æœ‰çª—å£åŠ è½½å›¾ç‰‡..."));
-		//æ‰€æœ‰çª—å£åŠ è½½å›¾ç‰‡
-		this->allWidgetLoadPictures();
-		loading.setMessage(QStringLiteral("æ›´æ–°ç—…å®³åˆ—è¡¨..."));
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=clearAllWidgetPixs" << "elapsedMs=" << stepTimer.elapsed();
+		loading.setProgressValue(15);
+		loading.setMessage(QStringLiteral("ËùÓĞ´°¿Ú¼ÓÔØÍ¼Æ¬..."));
+		//ËùÓĞ´°¿Ú¼ÓÔØÍ¼Æ¬
+		stepTimer.restart();
+		this->allWidgetLoadPictures(&loading);
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
+		loading.setProgressValue(82);
+		loading.setMessage(QStringLiteral("¸üĞÂ²¡º¦ÁĞ±í..."));
 
-		//æ›´æ–°ç—…å®³åˆ—è¡¨
+		//¸üĞÂ²¡º¦ÁĞ±í
+		stepTimer.restart();
 		this->m_diseaseListWidget->updateAllDiseases();
-		loading.setMessage(QStringLiteral("æ›´æ–°æ ‘çŠ¶è§†å›¾..."));
-		//æ›´æ–°æ ‘çŠ¶è§†å›¾
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateAllDiseases" << "elapsedMs=" << stepTimer.elapsed();
+		loading.setProgressValue(90);
+		loading.setMessage(QStringLiteral("¸üĞÂÊ÷×´ÊÓÍ¼..."));
+		//¸üĞÂÊ÷×´ÊÓÍ¼
+		stepTimer.restart();
 		this->updateTreeWidget();
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
 		QVector<hnCommon::hnMarkInfo> marks;
 		if (m_projects->getCurrentProject()->getProjectType() == PROJECT_JD_3D_TYPE)
 		{
@@ -1593,9 +1723,11 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 
 		emit signal_updateProject(setting, marks, datas);
 		emit signal_loadBaiduMap();
+		loading.setProgressValue(100);
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=emitUpdateSignals" << "totalMsSoFar=" << totalTimer.elapsed();
 		auto type = curProject->getProjectType();
 
-		//è·å–äºŒä¸‰ç»´é‡Œç¨‹å·®å€¼ï¼Œå¦‚æœæ˜¯0ï¼Œæç¤ºç”¨æˆ·åšå·®å€¼å¤„ç†
+		//»ñÈ¡¶şÈıÎ¬Àï³Ì²îÖµ£¬Èç¹ûÊÇ0£¬ÌáÊ¾ÓÃ»§×ö²îÖµ´¦Àí
 
 
 		if (PROJECT_23D_TYPE == type)
@@ -1603,12 +1735,16 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 			const double diff2d3d = curProject->get2d3dMileDiff();
 			if (0 == diff2d3d)
 			{
-				QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"),
-					QString::fromLocal8Bit("äºŒä¸‰ç»´é‡Œç¨‹å·®å€¼æ²¡æœ‰è¿›è¡ŒçŸ«æ­£ï¼Œå¦‚æœéœ€è¦ï¼Œè¯·è¿›è¡ŒçŸ«æ­£"),
-					QString::fromLocal8Bit("ç¡®å®š"));
+				QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"),
+					QString::fromLocal8Bit("¶şÈıÎ¬Àï³Ì²îÖµÃ»ÓĞ½øĞĞ½ÃÕı£¬Èç¹ûĞèÒª£¬Çë½øĞĞ½ÃÕı"),
+					QString::fromLocal8Bit("È·¶¨"));
 			}
 		}
 	}
+	qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
+		<< "item=" << selectedItemText
+		<< "hasProject=" << (curProject != nullptr)
+		<< "totalMs=" << totalTimer.elapsed();
 }
 
 void hnRoadDataProcess::slot_selectNodeChange()
@@ -1618,11 +1754,11 @@ void hnRoadDataProcess::slot_selectNodeChange()
 
 void hnRoadDataProcess::slot_showContextMenu(const QPoint pos)
 {
-	//è·å–é¼ æ ‡ç‚¹å‡»ä½ç½®å¤„çš„item
+	//»ñÈ¡Êó±êµã»÷Î»ÖÃ´¦µÄitem
 	QTreeWidgetItem *item = nullptr;
 	item = this->m_projectListTreeWidget->itemAt(pos);
 
-	//æ²¡æœ‰itemçš„è¯å°±è¿”å›  å³é”®èœå•m_treeWidgetRightButtonMenu
+	//Ã»ÓĞitemµÄ»°¾Í·µ»Ø  ÓÒ¼ü²Ëµ¥m_treeWidgetRightButtonMenu
 	if (!item)
 	{
 		return;
@@ -1651,25 +1787,25 @@ void hnRoadDataProcess::slot_calculateIrm()
 	{
 		return;
 	}
-	//åˆ¤æ–­ç£ç›˜ç©ºé—´
+	//ÅĞ¶Ï´ÅÅÌ¿Õ¼ä
 
 	calculateIrmForm* form = new calculateIrmForm(this);
 	connect(form, &calculateIrmForm::error, this, [=](QString msg)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), msg,
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), msg,
+			QString::fromLocal8Bit("È·¶¨"));
 	}
 	);
 
 	connect(form, &calculateIrmForm::calculationFinished, this, [=]()
 	{
-		QMessageBox::information(this, QStringLiteral("æç¤º"), QStringLiteral("å®Œæˆ"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::information(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("Íê³É"),
+			QString::fromLocal8Bit("È·¶¨"));
 	}
 	);
 	form->exec();
 
-	//æ·»åŠ 
+	//Ìí¼Ó
 }
 void hnRoadDataProcess::slot_compute()
 {
@@ -1683,7 +1819,7 @@ void hnRoadDataProcess::slot_compute()
 		type != PROJECT_TYPE::PROJECT_JD_3D_TYPE&&
 		type != PROJECT_TYPE::PROJECT_XD_3D_TYPE)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯¥åŠŸèƒ½ä»…æ”¯æŒäºŒä¸‰ç»´å·¥ç¨‹ä½¿ç”¨!"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("¸Ã¹¦ÄÜ½öÖ§³Ö¶şÈıÎ¬¹¤³ÌÊ¹ÓÃ!"), QString::fromLocal8Bit("È·¶¨"));
 		 
 		return;
 	}
@@ -1706,7 +1842,7 @@ void hnRoadDataProcess::slot_compute()
 	QFileInfoList fileLst =  posDir.entryInfoList();
 	if (fileLst.isEmpty())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), strPos + QString::fromLocal8Bit("\nPOSæ–‡ä»¶ä¸å­˜åœ¨ï¼Œè¯·æ£€æŸ¥!"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), strPos + QString::fromLocal8Bit("\nPOSÎÄ¼ş²»´æÔÚ£¬Çë¼ì²é!"), QString::fromLocal8Bit("È·¶¨"));
 
 		return;
 	}
@@ -1723,7 +1859,7 @@ void hnRoadDataProcess::slot_compute()
 		roadGeoParam.dMileage = i;
 		vecRoadGeoParam.push_back(roadGeoParam);
 	} 
-	QProgressDialog pd(QString::fromLocal8Bit("æ­£åœ¨è¯»å–ç©ºé—´åœ°ç†ä¿¡æ¯..."), QString::fromLocal8Bit("å–æ¶ˆ"), 0, 100, this);
+	QProgressDialog pd(QString::fromLocal8Bit("ÕıÔÚ¶ÁÈ¡¿Õ¼äµØÀíĞÅÏ¢..."), QString::fromLocal8Bit("È¡Ïû"), 0, 100, this);
 	pd.setWindowModality(Qt::WindowModal);
 	pd.show();
 	g_pgDlg = &pd;
@@ -1753,8 +1889,8 @@ void hnRoadDataProcess::slot_compute()
 			dmi += 10;
 	}
 	gps2MileFile.close();
-	QMessageBox::information(this, QStringLiteral("æç¤ºçª—å£"), QStringLiteral("å‡ ä½•çº¿å‹æ•°æ®è®¡ç®—å®Œæ¯•ï¼Œå¯è¿›è¡ŒæŠ¥è¡¨è¾“å‡ºï¼"),
-		QString::fromLocal8Bit("ç¡®å®š"));
+	QMessageBox::information(this, QStringLiteral("ÌáÊ¾´°¿Ú"), QStringLiteral("¼¸ºÎÏßĞÍÊı¾İ¼ÆËãÍê±Ï£¬¿É½øĞĞ±¨±íÊä³ö£¡"),
+		QString::fromLocal8Bit("È·¶¨"));
 }
 void hnRoadDataProcess::slot_clearIrm()
 {
@@ -1766,7 +1902,7 @@ void hnRoadDataProcess::slot_clearIrm()
 	auto projects = manager->getAllBaseProject();
 	for (auto project : projects)
 	{
-		//æ¸…ç©ºå¹³æ•´åº¦ 
+		//Çå¿ÕÆ½Õû¶È 
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ0\\IRI_10m.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ0\\IRI_20m.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ0\\IRI_100m.txt");
@@ -1782,11 +1918,11 @@ void hnRoadDataProcess::slot_clearIrm()
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ1\\PavementBump.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ1\\ReSample250.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\DAQ1\\Speed_10m.txt");
-		//æ¸…ç©ºè½¦è¾™
-		//20240905å‘ç°å†…ä¸šè½¦è¾™ç®—æ³•ç”±äºç²¾åº¦é—®é¢˜ æ— æ³•ä¸å¤–ä¸šç»Ÿä¸€  å…ˆé‡‡ç”¨å¤–ä¸šè½¦è¾™ç»“æœ
+		//Çå¿Õ³µÕŞ
+		//20240905·¢ÏÖÄÚÒµ³µÕŞËã·¨ÓÉÓÚ¾«¶ÈÎÊÌâ ÎŞ·¨ÓëÍâÒµÍ³Ò»  ÏÈ²ÉÓÃÍâÒµ³µÕŞ½á¹û
 		MyCommonMethods::deleteDirectory(project->get2DProject()->getRutResultPath());
 
-		//æ¸…ç©ºmtd
+		//Çå¿Õmtd
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\Laser0\\MTD_10m.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\Laser1\\MTD_10m.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\Laser2\\MTD_10m.txt");
@@ -1794,15 +1930,15 @@ void hnRoadDataProcess::slot_clearIrm()
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\Laser1\\MPD_10m.txt");
 		MyCommonMethods::deleteFile(project->get2DProject()->getIRIPath() + "\\Laser2\\MPD_10m.txt");
 
-		//å‡ ä½•çº¿æ€§
+		//¼¸ºÎÏßĞÔ
 		MyCommonMethods::deleteFile(project->get2DProject()->getBasePath() + "\\camera0\\imu.hon.csv");
 		MyCommonMethods::deleteFile(project->get2DProject()->getBasePath() + "\\camera0\\imu.hon.CrossSlope");
 		MyCommonMethods::deleteFile(project->get2DProject()->getBasePath() + "\\camera0\\imu.hon.Curvature");
 		MyCommonMethods::deleteFile(project->get2DProject()->getBasePath() + "\\camera0\\imu.hon.HeightSlope");
 	}
 
-	QMessageBox::information(this, QStringLiteral("æç¤ºçª—å£"), QStringLiteral("IRMæ•°æ®æ¸…ç©ºå®Œæˆ,è¯·è¿›è¡Œä¸‹ä¸€æ­¥è®¡ç®—ï¼"),
-		QString::fromLocal8Bit("ç¡®å®š"));
+	QMessageBox::information(this, QStringLiteral("ÌáÊ¾´°¿Ú"), QStringLiteral("IRMÊı¾İÇå¿ÕÍê³É,Çë½øĞĞÏÂÒ»²½¼ÆËã£¡"),
+		QString::fromLocal8Bit("È·¶¨"));
 }
 
 void hnRoadDataProcess::slot_changeToAddDiseaseMode()
@@ -1810,29 +1946,30 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æœªæ‰“å¼€å·¥ç¨‹"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Î´´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	if (2 == hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType)
+	const int drawType = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
+	m_centerToast->showMessage(diseaseToastTitle(DiseaseToastMode::Add, drawType), QString(), 1800);
+
+	if (2 == drawType)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æ¨¡å¼ä¸ºè®¾è®¡æ¨¡å¼ï¼Œè¯·ä½¿ç”¨æ·»åŠ é¢çŠ¶ç—…å®³æˆ–è€…æ·»åŠ çº¿çŠ¶ç—…å®³"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Ä£Ê½ÎªÉè¼ÆÄ£Ê½£¬ÇëÊ¹ÓÃÌí¼ÓÃæ×´²¡º¦»òÕßÌí¼ÓÏß×´²¡º¦"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	m_centerToast->showMessage(QStringLiteral("è¿›å…¥ç»˜åˆ¶ç—…å®³æ¨¡å¼"), QStringLiteral("å·¦é”®ç»˜åˆ¶ç—…å®³åŒºåŸŸ,å³é”®é€€å‡ºå½“å‰ç»˜åˆ¶", 2000));
-
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºç”»ç—…å®³æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎª»­²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºç”»ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎª»­²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//æ™¯è§‚çª—å£è®¾ç½®ä¸ºæ·»åŠ ç—…å®³æ¨¡å¼
+	//¾°¹Û´°¿ÚÉèÖÃÎªÌí¼Ó²¡º¦Ä£Ê½
 	this->m_pStreetViewWidget->m_pStreetView->setAddDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
 	{
@@ -1844,19 +1981,26 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 {
-	m_centerToast->showMessage(QStringLiteral("è¿›å…¥åˆ é™¤ç—…å®³æ¨¡å¼"), QStringLiteral("å·¦é”®ç‚¹å‡»ç—…å®³åˆ é™¤", 2000));
+	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
+	{
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Î´´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
+		return;
+	}
 
-	//å–æ¶ˆç”»ç—…å®³
+	const int drawType = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
+	m_centerToast->showMessage(diseaseToastTitle(DiseaseToastMode::Delete, drawType), QString(), 1800);
+
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºåˆ é™¤ç—…å®³æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎªÉ¾³ı²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setDeleteDiseaseMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºåˆ é™¤ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎªÉ¾³ı²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setDeleteDiseaseMode();
 
-	//æ™¯è§‚åˆ é™¤ç—…å®³æ¨¡å¼
+	//¾°¹ÛÉ¾³ı²¡º¦Ä£Ê½
 	this->m_pStreetViewWidget->m_pStreetView->setDeleteDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
 	{
@@ -1867,41 +2011,49 @@ void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToEditDiseaseMode()
 {
-	m_centerToast->showMessage(QStringLiteral("è¿›å…¥ç¼–è¾‘ç—…å®³æ¨¡å¼"), QStringLiteral("å·¦é”®ç‚¹å‡»ç—…å®³åŒºåŸŸ,å³é”®é€€å‡ºå½“å‰ç¼–è¾‘", 2000));
-	//å–æ¶ˆç”»ç—…å®³
+	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
+	{
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Î´´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
+		return;
+	}
+
+	const int drawType = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
+	m_centerToast->showMessage(diseaseToastTitle(DiseaseToastMode::Edit, drawType), QString(), 1800);
+
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºç¼–è¾‘ç—…å®³æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎª±à¼­²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setEditMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºç¼–è¾‘ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎª±à¼­²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setEditMode();
 }
 
 void hnRoadDataProcess::slot_changeToMoveDiseaseMode()
 {
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºç§»åŠ¨ç—…å®³æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎªÒÆ¶¯²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setMoveMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºç§»åŠ¨ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎªÒÆ¶¯²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setMoveMode();
 }
 
 void hnRoadDataProcess::slot_changeToMergeDiseaseMode()
 {
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÄ£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 
-	//ä¸‰ç»´çª—å£è®¾ç½®æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÄ£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 
 }
@@ -1912,34 +2064,34 @@ void hnRoadDataProcess::slot_changeTo23dMileCorrectMode()
 	{
 		return;
 	}
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÄ£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-	//ä¸‰ç»´çª—å£è®¾ç½®æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÄ£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-	QMessageBox::information(this, QStringLiteral("æç¤º"),
-		QStringLiteral("è¯·ä¾æ¬¡ç‚¹å‡»äºŒç»´è§†å›¾ã€ä¸‰ç»´è§†å›¾ä¸Šç›¸åŒçš„ä½ç½®ï¼Œç„¶åé”®ç›˜æŒ‰Shift + Cï¼Œè¿›è¡ŒçŸ«æ­£"),
-		QString::fromLocal8Bit("ç¡®å®š"));
+	QMessageBox::information(this, QStringLiteral("ÌáÊ¾"),
+		QStringLiteral("ÇëÒÀ´Îµã»÷¶şÎ¬ÊÓÍ¼¡¢ÈıÎ¬ÊÓÍ¼ÉÏÏàÍ¬µÄÎ»ÖÃ£¬È»ºó¼üÅÌ°´Shift + C£¬½øĞĞ½ÃÕı"),
+		QString::fromLocal8Bit("È·¶¨"));
 }
 
 void hnRoadDataProcess::slot_changeAddCtrlPointMode()
 {
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//è·¯é¢ç ´æŸçª—å£è®¾ç½®æ¨¡å¼
+	//Â·ÃæÆÆËğ´°¿ÚÉèÖÃÄ£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::NO_MODE);
 
-	//ä¸‰ç»´çª—å£è®¾ç½®æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÄ£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::ADD_CTRL_POINT);
 
-	//æ™¯è§‚åˆ é™¤ç—…å®³æ¨¡å¼
+	//¾°¹ÛÉ¾³ı²¡º¦Ä£Ê½
 	this->m_pStreetViewWidget->m_pStreetView->setMode(hnWorkMode::NO_MODE);
 
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
@@ -1954,27 +2106,27 @@ void hnRoadDataProcess::slot_addFacetsDiseaseMode()
 {
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æœªæ‰“å¼€å·¥ç¨‹"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Î´´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 	if (2 != hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æ¨¡å¼ä¸æ˜¯è®¾è®¡æ¨¡å¼ï¼Œè¯·ä½¿ç”¨æ·»åŠ ç—…å®³"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Ä£Ê½²»ÊÇÉè¼ÆÄ£Ê½£¬ÇëÊ¹ÓÃÌí¼Ó²¡º¦"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
-	// è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºé¢çŠ¶ç—…å®³æ¨¡å¼
+	// Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎªÃæ×´²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 	this->m_2dPixScrollWidget->getPixWidget()->setDesignFacetsMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºç”»ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎª»­²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 	this->m_3dPixScrollWidget->getPixWidget()->setDesignFacetsMode();
 
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//æ™¯è§‚çª—å£è®¾ç½®ä¸ºæ·»åŠ ç—…å®³æ¨¡å¼
+	//¾°¹Û´°¿ÚÉèÖÃÎªÌí¼Ó²¡º¦Ä£Ê½
 	this->m_pStreetViewWidget->m_pStreetView->setAddDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
 	this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
@@ -1984,28 +2136,28 @@ void hnRoadDataProcess::slot_addLineDiseaseMode()
 {
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æœªæ‰“å¼€å·¥ç¨‹"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Î´´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 	if (2 != hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("å½“å‰æ¨¡å¼ä¸æ˜¯è®¾è®¡æ¨¡å¼ï¼Œè¯·ä½¿ç”¨æ·»åŠ ç—…å®³"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("µ±Ç°Ä£Ê½²»ÊÇÉè¼ÆÄ£Ê½£¬ÇëÊ¹ÓÃÌí¼Ó²¡º¦"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	// è·¯é¢ç ´æŸçª—å£è®¾ç½®ä¸ºé¢çŠ¶ç—…å®³æ¨¡å¼
+	// Â·ÃæÆÆËğ´°¿ÚÉèÖÃÎªÃæ×´²¡º¦Ä£Ê½
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 	this->m_2dPixScrollWidget->getPixWidget()->setDesignLineMode();
 
-	//ä¸‰ç»´çª—å£è®¾ç½®ä¸ºç”»ç—…å®³æ¨¡å¼
+	//ÈıÎ¬´°¿ÚÉèÖÃÎª»­²¡º¦Ä£Ê½
 	this->m_3dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
 	this->m_3dPixScrollWidget->getPixWidget()->setDesignLineMode();
 
-	//å–æ¶ˆç”»ç—…å®³
+	//È¡Ïû»­²¡º¦
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//æ™¯è§‚çª—å£è®¾ç½®ä¸ºæ·»åŠ ç—…å®³æ¨¡å¼
+	//¾°¹Û´°¿ÚÉèÖÃÎªÌí¼Ó²¡º¦Ä£Ê½
 	this->m_pStreetViewWidget->m_pStreetView->setAddDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
 	this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
@@ -2013,15 +2165,15 @@ void hnRoadDataProcess::slot_addLineDiseaseMode()
 
 void hnRoadDataProcess::slot_import2dDiseases()
 {
-	//å¼‚å¸¸å¤„ç†
+	//Òì³£´¦Àí
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·æ‰“å¼€å·¥ç¨‹"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Çë´ò¿ª¹¤³Ì"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	//è·å–æ¡†é€‰ç±»å‹
+	//»ñÈ¡¿òÑ¡ÀàĞÍ
 	int frameType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
 
 	PROJECT_TYPE projectType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
@@ -2030,31 +2182,31 @@ void hnRoadDataProcess::slot_import2dDiseases()
 
 	if (2 == frameType)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è®¾è®¡æ¨¡å¼ä¸æ”¯æŒç—…å®³å¯¼å…¥"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Éè¼ÆÄ£Ê½²»Ö§³Ö²¡º¦µ¼Èë"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
 	if (projectType != PROJECT_TYPE::PROJECT_2D_TYPE)
 	{
-		//äºŒä¸‰ç»´å·¥ç¨‹ç”±äºèµ·å§‹å­˜åœ¨é‡Œç¨‹çš„åŸå›  å³ æ‰“æ ‡å’Œè¾ƒæ¡©å¿…é¡»å‡å»èµ·å§‹é‡Œç¨‹ å¯¼è‡´äºŒä¸‰ç»´ä¸­çš„äºŒç»´å·¥ç¨‹çš„è¾ƒæ¡©å’Œæ‰“æ ‡æ— æ³•ä¸€è‡´
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯¥åŠŸèƒ½ä»…æ”¯æŒå¯¼å…¥äºŒç»´å·¥ç¨‹ç—…å®³"), QString::fromLocal8Bit("ç¡®å®š"));
+		//¶şÈıÎ¬¹¤³ÌÓÉÓÚÆğÊ¼´æÔÚÀï³ÌµÄÔ­Òò ¼´ ´ò±êºÍ½Ï×®±ØĞë¼õÈ¥ÆğÊ¼Àï³Ì µ¼ÖÂ¶şÈıÎ¬ÖĞµÄ¶şÎ¬¹¤³ÌµÄ½Ï×®ºÍ´ò±êÎŞ·¨Ò»ÖÂ
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("¸Ã¹¦ÄÜ½öÖ§³Öµ¼Èë¶şÎ¬¹¤³Ì²¡º¦"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
 
 
-	//æç¤ºç”¨æˆ·æ˜¯å¦ç»§ç»­
-	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("äººå·¥æ¨¡å¼") : QString::fromLocal8Bit("è‡ªåŠ¨åŒ–æ¨¡å¼");
-	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("æ‚¨å³å°†è¿›è¡Œ%1äºŒç»´è½¯ä»¶ç—…å®³çš„ç—…å®³å¯¼å…¥ï¼Œ"
-		"æ³¨æ„ï¼é‡å¤ä½¿ç”¨ä¼šå¯¼è‡´æ·»åŠ å¤šä¸ªä¸€æ ·çš„ç—…å®³ï¼›æ­¤è¿‡ç¨‹ä¸å¯é€†ï¼Œè¯·åšå¥½å¤‡ä»½å·¥ä½œï¼Œæ˜¯å¦ç»§ç»­ï¼Ÿ").arg(frameTypeQString),
-		QString::fromLocal8Bit("æ˜¯"), QString::fromLocal8Bit("å¦"));
+	//ÌáÊ¾ÓÃ»§ÊÇ·ñ¼ÌĞø
+	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("ÈË¹¤Ä£Ê½") : QString::fromLocal8Bit("×Ô¶¯»¯Ä£Ê½");
+	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("Äú¼´½«½øĞĞ%1¶şÎ¬Èí¼ş²¡º¦µÄ²¡º¦µ¼Èë£¬"
+		"×¢Òâ£¡ÖØ¸´Ê¹ÓÃ»áµ¼ÖÂÌí¼Ó¶à¸öÒ»ÑùµÄ²¡º¦£»´Ë¹ı³Ì²»¿ÉÄæ£¬Çë×öºÃ±¸·İ¹¤×÷£¬ÊÇ·ñ¼ÌĞø£¿").arg(frameTypeQString),
+		QString::fromLocal8Bit("ÊÇ"), QString::fromLocal8Bit("·ñ"));
 	if (1 == reply)
 	{
 		return;
 	}
 
-	// è®¾ç½®æ ‡é¢˜å’Œé»˜è®¤å€¼
-	QString frameTypeTitle = frameType == 0 ? QString::fromLocal8Bit("å¯¼å…¥äººå·¥æ¨¡å¼ç—…å®³") : QString::fromLocal8Bit("å¯¼å…¥è‡ªåŠ¨åŒ–æ¨¡å¼ç—…å®³");
+	// ÉèÖÃ±êÌâºÍÄ¬ÈÏÖµ
+	QString frameTypeTitle = frameType == 0 ? QString::fromLocal8Bit("µ¼ÈëÈË¹¤Ä£Ê½²¡º¦") : QString::fromLocal8Bit("µ¼Èë×Ô¶¯»¯Ä£Ê½²¡º¦");
 	this->m_mergeLittleFrameDlg->setWindowTitle(frameTypeTitle);
 	if (frameType == 0)
 	{
@@ -2075,47 +2227,47 @@ void hnRoadDataProcess::slot_import2dDiseases()
 	bool isMerge = this->m_mergeLittleFrameDlg->importMergeFlag();
 	bool isMap = this->m_mergeLittleFrameDlg->importMapFlag();
 
-	//å®šä¹‰å¯¼å‡ºå¯¹è±¡
+	//¶¨Òåµ¼³ö¶ÔÏó
 	//hnImportAidcDiseases importDisease(frameType,this);
 	hnImportAidcDiseases importDisease(frameType, isMerge, isMap, this);
 
-	//æ‰§è¡Œå¯¼å‡ºæ“ä½œ
+	//Ö´ĞĞµ¼³ö²Ù×÷
 	importDisease.import2dDisease();
 
-	//æ›´æ–°æ‰€æœ‰è§†å›¾
+	//¸üĞÂËùÓĞÊÓÍ¼
 	this->updateAllWidget();
 }
 
 void hnRoadDataProcess::slot_output2dDiseases()
 {
-	//å¼‚å¸¸å¤„ç†
+	//Òì³£´¦Àí
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·æ‰“å¼€å·¥ç¨‹"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Çë´ò¿ª¹¤³Ì"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
 
 	hnPro::hnProject* curProjet = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	QString standard = HnProjectEnums::roadTypeEnumToQString(curProjet->getBaseStandard());
-	//è·å–æ¡†é€‰ç±»å‹
+	//»ñÈ¡¿òÑ¡ÀàĞÍ
 	int frameType = curProjet->getCurProSetInfo().nDrawType;
 	PROJECT_TYPE projectType = curProjet->getProjectType();
 
 	if (2 == frameType || frameType == 0)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯¥æ¨¡å¼ä¸æ”¯æŒç—…å®³å¯¼å‡º"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("¸ÃÄ£Ê½²»Ö§³Ö²¡º¦µ¼³ö"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
 	if (projectType != PROJECT_TYPE::PROJECT_2D_TYPE && projectType != PROJECT_TYPE::PROJECT_23D_TYPE)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯¥åŠŸèƒ½ä»…æ”¯æŒå¯¼å…¥äºŒç»´å·¥ç¨‹ç—…å®³"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("¸Ã¹¦ÄÜ½öÖ§³Öµ¼Èë¶şÎ¬¹¤³Ì²¡º¦"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	//è·å–æ‰€æœ‰ç—…å®³
+	//»ñÈ¡ËùÓĞ²¡º¦
 
 	QVector<hnRoadDiseaseInfo> allDiseaseInfos;
 
@@ -2132,36 +2284,36 @@ void hnRoadDataProcess::slot_output2dDiseases()
 
 void hnRoadDataProcess::slot_importAidcDiseases()
 {
-	//å¼‚å¸¸å¤„ç†
+	//Òì³£´¦Àí
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·æ‰“å¼€å·¥ç¨‹"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Çë´ò¿ª¹¤³Ì"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	//è·å–æ¡†é€‰ç±»å‹
+	//»ñÈ¡¿òÑ¡ÀàĞÍ
 	int frameType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
 	if (2 == frameType)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è®¾è®¡æ¨¡å¼ä¸æ”¯æŒç—…å®³å¯¼å…¥"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Éè¼ÆÄ£Ê½²»Ö§³Ö²¡º¦µ¼Èë"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
 
 
-	//æç¤ºç”¨æˆ·æ˜¯å¦ç»§ç»­
-	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("äººå·¥æ¨¡å¼") : QString::fromLocal8Bit("è‡ªåŠ¨åŒ–æ¨¡å¼");
-	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("æ‚¨å³å°†è¿›è¡Œ%1ç—…å®³çš„ç—…å®³å¯¼å…¥ï¼Œ"
-		"æ­¤è¿‡ç¨‹ä¸å¯é€†ï¼Œè¯·åšå¥½å¤‡ä»½å·¥ä½œï¼Œæ˜¯å¦ç»§ç»­ï¼Ÿ").arg(frameTypeQString),
-		QString::fromLocal8Bit("æ˜¯"), QString::fromLocal8Bit("å¦"));
+	//ÌáÊ¾ÓÃ»§ÊÇ·ñ¼ÌĞø
+	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("ÈË¹¤Ä£Ê½") : QString::fromLocal8Bit("×Ô¶¯»¯Ä£Ê½");
+	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("Äú¼´½«½øĞĞ%1²¡º¦µÄ²¡º¦µ¼Èë£¬"
+		"´Ë¹ı³Ì²»¿ÉÄæ£¬Çë×öºÃ±¸·İ¹¤×÷£¬ÊÇ·ñ¼ÌĞø£¿").arg(frameTypeQString),
+		QString::fromLocal8Bit("ÊÇ"), QString::fromLocal8Bit("·ñ"));
 	if (1 == reply)
 	{
 		return;
 	}
 
-	// è®¾ç½®æ ‡é¢˜å’Œé»˜è®¤å€¼
-	QString frameTypeTitle = frameType == 0 ? QString::fromLocal8Bit("å¯¼å…¥äººå·¥æ¨¡å¼ç—…å®³") : QString::fromLocal8Bit("å¯¼å…¥è‡ªåŠ¨åŒ–æ¨¡å¼ç—…å®³");
+	// ÉèÖÃ±êÌâºÍÄ¬ÈÏÖµ
+	QString frameTypeTitle = frameType == 0 ? QString::fromLocal8Bit("µ¼ÈëÈË¹¤Ä£Ê½²¡º¦") : QString::fromLocal8Bit("µ¼Èë×Ô¶¯»¯Ä£Ê½²¡º¦");
 	this->m_mergeLittleFrameDlg->setWindowTitle(frameTypeTitle);
 	if (frameType == 0)
 	{
@@ -2182,14 +2334,14 @@ void hnRoadDataProcess::slot_importAidcDiseases()
 	bool isMerge = this->m_mergeLittleFrameDlg->importMergeFlag();
 	bool isMap = this->m_mergeLittleFrameDlg->importMapFlag();
 
-	//å®šä¹‰å¯¼å‡ºå¯¹è±¡
+	//¶¨Òåµ¼³ö¶ÔÏó
 	//hnImportAidcDiseases importDisease(frameType,this);
 	hnImportAidcDiseases importDisease(frameType, isMerge, isMap, this);
 
-	//æ‰§è¡Œå¯¼å‡ºæ“ä½œ
+	//Ö´ĞĞµ¼³ö²Ù×÷
 	importDisease.import();
 
-	//æ›´æ–°æ‰€æœ‰è§†å›¾
+	//¸üĞÂËùÓĞÊÓÍ¼
 	this->updateAllWidget();
 }
 
@@ -2211,11 +2363,11 @@ void hnRoadDataProcess::slot_cutImage()
 {
 	QProcess process;
 
-	//è·å–è£åˆ‡è½¯ä»¶ç»å¯¹è·¯å¾„
+	//»ñÈ¡²ÃÇĞÈí¼ş¾ø¶ÔÂ·¾¶
 	QString cutImageSoftName = QApplication::applicationDirPath() + "/cutSoft/PreProcess.exe";
 	QStringList arguments;
 
-	//å¯åŠ¨ç¨‹åº  éé˜»å¡çš„æ–¹å¼
+	//Æô¶¯³ÌĞò  ·Ç×èÈûµÄ·½Ê½
 	process.startDetached(cutImageSoftName, arguments);
 }
 
@@ -2277,8 +2429,8 @@ bool hnRoadDataProcess::UTCT2GPST(const DATE_TIME_INFO& stTime, int& nGpsWeek, d
 void hnRoadDataProcess::slot_backupsDatabase()
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject()) {
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹!"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì!"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 
 	}
@@ -2290,19 +2442,19 @@ void hnRoadDataProcess::slot_clearAllDiseases()
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹!"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì!"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
-	int ret = QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("æ˜¯å¦åˆ é™¤æ‰€æœ‰ç—…å®³ä¸æ§åˆ¶ç‚¹ï¼Ÿåˆ é™¤åç—…å®³æ— æ³•æ¢å¤ï¼")
-		, QString::fromLocal8Bit("æ˜¯"), QString::fromLocal8Bit("å¦"));
+	int ret = QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÊÇ·ñÉ¾³ıËùÓĞ²¡º¦Óë¿ØÖÆµã£¿É¾³ıºó²¡º¦ÎŞ·¨»Ö¸´£¡")
+		, QString::fromLocal8Bit("ÊÇ"), QString::fromLocal8Bit("·ñ"));
 
 	if (0 == ret)
 	{
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteAllDiseases();
 		hnApp::hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->deleteAllData();
-		//æ›´æ–°æ‰€æœ‰è§†å›¾
+		//¸üĞÂËùÓĞÊÓÍ¼
 		//this->updateAllWidget();
 	}
 	else
@@ -2388,11 +2540,11 @@ void hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged(int scrollBarValue2d)
 
 
 	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue(); 
-	//çœŸå®çš„å¸§å·  ç”¨ä»ä¸‹åˆ°ä¸Šçš„æ»šåŠ¨æ¡å€¼é™¤ä»¥2
+	//ÕæÊµµÄÖ¡ºÅ  ÓÃ´ÓÏÂµ½ÉÏµÄ¹ö¶¯ÌõÖµ³ıÒÔ2
 	//int true2dFrameIdx = (maxValue2d - scrollBarValue2d) / 2;
 	int true2dFrameIdx = (maxValue2d - scrollBarValue2d) ;
 
-	//// æ™¯è§‚çš„å¸§å· äºŒç»´æ˜¯2mä¸€å¼ ï¼Œæ™¯è§‚æ˜¯20ç±³ä¸€å¼ ï¼Œæ‰€ä»¥å°±æ˜¯é™¤ä»¥10
+	//// ¾°¹ÛµÄÖ¡ºÅ ¶şÎ¬ÊÇ2mÒ»ÕÅ£¬¾°¹ÛÊÇ20Ã×Ò»ÕÅ£¬ËùÒÔ¾ÍÊÇ³ıÒÔ10
 	//int streetFrameIdx = true2dFrameIdx / (leftStreetDis / 2);
 	//if (rightStreetDis !=0)
 	//{
@@ -2400,32 +2552,32 @@ void hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged(int scrollBarValue2d)
 	//	int rightIdx = true2dFrameIdx / (rightStreetDis / 2);
 	//	streetFrameIdx = leftIdx <= rightIdx ? leftIdx : rightIdx;
 	//}
-	//è®¾ç½®æ™¯è§‚å¸§å·
+	//ÉèÖÃ¾°¹ÛÖ¡ºÅ
 	this->m_pStreetViewWidget->updateViewImage(true2dFrameIdx);
 }
 
 void hnRoadDataProcess::slot_streetWidgetFrameIdxChanged(int streetFrameIdx)
 {
-	//2då¸§å· äºŒç»´æ˜¯2ç±³ä¸€å¼ ï¼Œæ™¯è§‚æ˜¯20ç±³ä¸€å¼  æ‰€ä»¥è¦ä¹˜10
+	//2dÖ¡ºÅ ¶şÎ¬ÊÇ2Ã×Ò»ÕÅ£¬¾°¹ÛÊÇ20Ã×Ò»ÕÅ ËùÒÔÒª³Ë10
 	int streetDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreetImgDis;
 	int streetRightDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreeRightImgDis;
 	 int showModel =  m_pStreetViewWidget->getStreetShowModel();
 	if (showModel == 0 && streetDis!= streetRightDis)
 	{
-		//å¦‚æœå·¦å³æ™¯è§‚ä¸ä¸€è‡´
+		//Èç¹û×óÓÒ¾°¹Û²»Ò»ÖÂ
 		return;
 	} 
 	  
 	int frame2dIdx = streetFrameIdx / 2;
 
-	//è·å–æœ€å¤§2då¸§å·
+	//»ñÈ¡×î´ó2dÖ¡ºÅ
 	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue();
 
-	//2dçš„æ»šåŠ¨æ¡çš„å€¼ç­‰äº2dæœ€å¤§å¸§å·å‡å»å¸§å· *2(æ»šåŠ¨æ¡æœ¬èº«å°±æ˜¯å¸§å·çš„ä¸¤å€)ï¼Œå› ä¸ºå¸§å·ä¸º0çš„æ—¶å€™ï¼Œæ»šåŠ¨æ¡åœ¨æœ€åº•ä¸‹ï¼Œä¸ºæœ€å¤§å€¼
+	//2dµÄ¹ö¶¯ÌõµÄÖµµÈÓÚ2d×î´óÖ¡ºÅ¼õÈ¥Ö¡ºÅ *2(¹ö¶¯Ìõ±¾Éí¾ÍÊÇÖ¡ºÅµÄÁ½±¶)£¬ÒòÎªÖ¡ºÅÎª0µÄÊ±ºò£¬¹ö¶¯ÌõÔÚ×îµ×ÏÂ£¬Îª×î´óÖµ
 	int value2d = maxValue2d - frame2dIdx * 2;
 
 	QTimer::singleShot(30, [=]() {
-		//è®¾ç½®2dè§†å›¾çš„å¸§å·
+		//ÉèÖÃ2dÊÓÍ¼µÄÖ¡ºÅ
 		this->m_2dPixScrollWidget->setCurrentScrollBarValue(value2d);
 	});
 
@@ -2436,15 +2588,15 @@ void hnRoadDataProcess::slot_onMagnifyActionClicked()
 {
 	bool isOpen = false;
 	QString actionText;
-	if (m_magnifyAction->text().contains(QString::fromLocal8Bit("æ‰“å¼€")))
+	if (m_magnifyAction->text().contains(QString::fromLocal8Bit("´ò¿ª")))
 	{
 		isOpen = true;
-		actionText = QString::fromLocal8Bit("å…³é—­æ”¾å¤§é•œ");
+		actionText = QString::fromLocal8Bit("¹Ø±Õ·Å´ó¾µ");
 	}
 	else
 	{
 		isOpen = false;
-		actionText = QString::fromLocal8Bit("æ‰“å¼€æ”¾å¤§é•œ");
+		actionText = QString::fromLocal8Bit("´ò¿ª·Å´ó¾µ");
 	}
 
 	this->m_2dPixScrollWidget->
@@ -2452,7 +2604,7 @@ void hnRoadDataProcess::slot_onMagnifyActionClicked()
 	m_3dPixScrollWidget->getPixWidget()->setIsMagnification(isOpen);
 	m_magnifyAction->setText(actionText);
 
-	//æ›´æ–°æ‰€æœ‰è§†å›¾
+	//¸üĞÂËùÓĞÊÓÍ¼
 	this->updateAllWidget();
 }
 
@@ -2460,8 +2612,8 @@ void hnRoadDataProcess::slot_onMagnifySettingActionClicked()
 {
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"),
-			QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹"), QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"),
+			QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì"), QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
@@ -2531,7 +2683,7 @@ void hnRoadDataProcess::slot_exportDXf()
 
 void hnRoadDataProcess::slot_exportDiseaseDXf()
 {
-	//è·å–æ‰€æœ‰ç—…å®³
+	//»ñÈ¡ËùÓĞ²¡º¦
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
@@ -2541,18 +2693,18 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 		type != 2
 		)
 	{
-		QMessageBox::critical(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("ä»…æ”¯æŒå¯¼å‡ºäººå·¥æ¨¡å¼ç—…å®³ä¸è®¾è®¡æ¨¡å¼ç—…å®³"));
+		QMessageBox::critical(this, QStringLiteral("¾¯¸æ"), QStringLiteral("½öÖ§³Öµ¼³öÈË¹¤Ä£Ê½²¡º¦ÓëÉè¼ÆÄ£Ê½²¡º¦"));
 		return;
 	}
 	if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_TYPE::PROJECT_23D_TYPE)
 	{
-		QMessageBox::critical(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("ä»…æ”¯æŒäºŒä¸‰ç»´å·¥ç¨‹"));
+		QMessageBox::critical(this, QStringLiteral("¾¯¸æ"), QStringLiteral("½öÖ§³Ö¶şÈıÎ¬¹¤³Ì"));
 		return;
 	}
 
 	QVector<hnRoadDiseaseInfo> allDiseaseInfos;
 
-	//åŠ è½½ç—…å®³
+	//¼ÓÔØ²¡º¦
 
 	hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	QVector<hnMile> miles = project->getCurrentMileVector();
@@ -2560,7 +2712,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 	QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
 	if (type == 2)
 	{ 
-		//è®¾è®¡æ¨¡å¼ç—…å®³
+		//Éè¼ÆÄ£Ê½²¡º¦
 	allDiseaseInfos=	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDesignDiseases();
 
 	}
@@ -2570,32 +2722,32 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 	}
 
 
-	//å¼¹å‡ºç”¨æˆ·é€‰æ‹©çª—å£
-	//å¼¹å‡ºå¯¹è¯æ¡† è®©ç”¨æˆ·è®¾ç½®è¾“å‡ºä½ç½®
-	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("è¯·é€‰æ‹©è¾“å‡ºè·¯å¾„"));
+	//µ¯³öÓÃ»§Ñ¡Ôñ´°¿Ú
+	//µ¯³ö¶Ô»°¿ò ÈÃÓÃ»§ÉèÖÃÊä³öÎ»ÖÃ
+	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("ÇëÑ¡ÔñÊä³öÂ·¾¶"));
 	if (projectPath.isEmpty())
 	{
 		return;
 	}
-	QString outName = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProName() + QStringLiteral("ç—…å®³.dxf");
+	QString outName = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProName() + QStringLiteral("²¡º¦.dxf");
 	QString outFilePath = projectPath + "/" + outName;
 
 	std::vector<	hnCommon::hn3dDiseaseDef<hnCommon::hn3dPointD>*> disVector;
 	std::vector<	hnCommon::hn3dDiseaseLineDef<hnCommon::hn3dPointD>*> disLineVector;
-	//è®¾è®¡æ¨¡å¼ç—…å®³å¯¼å‡º
+	//Éè¼ÆÄ£Ê½²¡º¦µ¼³ö
 	if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType == 2)
 	{
 		for (auto diseaseInfo : allDiseaseInfos)
 		{
 
-			//å¤„ç†ç—…å®³ è·å¾—ç—…å®³æ·±åº¦ 
+			//´¦Àí²¡º¦ »ñµÃ²¡º¦Éî¶È 
 			if (diseaseInfo.vec3dRect.size() > 0)
 			{
 				bool isLine = diseaseInfo.nDrawType == 3 ? true : false;
 
 				if (diseaseInfo.vec3dRect.size() <= 0)
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·ç¡®ä¿å·¥ç¨‹å…·æœ‰ä¸‰ç»´å·¥ç¨‹æ•°æ®!"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÈ·±£¹¤³Ì¾ßÓĞÈıÎ¬¹¤³ÌÊı¾İ!"));
 					return;
 				}
 				auto rect3d = diseaseInfo.vec3dRect.at(0);
@@ -2603,7 +2755,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d))
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·ç¡®ä¿å·¥ç¨‹å…·æœ‰ä¸‰ç»´å·¥ç¨‹æ•°æ®!"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÈ·±£¹¤³Ì¾ßÓĞÈıÎ¬¹¤³ÌÊı¾İ!"));
 					return;
 				}
 
@@ -2641,12 +2793,12 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 		QByteArray temp = outFilePath.toLocal8Bit();
 		if (OutputDiseaseLine3dDxf(temp.constData(), disLineVector, type))
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å®Œæˆ"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÍê³É"));
 
 		}
 		else
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å¤±è´¥,è¯·æ£€æŸ¥æ˜¯å¦ç”Ÿæˆ!"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÊ§°Ü,Çë¼ì²éÊÇ·ñÉú³É!"));
 
 		}
 
@@ -2655,7 +2807,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 	{
 		for (auto diseaseInfo : allDiseaseInfos)
 		{
-			//å¤„ç†ç—…å®³ è·å¾—ç—…å®³æ·±åº¦
+			//´¦Àí²¡º¦ »ñµÃ²¡º¦Éî¶È
 
 			if (diseaseInfo.vec3dRect.size() > 0)
 			{
@@ -2664,7 +2816,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d00))
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·ç¡®ä¿å·¥ç¨‹å…·æœ‰ä¸‰ç»´å·¥ç¨‹æ•°æ®!"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÈ·±£¹¤³Ì¾ßÓĞÈıÎ¬¹¤³ÌÊı¾İ!"));
 					return;
 				}
 				else
@@ -2680,16 +2832,16 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 		QByteArray temp1 = outFilePath.toLocal8Bit();
 		if (OutputDisease3dDxf(temp1.constData(), disVector, type))
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å®Œæˆ"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÍê³É"));
 
 		}
 		else
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å¤±è´¥,è¯·æ£€æŸ¥æ˜¯å¦ç”Ÿæˆ!"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÊ§°Ü,Çë¼ì²éÊÇ·ñÉú³É!"));
 
 		}
 	}
-	//ææ„ 
+	//Îö¹¹ 
 	for (hnCommon::hn3dDiseaseDef<hnCommon::hn3dPointD>* dis : disVector)
 	{
 		delete dis;
@@ -2704,7 +2856,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 {
-	//è·å–æ‰€æœ‰ç—…å®³
+	//»ñÈ¡ËùÓĞ²¡º¦
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
@@ -2719,18 +2871,18 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		if (type != 0
 			)
 		{
-			QMessageBox::critical(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("ä»…æ”¯æŒå¯¼å‡ºäººå·¥æ¨¡å¼ç—…å®³"));
+			QMessageBox::critical(this, QStringLiteral("¾¯¸æ"), QStringLiteral("½öÖ§³Öµ¼³öÈË¹¤Ä£Ê½²¡º¦"));
 			return;
 		}
 		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_TYPE::PROJECT_23D_TYPE
 			&& hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_TYPE::PROJECT_2D_TYPE)
 		{
-			QMessageBox::critical(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("ä»…æ”¯æŒäºŒä¸‰ç»´åŠäºŒç»´å·¥ç¨‹"));
+			QMessageBox::critical(this, QStringLiteral("¾¯¸æ"), QStringLiteral("½öÖ§³Ö¶şÈıÎ¬¼°¶şÎ¬¹¤³Ì"));
 			return;
 		}
 
 		QVector<hnRoadDiseaseInfo> allDiseaseInfos;
-		//åŠ è½½ç—…å®³
+		//¼ÓÔØ²¡º¦
 
 		hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 
@@ -2738,7 +2890,7 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		QString  highGpsFilePath = project->get2DProject()->getBasePath() + "\\HighGps2Mile.txt";
 		if (!QFile::exists(highGpsFilePath))
 		{ 
-			QMessageBox::critical(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("éé«˜ç²¾åº¦æ¨¡å—æˆ–æœªè¿›è¡Œgpsæ¡©å·åŒ¹é…ï¼Œæ— æ³•å¯¼å‡ºé«˜ç²¾åº¦ç—…å®³dxf!"));
+			QMessageBox::critical(this, QStringLiteral("¾¯¸æ"), QStringLiteral("·Ç¸ß¾«¶ÈÄ£¿é»òÎ´½øĞĞgps×®ºÅÆ¥Åä£¬ÎŞ·¨µ¼³ö¸ß¾«¶È²¡º¦dxf!"));
 			return;
 		}
 		else
@@ -2758,17 +2910,17 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		}
 		else
 		{
-			QMessageBox::warning(nullptr, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯¥åŠŸèƒ½ä¸æ”¯æŒçº¯ä¸‰ç»´å·¥ç¨‹ï¼"));
+			QMessageBox::warning(nullptr, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("¸Ã¹¦ÄÜ²»Ö§³Ö´¿ÈıÎ¬¹¤³Ì£¡"));
 			return;
 		}
 
-		//å¼¹å‡ºå¯¹è¯æ¡† è®©ç”¨æˆ·è®¾ç½®è¾“å‡ºä½ç½®
-		QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("è¯·é€‰æ‹©è¾“å‡ºè·¯å¾„"));
+		//µ¯³ö¶Ô»°¿ò ÈÃÓÃ»§ÉèÖÃÊä³öÎ»ÖÃ
+		QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("ÇëÑ¡ÔñÊä³öÂ·¾¶"));
 		if (projectPath.isEmpty())
 		{
 			return;
 		}
-		QString outName = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProName() + QStringLiteral("é«˜ç²¾åº¦ç—…å®³.dxf");
+		QString outName = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProName() + QStringLiteral("¸ß¾«¶È²¡º¦.dxf");
 		QString outFilePath = projectPath + "/" + outName;
 		std::unique_ptr<HighAccuracyPositioning>m_highAccuracy =
 			std::make_unique<  HighAccuracyPositioning>(hnApp::hnDataManager::getDataManager()->getCurrentProject());
@@ -2777,7 +2929,7 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		plane.initialParam(&config);
 		for (auto diseaseInfo : allDiseaseInfos)
 		{
-			//å¤„ç†ç—…å®³ è·å¾—ç—…å®³æ·±åº¦
+			//´¦Àí²¡º¦ »ñµÃ²¡º¦Éî¶È
 
 			if (diseaseInfo.vec2dRect.size() > 0)
 			{
@@ -2825,16 +2977,16 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		QByteArray temp1 = outFilePath.toLocal8Bit();
 		if (OutputDisease2dGpsDxf(temp1.constData(), disVector, type))
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å®Œæˆ"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÍê³É"));
 
 		}
 		else
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¤„ç†å¤±è´¥,è¯·æ£€æŸ¥æ˜¯å¦ç”Ÿæˆ!"));
+			QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("´¦ÀíÊ§°Ü,Çë¼ì²éÊÇ·ñÉú³É!"));
 
 		}
 
-		//ææ„ 
+		//Îö¹¹ 
 		for (hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>* dis : disVector)
 		{
 			delete dis;
@@ -2848,19 +3000,19 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 
 void hnRoadDataProcess::slot_exportGjDatas()
 {
-	//å¯¼å‡ºå›½æ£€è½¬æ¢ä¸­é—´æ•°æ® 
+	//µ¼³ö¹ú¼ì×ª»»ÖĞ¼äÊı¾İ 
 	if (!m_projects->isOpenProject())
 	{
 		return;
 	}
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isHasProject())
 	{
-		QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("å½“å‰æ²¡æœ‰å¯ç”¨çš„å·¥ç¨‹"),
-			QStringLiteral("ç¡®å®š"));
+		QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("µ±Ç°Ã»ÓĞ¿ÉÓÃµÄ¹¤³Ì"),
+			QStringLiteral("È·¶¨"));
 		return;
 	}
-	auto reply = QMessageBox::question(this, QStringLiteral("æç¤º"), QStringLiteral("å‡ºæ€»è¡¨æ—¶é—´è¾ƒé•¿,æ˜¯å¦ç»§ç»­"), QMessageBox::Yes | QMessageBox::No);
+	auto reply = QMessageBox::question(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("³ö×Ü±íÊ±¼ä½Ï³¤,ÊÇ·ñ¼ÌĞø"), QMessageBox::Yes | QMessageBox::No);
 
 	if (reply != QMessageBox::Yes)
 		return;
@@ -2891,17 +3043,17 @@ void hnRoadDataProcess::slot_exportGjDatas()
 
 	QString segment = "10,100,1000";
 	int excelIndexs[] = { 0,1,2,3,4,5,7,8,9,10,11,12 };
-	//è®¡ç®—æ€»ä»»åŠ¡æ•°é‡
+	//¼ÆËã×ÜÈÎÎñÊıÁ¿
 	int totalTasks = 3 * 11 * allPorject.size();
 	int currentTask = 0;
 
-	//åˆ›å»ºè¿›åº¦å¯¹è¯æ¡†
-	QProgressDialog progress(QStringLiteral("å¤„ç†å·¥ç¨‹æ•°æ®..."), QStringLiteral("å–æ¶ˆ"), 0, totalTasks);
-	progress.setWindowTitle(QStringLiteral("å¯¼å‡ºæ‰€æœ‰æ•°æ®"));
-	progress.setWindowModality(Qt::WindowModal);  //æ¨¡æ€
-	progress.setMinimumDuration(0);   //ç«‹å³æ˜¾ç¤º
+	//´´½¨½ø¶È¶Ô»°¿ò
+	QProgressDialog progress(QStringLiteral("´¦Àí¹¤³ÌÊı¾İ..."), QStringLiteral("È¡Ïû"), 0, totalTasks);
+	progress.setWindowTitle(QStringLiteral("µ¼³öËùÓĞÊı¾İ"));
+	progress.setWindowModality(Qt::WindowModal);  //Ä£Ì¬
+	progress.setMinimumDuration(0);   //Á¢¼´ÏÔÊ¾
 
-	QString selectModelTxt = QStringLiteral("å•é¡¹æŒ‡æ ‡å‡ºè¡¨");
+	QString selectModelTxt = QStringLiteral("µ¥ÏîÖ¸±ê³ö±í");
 	m_xrSetting->outExcelFormatDmi = false;
 	m_xrSetting->outRoadUnitMark = true;
 	m_xrSetting->diseaseExcelOutPicture = false;
@@ -2917,7 +3069,7 @@ void hnRoadDataProcess::slot_exportGjDatas()
 			QApplication::processEvents();
 			continue;
 		}
-		excelDir = curProject->get2DProPath() + QStringLiteral("/ç»“æœè¡¨æ ¼/") + defaultStanardStr + "/" + defaultDrawTypeStr + "/";
+		excelDir = curProject->get2DProPath() + QStringLiteral("/½á¹û±í¸ñ/") + defaultStanardStr + "/" + defaultDrawTypeStr + "/";
 		QDir outDir(excelDir);
 		if (!outDir.exists())
 		{
@@ -3031,24 +3183,24 @@ void hnRoadDataProcess::slot_exportGjDatas()
 	}
 	QApplication::restoreOverrideCursor();
 
-	QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¯¼å‡ºå®Œæ¯•"));
+	QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("µ¼³öÍê±Ï"));
 }
 
 void hnRoadDataProcess::slot_importCtrlPoints()
 {
 	if (false == hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì"));
 		return;
 	}
 
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì"));
 		return;
 	}
 
-	// æç¤ºç”¨æˆ·é€‰æ‹©æ–‡ä»¶
+	// ÌáÊ¾ÓÃ»§Ñ¡ÔñÎÄ¼ş
 	QString fileName = QFileDialog::getOpenFileName(this);
 	if (true == fileName.isEmpty())
 	{
@@ -3067,19 +3219,19 @@ void hnRoadDataProcess::slot_importCtrlPoints()
 		}
 		const int id = hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->getMaxID();
 		ctrlPoint.nID = id;
-		QString name = QString::fromLocal8Bit("æ§åˆ¶ç‚¹_%1").arg(id);
+		QString name = QString::fromLocal8Bit("¿ØÖÆµã_%1").arg(id);
 		strcpy(ctrlPoint.strKzdName, name.toLocal8Bit().data());
 		const double trueMile = list.at(1).toDouble();
 		const double encoderMile = m_3dPixScrollWidget->getPixWidget()->trueMileToEncoderMile(trueMile);
 		ctrlPoint.dMileage = encoderMile;
 		ctrlPoint.dGpsTimer = list.at(2).toDouble();
 
-		// è·å–å›¾åƒåç§°
+		// »ñÈ¡Í¼ÏñÃû³Æ
 		QString pixName = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImageByMile(encoderMile);
 		strcpy(ctrlPoint.strImageName, pixName.toLocal8Bit().data());
-		// è·å–xåæ ‡
+		// »ñÈ¡x×ø±ê
 		ctrlPoint.nLocX = list.at(6).toInt();
-		// è·å–yåæ ‡
+		// »ñÈ¡y×ø±ê
 		const double roadHeight = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImageHeightScale()*
 			hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImagePixelHeight();
 
@@ -3096,7 +3248,7 @@ void hnRoadDataProcess::slot_importCtrlPoints()
 
 	}
 
-	QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¯¼å…¥å®Œæˆ"));
+	QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("µ¼ÈëÍê³É"));
 
 }
 
@@ -3104,23 +3256,23 @@ void hnRoadDataProcess::slot_exportCtrlPoints()
 {
 	if (false == hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì"));
 		return;
 	}
 
 	if (nullptr == hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€ä¸‰ç»´å·¥ç¨‹"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ªÈıÎ¬¹¤³Ì"));
 		return;
 	}
 
-	//æç¤ºç”¨æˆ·é€‰æ‹©æ–‡ä»¶å¤¹
+	//ÌáÊ¾ÓÃ»§Ñ¡ÔñÎÄ¼ş¼Ğ
 	QString filePath = QFileDialog::getExistingDirectory(this);
 	if (true == filePath.isEmpty())
 	{
 		return;
 	}
-	QString fileName = filePath + QString::fromLocal8Bit("/äºŒä¸‰ç»´è‡ªç”¨æ§åˆ¶ç‚¹ä¿¡æ¯.txt");
+	QString fileName = filePath + QString::fromLocal8Bit("/¶şÈıÎ¬×ÔÓÃ¿ØÖÆµãĞÅÏ¢.txt");
 
 	QFile file(fileName);
 
@@ -3130,7 +3282,7 @@ void hnRoadDataProcess::slot_exportCtrlPoints()
 	}
 	QTextStream stream(&file);
 
-	// è·å–æ‰€æœ‰æ§åˆ¶ç‚¹
+	// »ñÈ¡ËùÓĞ¿ØÖÆµã
 	std::vector<hnKZDDataInfo> ctrlPoints;
 	hnDataManager::getDataManager()->getCurrentProject()->getDB()->getCtrlPointTable()->readData(ctrlPoints);
 
@@ -3148,7 +3300,7 @@ void hnRoadDataProcess::slot_exportCtrlPoints()
 		stream << lineData << endl;
 	}
 
-	QString outFileName = filePath + QString::fromLocal8Bit("/æ§åˆ¶ç‚¹ä¿¡æ¯.txt");
+	QString outFileName = filePath + QString::fromLocal8Bit("/¿ØÖÆµãĞÅÏ¢.txt");
 
 	QFile outFile(outFileName);
 
@@ -3171,44 +3323,44 @@ void hnRoadDataProcess::slot_exportCtrlPoints()
 	}
 	file.close();
 	outFile.close();
-	QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("å¯¼å‡ºå®Œæˆ"));
+	QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("µ¼³öÍê³É"));
 }
 
 void hnRoadDataProcess::slot_mergeAutoDisease()
 {
-	//	//å¼‚å¸¸å¤„ç†
+	//	//Òì³£´¦Àí
 	//	if (!hnDataManager::getDataManager()->isOpenProject())
 	//	{
-	//		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·æ‰“å¼€å·¥ç¨‹"),
-	//			QString::fromLocal8Bit("ç¡®å®š"));
+	//		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Çë´ò¿ª¹¤³Ì"),
+	//			QString::fromLocal8Bit("È·¶¨"));
 	//		return;
 	//	}
-	//	//è·å–æ¡†é€‰ç±»å‹
+	//	//»ñÈ¡¿òÑ¡ÀàĞÍ
 	//	int frameType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
 	//	if (2 == frameType)
 	//	{
-	//		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è®¾è®¡æ¨¡å¼ä¸æ”¯æŒç—…å®³æ‹¼æ¥"), QString::fromLocal8Bit("ç¡®å®š"));
+	//		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Éè¼ÆÄ£Ê½²»Ö§³Ö²¡º¦Æ´½Ó"), QString::fromLocal8Bit("È·¶¨"));
 	//		return;
 	//	}
 	//
-	//	//æç¤ºç”¨æˆ·æ˜¯å¦ç»§ç»­
-	//	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("äººå·¥æ¨¡å¼") : QString::fromLocal8Bit("è‡ªåŠ¨åŒ–æ¨¡å¼");
-	//	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("æ‚¨å³å°†è¿›è¡Œ%1ç—…å®³çš„ç—…å®³æ‹¼æ¥ï¼Œ"
-	//		"æ­¤è¿‡ç¨‹ä¸å¯é€†ï¼Œè¯·åšå¥½å¤‡ä»½å·¥ä½œï¼Œæ˜¯å¦ç»§ç»­ï¼Ÿ").arg(frameTypeQString),
-	//		QString::fromLocal8Bit("æ˜¯"), QString::fromLocal8Bit("å¦"));
+	//	//ÌáÊ¾ÓÃ»§ÊÇ·ñ¼ÌĞø
+	//	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("ÈË¹¤Ä£Ê½") : QString::fromLocal8Bit("×Ô¶¯»¯Ä£Ê½");
+	//	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("Äú¼´½«½øĞĞ%1²¡º¦µÄ²¡º¦Æ´½Ó£¬"
+	//		"´Ë¹ı³Ì²»¿ÉÄæ£¬Çë×öºÃ±¸·İ¹¤×÷£¬ÊÇ·ñ¼ÌĞø£¿").arg(frameTypeQString),
+	//		QString::fromLocal8Bit("ÊÇ"), QString::fromLocal8Bit("·ñ"));
 	//	if (1 == reply)
 	//	{
 	//		return;
 	//	} 
-	//	//å®šä¹‰å¯¼å‡ºå¯¹è±¡
+	//	//¶¨Òåµ¼³ö¶ÔÏó
 	//	hnImportAidcDiseases importDisease(frameType, this);
 	//
 	//
-	//	//å°†è‡ªåŠ¨è¯†åˆ«çš„ç—…å®³è½¬æ¢æˆæœ¬ç¨‹åºçš„ç—…å®³ç±»å‹
+	//	//½«×Ô¶¯Ê¶±ğµÄ²¡º¦×ª»»³É±¾³ÌĞòµÄ²¡º¦ÀàĞÍ
 	//	QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases; 
 	//
 	//	QVector<hnRoadDiseaseInfo> allDiseaseInfos;
-	//	// äºŒä¸‰ç»´ç—…å®³
+	//	// ¶şÈıÎ¬²¡º¦
 	//	hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	//	QVector<hnMile> miles = project->getCurrentMileVector();
 	//	hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurDB()->getDiseaseTable()->readRoadDiseaseData(miles, allDiseaseInfos, project->getCurProSetInfo().nLineType, project->getRoadSpace());
@@ -3235,18 +3387,18 @@ void hnRoadDataProcess::slot_mergeAutoDisease()
 	//	}
 	//
 	//#if 1
-	//	//åˆå¹¶çºµå‘è£‚ç¼ã€ä¿®è¡¥ç—…å®³ã€‚
+	//	//ºÏ²¢×İÏòÁÑ·ì¡¢ĞŞ²¹²¡º¦¡£
 	//	const double roadWidth = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRoadLength;
 	//	const int pixHeight = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().picPixelY;
 	//	bool isVMirror = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->getIsVMirrored();
 	//	mergeAidcDiseases merge(roadWidth, pixHeight, isVMirror, this);
 	//	diseases = merge.mergeDiseases(diseases);
 	//#endif 
-	//	//æ‰¹é‡å†™å…¥æ•°æ®åº“
+	//	//ÅúÁ¿Ğ´ÈëÊı¾İ¿â
 	//	importDisease.writeDb(diseases);
 	//
-	//	//æç¤ºç”¨æˆ·å®Œæˆ
-	//	QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("æ‹¼æ¥ç—…å®³å®Œæˆ"));
+	//	//ÌáÊ¾ÓÃ»§Íê³É
+	//	QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("Æ´½Ó²¡º¦Íê³É"));
 }
 
 void hnRoadDataProcess::updateAllWidget()
@@ -3266,13 +3418,13 @@ void hnRoadDataProcess::updatePixWidget()
 
 void hnRoadDataProcess::updateTreeWidget()
 {
-	//æ¸…ç©ºæ ‘çŠ¶è§†å›¾
+	//Çå¿ÕÊ÷×´ÊÓÍ¼
 	this->m_projectListTreeWidget->clear();
 
 
 	hnPro::hnProjectManager* projects = m_projects->getProjectManager();
 
-	//æ·»åŠ èŠ‚ç‚¹åˆ°æ ‘ä¸Š
+	//Ìí¼Ó½Úµãµ½Ê÷ÉÏ
 	QMap<QString, QVector<hnProjectDataInfo>> projectDatas;
 	for each (hnProjectDataInfo data in m_projectDataInfos)
 	{
@@ -3298,7 +3450,7 @@ void hnRoadDataProcess::updateTreeWidget()
 		projectNameItem->setText(0, key);
 		projectNameItem->setData(1, Qt::UserRole, 1);
 
-		//åˆ¤æ–­æ˜¯ä¸æ˜¯å½“å‰å·¥ç¨‹ï¼Œå¦‚æœæ˜¯å½“å‰å·¥ç¨‹  å°±åŠ ç²—
+		//ÅĞ¶ÏÊÇ²»ÊÇµ±Ç°¹¤³Ì£¬Èç¹ûÊÇµ±Ç°¹¤³Ì  ¾Í¼Ó´Ö
 		QString currentProjectName;
 		if (hnApp::hnDataManager::getDataManager()->isOpenProject())
 		{
@@ -3311,11 +3463,11 @@ void hnRoadDataProcess::updateTreeWidget()
 			}
 		}
 		QTreeWidgetItem  * projectTitle2dItem = new QTreeWidgetItem(projectNameItem);
-		projectTitle2dItem->setText(0, QStringLiteral("äºŒç»´å·¥ç¨‹"));
+		projectTitle2dItem->setText(0, QStringLiteral("¶şÎ¬¹¤³Ì"));
 		projectTitle2dItem->setData(1, Qt::UserRole, 1);
 
 		QTreeWidgetItem  * projectTitle3dItem = new QTreeWidgetItem(projectNameItem);
-		projectTitle3dItem->setText(0, QStringLiteral("ä¸‰ç»´å·¥ç¨‹"));
+		projectTitle3dItem->setText(0, QStringLiteral("ÈıÎ¬¹¤³Ì"));
 		projectTitle3dItem->setData(1, Qt::UserRole, 1);
 
 		for (int i = 0; i < vec.count(); ++i)
@@ -3325,10 +3477,10 @@ void hnRoadDataProcess::updateTreeWidget()
 
 			if (projectInfo.proSetInfo.nWorkType == PROJECT_TYPE::PROJECT_2D_TYPE)
 			{
-				//æ·»åŠ äºŒç»´å·¥ç¨‹
+				//Ìí¼Ó¶şÎ¬¹¤³Ì
 				QTreeWidgetItem  * item2d = new QTreeWidgetItem(projectTitle2dItem);
 
-				//å¦‚æœæ˜¯å½“å‰äºŒç»´å·¥ç¨‹,å°±åŠ ç²—å¤„ç†
+				//Èç¹ûÊÇµ±Ç°¶şÎ¬¹¤³Ì,¾Í¼Ó´Ö´¦Àí
 				QString projectName2d(QString::fromLocal8Bit(projectInfo.str2DProName));
 				if (hnApp::hnDataManager::getDataManager()->isOpenProject())
 				{
@@ -3345,10 +3497,10 @@ void hnRoadDataProcess::updateTreeWidget()
 			}
 			else if (projectInfo.proSetInfo.nWorkType == PROJECT_TYPE::PROJECT_23D_TYPE)
 			{
-				//æ·»åŠ äºŒç»´å·¥ç¨‹
+				//Ìí¼Ó¶şÎ¬¹¤³Ì
 				QTreeWidgetItem  * item2d = new QTreeWidgetItem(projectTitle2dItem);
 
-				//å¦‚æœæ˜¯å½“å‰äºŒç»´å·¥ç¨‹,å°±åŠ ç²—å¤„ç†
+				//Èç¹ûÊÇµ±Ç°¶şÎ¬¹¤³Ì,¾Í¼Ó´Ö´¦Àí
 				QString projectName2d(QString::fromLocal8Bit(projectInfo.str2DProName));
 				if (hnApp::hnDataManager::getDataManager()->isOpenProject())
 				{
@@ -3363,10 +3515,10 @@ void hnRoadDataProcess::updateTreeWidget()
 				item2d->setText(0, projectName2d);
 				item2d->setData(1, Qt::UserRole, 0);
 
-				//æ·»åŠ ä¸‰ç»´å·¥ç¨‹  
+				//Ìí¼ÓÈıÎ¬¹¤³Ì  
 				QTreeWidgetItem  * item3d = new QTreeWidgetItem(projectTitle3dItem);
 
-				//å¦‚æœæ˜¯å½“å‰ä¸‰ç»´å·¥ç¨‹ï¼Œå°±åŠ ç²—å¤„ç†
+				//Èç¹ûÊÇµ±Ç°ÈıÎ¬¹¤³Ì£¬¾Í¼Ó´Ö´¦Àí
 				QString projectName3d(QString::fromLocal8Bit(projectInfo.str3DProName));
 				if (hnApp::hnDataManager::getDataManager()->isOpenProject())
 				{
@@ -3384,11 +3536,11 @@ void hnRoadDataProcess::updateTreeWidget()
 			}
 			else
 			{
-				//å•ç‹¬ä¸‰ç»´å·¥ç¨‹
-				//æ·»åŠ ä¸‰ç»´å·¥ç¨‹  
+				//µ¥¶ÀÈıÎ¬¹¤³Ì
+				//Ìí¼ÓÈıÎ¬¹¤³Ì  
 				QTreeWidgetItem  * item3d = new QTreeWidgetItem(projectTitle3dItem);
 
-				//å¦‚æœæ˜¯å½“å‰ä¸‰ç»´å·¥ç¨‹ï¼Œå°±åŠ ç²—å¤„ç†
+				//Èç¹ûÊÇµ±Ç°ÈıÎ¬¹¤³Ì£¬¾Í¼Ó´Ö´¦Àí
 				QString projectName3d(QString::fromLocal8Bit(projectInfo.str3DProName));
 				if (hnApp::hnDataManager::getDataManager()->isOpenProject())
 				{
@@ -3407,7 +3559,7 @@ void hnRoadDataProcess::updateTreeWidget()
 
 
 		}
-		//å¦‚æœæ˜¯å½“å‰å·¥ç¨‹ï¼Œå±•å¼€æ‰€æœ‰èŠ‚ç‚¹
+		//Èç¹ûÊÇµ±Ç°¹¤³Ì£¬Õ¹¿ªËùÓĞ½Úµã
 		const int maxProjectSize = 5;
 		if (currentProjectName == key || vec.size() < maxProjectSize)
 		{
@@ -3418,51 +3570,96 @@ void hnRoadDataProcess::updateTreeWidget()
 	}
 }
 
-void hnRoadDataProcess::allWidgetLoadPictures()
+void hnRoadDataProcess::allWidgetLoadPictures(BusyLoadingGuard* loading)
 {
-	// åŠ è½½å½“å‰å·¥ç¨‹æ•°æ®
+	QElapsedTimer totalTimer;
+	QElapsedTimer stepTimer;
+	totalTimer.start();
+	qDebug().noquote() << "[HN_PERF][AllWidgetLoadStart]";
+	if (loading)
+	{
+		loading->setProgressRange(0, 100);
+		loading->setProgressValue(35);
+		loading->setMessage(QStringLiteral("ÕıÔÚ×¼±¸ÊÓÍ¼Í¼Æ¬..."));
+	}
+
+	auto updateLoading = [loading](int value, const QString& message)
+	{
+		if (!loading)
+		{
+			return;
+		}
+		loading->setProgressValue(value);
+		loading->setMessage(message);
+	};
+
+	// ¼ÓÔØµ±Ç°¹¤³ÌÊı¾İ
 	hnPro::hnProject* curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	if (curProject)
 	{
+		qDebug().noquote() << "[HN_PERF][AllWidgetLoadProject]"
+			<< "projectType=" << static_cast<int>(curProject->getProjectType())
+			<< "projectName=" << curProject->getProjectName();
 		if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE)
 		{
-			// åŠ è½½å½“å‰å·¥ç¨‹è·¯é¢å½±åƒ
+			updateLoading(40, QStringLiteral("ÕıÔÚ¼ÓÔØ¶şÎ¬Â·ÃæÓ°Ïñ..."));
+			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
+			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
+			updateLoading(55, QStringLiteral("¶şÎ¬Â·ÃæÓ°Ïñ¼ÓÔØÍê³É"));
 
-			// åŠ è½½æ™¯è§‚å½±åƒ
 			if (m_pStreetViewWidget)
 			{
+				updateLoading(60, QStringLiteral("ÕıÔÚ¼ÓÔØ¾°¹ÛÓ°Ïñ..."));
+				stepTimer.restart();
 				m_pStreetViewWidget->initView();
+				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
+				updateLoading(68, QStringLiteral("¾°¹ÛÓ°Ïñ¼ÓÔØÍê³É"));
 			}
-			// åŠ è½½ä¸‰ç»´å½±åƒ
 			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 			{
+				updateLoading(72, QStringLiteral("ÕıÔÚ¼ÓÔØÈıÎ¬Ó°Ïñ..."));
+				stepTimer.restart();
 				m_3dPixScrollWidget->load3dImage();
+				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
+				updateLoading(78, QStringLiteral("ÈıÎ¬Ó°Ïñ¼ÓÔØÍê³É"));
 			}
 		}
 		else if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
 		{
-			// åŠ è½½å½“å‰å·¥ç¨‹è·¯é¢å½±åƒ
+			updateLoading(45, QStringLiteral("ÕıÔÚ¼ÓÔØ¶şÎ¬Â·ÃæÓ°Ïñ..."));
+			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
+			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
+			updateLoading(65, QStringLiteral("¶şÎ¬Â·ÃæÓ°Ïñ¼ÓÔØÍê³É"));
 
-			// åŠ è½½æ™¯è§‚å½±åƒ
 			if (m_pStreetViewWidget)
 			{
+				updateLoading(72, QStringLiteral("ÕıÔÚ¼ÓÔØ¾°¹ÛÓ°Ïñ..."));
+				stepTimer.restart();
 				m_pStreetViewWidget->initView();
+				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
+				updateLoading(78, QStringLiteral("¾°¹ÛÓ°Ïñ¼ÓÔØÍê³É"));
 			}
 		}
 		else
 		{
-			// åŠ è½½ä¸‰ç»´å½±åƒ
 			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 			{
+				updateLoading(55, QStringLiteral("ÕıÔÚ¼ÓÔØÈıÎ¬Ó°Ïñ..."));
+				stepTimer.start();
 				m_3dPixScrollWidget->load3dImage();
+				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
+				updateLoading(78, QStringLiteral("ÈıÎ¬Ó°Ïñ¼ÓÔØÍê³É"));
 			}
 		}
-
 	}
+	if (loading)
+	{
+		loading->setProgressValue(80);
+	}
+	qDebug().noquote() << "[HN_PERF][AllWidgetLoadEnd]" << "totalMs=" << totalTimer.elapsed();
 }
-
 void hnRoadDataProcess::clearAllWidgetPixs()
 {
 	m_2dPixScrollWidget->getPixWidget()->clearPix();
@@ -3497,7 +3694,7 @@ void hnRoadDataProcess::setLayout(PROJECT_TYPE projectType)
 		return;
 	}
 
-	// è¯»å–æ•°æ®;
+	// ¶ÁÈ¡Êı¾İ;
 	QFile file(strLayoutPath);
 	if (file.open(QIODevice::ReadOnly))
 	{
@@ -3514,7 +3711,7 @@ void hnRoadDataProcess::setLayout(PROJECT_TYPE projectType)
 
 bool hnRoadDataProcess::checkProjectFrameTypeConflict(const QString & projectName)
 {
-	//è®¾ç½®å½“å‰å·¥ç¨‹
+	//ÉèÖÃµ±Ç°¹¤³Ì
 	hnApp::hnDataManager::getDataManager()->setCurrentProject(projectName);
 
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
@@ -3536,7 +3733,7 @@ bool hnRoadDataProcess::checkProjectFrameTypeConflict(const QString & projectNam
 	QVector<int> types;
 	types << 0 << 1 << 2 << 3;
 
-	//è®¾è®¡æ¨¡å¼ä¸‹ï¼Œå·¥ç¨‹çš„ç»˜åˆ¶ç±»å‹å’Œç—…å®³çš„ç»˜åˆ¶ç±»å‹ä¸åŒï¼Œå·¥ç¨‹åªæœ‰2ï¼Œç—…å®³æœ‰2 3
+	//Éè¼ÆÄ£Ê½ÏÂ£¬¹¤³ÌµÄ»æÖÆÀàĞÍºÍ²¡º¦µÄ»æÖÆÀàĞÍ²»Í¬£¬¹¤³ÌÖ»ÓĞ2£¬²¡º¦ÓĞ2 3
 	if (2 == drawType)
 	{
 		types.removeAll(2);
@@ -3576,20 +3773,20 @@ bool hnRoadDataProcess::handleConflict(QString standard, int drawType)
 
 	if (0 == drawType)
 	{
-		strDrawType = QString::fromLocal8Bit("äººå·¥æ¨¡å¼");
+		strDrawType = QString::fromLocal8Bit("ÈË¹¤Ä£Ê½");
 	}
 	else if (1 == drawType)
 	{
-		strDrawType = QString::fromLocal8Bit("è‡ªåŠ¨åŒ–æ¨¡å¼");
+		strDrawType = QString::fromLocal8Bit("×Ô¶¯»¯Ä£Ê½");
 	}
 	else if (2 == drawType || 3 == drawType)
 	{
-		strDrawType = QString::fromLocal8Bit("è®¾è®¡æ¨¡å¼");
+		strDrawType = QString::fromLocal8Bit("Éè¼ÆÄ£Ê½");
 	}
 
-	const int result = QMessageBox::question(this, QString::fromLocal8Bit("æç¤º")
-		, QString::fromLocal8Bit("æ‚¨å½“å‰çš„ç»˜åˆ¶æ–¹å¼ä¸æ•°æ®åº“å†²çª,æ˜¯å¦åˆ é™¤æ‰€æœ‰%1%2ç—…å®³?").arg(standard).arg(strDrawType),
-		QString::fromLocal8Bit("æ˜¯"), QString::fromLocal8Bit("å¦"));
+	const int result = QMessageBox::question(this, QString::fromLocal8Bit("ÌáÊ¾")
+		, QString::fromLocal8Bit("Äúµ±Ç°µÄ»æÖÆ·½Ê½ÓëÊı¾İ¿â³åÍ»,ÊÇ·ñÉ¾³ıËùÓĞ%1%2²¡º¦?").arg(standard).arg(strDrawType),
+		QString::fromLocal8Bit("ÊÇ"), QString::fromLocal8Bit("·ñ"));
 
 	if (0 == result)
 	{
@@ -3600,9 +3797,9 @@ bool hnRoadDataProcess::handleConflict(QString standard, int drawType)
 	}
 	else
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"),
-			QString::fromLocal8Bit("ç—…å®³ç»˜åˆ¶æ–¹å¼ä¸æ•°æ®åº“å†²çªï¼Œä¸å…è®¸æ‰“å¼€å·¥ç¨‹ï¼Œå¦‚éœ€åˆ‡æ¢ç»˜åˆ¶æ–¹å¼ï¼Œè¯·é‡æ–°æ‰“å¼€å·¥ç¨‹"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"),
+			QString::fromLocal8Bit("²¡º¦»æÖÆ·½Ê½ÓëÊı¾İ¿â³åÍ»£¬²»ÔÊĞí´ò¿ª¹¤³Ì£¬ÈçĞèÇĞ»»»æÖÆ·½Ê½£¬ÇëÖØĞÂ´ò¿ª¹¤³Ì"),
+			QString::fromLocal8Bit("È·¶¨"));
 		hnApp::hnDataManager::getDataManager()->closeCurrentProject();
 		m_2dPixScrollWidget->getPixWidget()->clearPix();
 		m_3dPixScrollWidget->getPixWidget()->clearPix();
@@ -3628,13 +3825,13 @@ void hnRoadDataProcess::slot_jumpToMile(double mile)
 
 	encoderMile = hnDataManager::getDataManager()->getCurrentProject()->trueMileToEncl(m_region);
 
-	//å¼‚å¸¸å¤„ç† å¦‚æœå°äº0 ï¼Œå°±èµ‹å€¼ä¸º0
+	//Òì³£´¦Àí Èç¹ûĞ¡ÓÚ0 £¬¾Í¸³ÖµÎª0
 	if (encoderMile < 0)
 	{
 		encoderMile = 0;
 	}
 
-	//TODO è¿˜éœ€å¤„ç†å•äºŒç»´çš„æƒ…å†µ
+	//TODO »¹Ğè´¦Àíµ¥¶şÎ¬µÄÇé¿ö
 	auto projectType = hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
 	if (PROJECT_23D_TYPE == projectType ||
 		PROJECT_2D_TYPE == projectType)
@@ -3662,7 +3859,7 @@ void hnRoadDataProcess::slot_jumpToMile(double mile)
 	}
 }
 
-// æ‰“å¼€å·¥ç¨‹
+// ´ò¿ª¹¤³Ì
 void hnRoadDataProcess::openProjectSlot()
 {
 	if (m_outExcelDialog != nullptr)
@@ -3671,8 +3868,8 @@ void hnRoadDataProcess::openProjectSlot()
 		m_outExcelDialog = nullptr;
 	}
 
-	//è·å–ç”¨æˆ·é€‰æ‹©çš„æ–‡ä»¶å¤¹
-	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("è¯·é€‰æ‹©å·¥ç¨‹è·¯å¾„,äºŒç»´,ä¸‰ç»´,äºŒä¸‰ç»´å·¥ç¨‹ä¸æ”¯æŒæ··åˆå¯¼å…¥å¤„ç†!"), m_xrSetting->DefaultPath);
+	//»ñÈ¡ÓÃ»§Ñ¡ÔñµÄÎÄ¼ş¼Ğ
+	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("ÇëÑ¡Ôñ¹¤³ÌÂ·¾¶,¶şÎ¬,ÈıÎ¬,¶şÈıÎ¬¹¤³Ì²»Ö§³Ö»ìºÏµ¼Èë´¦Àí!"), m_xrSetting->DefaultPath);
 	if (projectPath.isEmpty())
 	{
 		return;
@@ -3683,16 +3880,16 @@ void hnRoadDataProcess::openProjectSlot()
 	m_xrSetting->DefaultPath = projectPath;
 	m_xrSetting->writeData();
 	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE; 
-	//è·å–æ‰€æœ‰å·¥ç¨‹
+	//»ñÈ¡ËùÓĞ¹¤³Ì
 	m_projectDataInfos.clear();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
 	{
-		QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("æœªè§£æä»»ä½•åˆ°ç¬¦åˆæ ¼å¼çš„é¡¹ç›®æ•°æ®ï¼Œè¯·æ£€æŸ¥"),
-			QStringLiteral("ç¡®å®š"));
+		QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("Î´½âÎöÈÎºÎµ½·ûºÏ¸ñÊ½µÄÏîÄ¿Êı¾İ£¬Çë¼ì²é"),
+			QStringLiteral("È·¶¨"));
 		return;
 	} 
 	//progressDialog.reset();
-	//æ‰“å¼€å·¥ç¨‹å¯¹è¯æ¡†
+	//´ò¿ª¹¤³Ì¶Ô»°¿ò
 	auto roadTypes = hnDataManager::getDataManager()->getRoadStandardNames();
 	hnOpenProjectDlg openProjectDlg(nWorkType, roadTypes, m_projectDataInfos, this);
 	const int rc = openProjectDlg.exec();
@@ -3706,37 +3903,42 @@ void hnRoadDataProcess::openProjectSlot()
 		return;
 	}
 	 
-	BusyLoadingGuard loading(this, QStringLiteral("æ‰“å¼€å·¥ç¨‹"), QStringLiteral("æ­£åœ¨æ‰“å¼€å·¥ç¨‹ï¼Œè¯·ç¨å......"));
+	BusyLoadingGuard loading(this, QStringLiteral("´ò¿ª¹¤³Ì"), QStringLiteral("ÕıÔÚ´ò¿ª¹¤³Ì£¬ÇëÉÔºó......"));
+	loading.setProgressRange(0, 100);
+	loading.setProgressValue(5);
 	
-	//å…³é—­å·¥ç¨‹
+	//¹Ø±Õ¹¤³Ì
 	if (m_projects->isHasProject())
 	{
 		m_projects->closeProject();
-		//æ¸…ç©ºäºŒç»´è§†å›¾çª—å£
+		//Çå¿Õ¶şÎ¬ÊÓÍ¼´°¿Ú
 		m_2dPixScrollWidget->getPixWidget()->clearPix();
-		//æ¸…ç©ºä¸‰ç»´è§†å›¾çª—å£
+		//Çå¿ÕÈıÎ¬ÊÓÍ¼´°¿Ú
 		m_3dPixScrollWidget->getPixWidget()->clearPix();
 	}
 
-	//æ ¹æ®å„ä¸ªæ¨¡å—æ ‡å‡†è®¾ç½®å…¶ç—…å®³è¡¨åç§°
+	//¸ù¾İ¸÷¸öÄ£¿é±ê×¼ÉèÖÃÆä²¡º¦±íÃû³Æ
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
-	//åˆå§‹åŒ–å·¥ç¨‹
-	loading.setMessage(QStringLiteral("æ­£åœ¨åˆå§‹åŒ–å·¥ç¨‹..."));
+	//³õÊ¼»¯¹¤³Ì
+	loading.setProgressValue(25);
+	loading.setMessage(QStringLiteral("ÕıÔÚ³õÊ¼»¯¹¤³Ì..."));
 	bool initok =  m_projects->initProject(m_projectDataInfos);
 	if (initok)
 	{
 	
-		loading.setMessage(QStringLiteral("æ­£åœ¨åŠ è½½æ‰€æœ‰è§†å›¾çš„å›¾ç‰‡æ•°æ®..."));
-		// åŠ è½½æ‰€æœ‰è§†å›¾çš„å›¾ç‰‡æ•°æ®
-		this->allWidgetLoadPictures(); 
+		loading.setProgressValue(35);
+	loading.setMessage(QStringLiteral("ÕıÔÚ¼ÓÔØËùÓĞÊÓÍ¼µÄÍ¼Æ¬Êı¾İ..."));
+		// ¼ÓÔØËùÓĞÊÓÍ¼µÄÍ¼Æ¬Êı¾İ
+		this->allWidgetLoadPictures(&loading); 
 
-		loading.setMessage(QStringLiteral("æ­£åœ¨æ›´æ–°æ ‘çŠ¶è§†å›¾..."));
+		loading.setMessage(QStringLiteral("ÕıÔÚ¸üĞÂÊ÷×´ÊÓÍ¼..."));
 
-		//æ›´æ–°æ ‘çŠ¶è§†å›¾
+		//¸üĞÂÊ÷×´ÊÓÍ¼
 		this->updateTreeWidget(); 
-		loading.setMessage(QStringLiteral("æ­£åœ¨æ›´æ–°æ›´æ–°æ‰€æœ‰ç•Œé¢..."));
+		loading.setProgressValue(92);
+		loading.setMessage(QStringLiteral("ÕıÔÚ¸üĞÂËùÓĞ½çÃæ..."));
 
-		//æ›´æ–°æ‰€æœ‰ç•Œé¢
+		//¸üĞÂËùÓĞ½çÃæ
 		this->updateAllWidget();
 		
 	}
@@ -3745,84 +3947,124 @@ void hnRoadDataProcess::openProjectSlot()
 
 void hnRoadDataProcess::openLastProjectSlot()
 {
+	QElapsedTimer totalTimer;
+	QElapsedTimer stepTimer;
+	totalTimer.start();
+	qDebug().noquote() << "[HN_PERF][RecentProjectStart]"
+		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
+		<< "defaultPath=" << m_xrSetting->DefaultPath
+		<< "lastProject=" << m_xrSetting->lastProjectName
+		<< "lastFrame=" << m_xrSetting->lastProjectFn;
 	 
-	//è·å–ç”¨æˆ·é€‰æ‹©çš„æ–‡ä»¶å¤¹
+	//»ñÈ¡ÓÃ»§Ñ¡ÔñµÄÎÄ¼ş¼Ğ
 	QString projectPath = m_xrSetting->DefaultPath;
 	if (projectPath.isEmpty())
 	{
-		QMessageBox::warning(this, QStringLiteral("è­¦å‘Š"), QStringLiteral("æœªæ‰¾åˆ°æœ€è¿‘å·¥ç¨‹"),
-			QStringLiteral("ç¡®å®š"));
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=emptyDefaultPath" << "totalMs=" << totalTimer.elapsed();
+		QMessageBox::warning(this, QStringLiteral("¾¯¸æ"), QStringLiteral("Î´ÕÒµ½×î½ü¹¤³Ì"),
+			QStringLiteral("È·¶¨"));
 		return;
 	}
 	m_projectListTreeWidget->clear();
 	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE;
 
 
-	//è·å–æ‰€æœ‰å·¥ç¨‹
+	//»ñÈ¡ËùÓĞ¹¤³Ì
 	m_projectDataInfos.clear();
+	stepTimer.start();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
 	{
-		QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("æœªæ‰¾åˆ°æœ€è¿‘å·¥ç¨‹"),
-			QStringLiteral("ç¡®å®š"));
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
+			<< "reason=getAllProjectFailed"
+			<< "stepMs=" << stepTimer.elapsed()
+			<< "totalMs=" << totalTimer.elapsed();
+		QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("Î´ÕÒµ½×î½ü¹¤³Ì"),
+			QStringLiteral("È·¶¨"));
 		return;
 	}
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]"
+		<< "step=getAllProject"
+		<< "elapsedMs=" << stepTimer.elapsed()
+		<< "projectCount=" << m_projectDataInfos.size();
 
-	BusyLoadingGuard loading(this, QStringLiteral("æ‰“å¼€å·¥ç¨‹"), QStringLiteral("æ­£åœ¨æ‰“å¼€å·¥ç¨‹ï¼Œè¯·ç¨å......"));
+	BusyLoadingGuard loading(this, QStringLiteral("´ò¿ª¹¤³Ì"), QStringLiteral("ÕıÔÚ´ò¿ª¹¤³Ì£¬ÇëÉÔºó......"));
+	loading.setProgressRange(0, 100);
+	loading.setProgressValue(5);
  
-	//å…³é—­å·¥ç¨‹
+	//¹Ø±Õ¹¤³Ì
+	stepTimer.restart();
 	if (m_projects->isHasProject())
 	{
 		m_projects->closeProject();
-		//æ¸…ç©ºäºŒç»´è§†å›¾çª—å£
+		//Çå¿Õ¶şÎ¬ÊÓÍ¼´°¿Ú
 		m_2dPixScrollWidget->getPixWidget()->clearPix();
-		//æ¸…ç©ºä¸‰ç»´è§†å›¾çª—å£
+		//Çå¿ÕÈıÎ¬ÊÓÍ¼´°¿Ú
 		m_3dPixScrollWidget->getPixWidget()->clearPix();
 	}
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=closeAndClear" << "elapsedMs=" << stepTimer.elapsed();
 	 
 
-	//æ ¹æ®å„ä¸ªæ¨¡å—æ ‡å‡†è®¾ç½®å…¶ç—…å®³è¡¨åç§°
+	//¸ù¾İ¸÷¸öÄ£¿é±ê×¼ÉèÖÃÆä²¡º¦±íÃû³Æ
+	stepTimer.restart();
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=setProjectDiseaseVector" << "elapsedMs=" << stepTimer.elapsed();
 
-	loading.setMessage(QStringLiteral("æ­£åœ¨åˆå§‹åŒ–å·¥ç¨‹..."));
-	//åˆå§‹åŒ–å·¥ç¨‹
+	loading.setProgressValue(25);
+	loading.setMessage(QStringLiteral("ÕıÔÚ³õÊ¼»¯¹¤³Ì..."));
+	//³õÊ¼»¯¹¤³Ì
+	stepTimer.restart();
 	m_projects->initProject(m_projectDataInfos);
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=initProject" << "elapsedMs=" << stepTimer.elapsed();
 
 	 
-	loading.setMessage(QStringLiteral("æ­£åœ¨åŠ è½½æ‰€æœ‰è§†å›¾çš„å›¾ç‰‡æ•°æ®..."));
-	// åŠ è½½æ‰€æœ‰è§†å›¾çš„å›¾ç‰‡æ•°æ®
-	this->allWidgetLoadPictures();
+	loading.setProgressValue(35);
+	loading.setMessage(QStringLiteral("ÕıÔÚ¼ÓÔØËùÓĞÊÓÍ¼µÄÍ¼Æ¬Êı¾İ..."));
+	// ¼ÓÔØËùÓĞÊÓÍ¼µÄÍ¼Æ¬Êı¾İ
+	stepTimer.restart();
+	this->allWidgetLoadPictures(&loading);
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
 
-	loading.setMessage(QStringLiteral("æ­£åœ¨æ›´æ–°æ ‘çŠ¶è§†å›¾..."));
+	loading.setMessage(QStringLiteral("ÕıÔÚ¸üĞÂÊ÷×´ÊÓÍ¼..."));
 
-	//æ›´æ–°æ ‘çŠ¶è§†å›¾
+	//¸üĞÂÊ÷×´ÊÓÍ¼
+	stepTimer.restart();
 	this->updateTreeWidget();
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
 	QTreeWidgetItem  * item = new QTreeWidgetItem(m_projectListTreeWidget);
 	item->setText(0, m_xrSetting->lastProjectName);
 	item->setData(1, Qt::UserRole, 0);
-	//é€‰ä¸­æœ€åå·¥ç¨‹
+	//Ñ¡ÖĞ×îºó¹¤³Ì
+	stepTimer.restart();
 	slot_dClickTreeItem(item, 0);
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=slot_dClickTreeItem" << "elapsedMs=" << stepTimer.elapsed();
 
-	//ç•Œé¢è·³è½¬åˆ°å¯¹åº”å¸§å· 
+	//½çÃæÌø×ªµ½¶ÔÓ¦Ö¡ºÅ 
 	int frameNum2d = m_xrSetting->lastProjectFn;
 
-	//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°ä¸‰ç»´è§†å›¾
+	//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂÈıÎ¬ÊÓÍ¼
 	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 		this, &hnRoadDataProcess::slot_update3dViewScrollBar);
 
-	//ç¦ç”¨ ä¸‰ç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°äºŒç»´è§†å›¾
+	//½ûÓÃ ÈıÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¶şÎ¬ÊÓÍ¼
 	disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 		this, &hnRoadDataProcess::slot_update2dViewScrollBar);
 
-	//äºŒç»´è§†å›¾æ»šåŠ¨æ¡å˜åŒ–ï¼Œæ›´æ–°æ™¯è§‚è§†å›¾
+	//¶şÎ¬ÊÓÍ¼¹ö¶¯Ìõ±ä»¯£¬¸üĞÂ¾°¹ÛÊÓÍ¼
 	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
 		this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
 
-	//ç¦ç”¨æ™¯è§‚å¸§åºå·å˜åŒ–æ—¶,æ›´æ–°äºŒç»´çª—å£
+	//½ûÓÃ¾°¹ÛÖ¡ĞòºÅ±ä»¯Ê±,¸üĞÂ¶şÎ¬´°¿Ú
 	disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
 		this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
 
 	int maxScrollValue2d = m_2dPixScrollWidget->getMaxScrollBarValue();
+	stepTimer.restart();
 	m_2dPixScrollWidget->setCurrentScrollBarValue(maxScrollValue2d - 2 * (frameNum2d - 1)); 
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=setScrollBarValue" << "elapsedMs=" << stepTimer.elapsed();
+	qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
+		<< "totalMs=" << totalTimer.elapsed()
+		<< "maxScroll=" << maxScrollValue2d
+		<< "targetFrame=" << frameNum2d;
 	 
 }
 
@@ -3830,8 +4072,8 @@ void hnRoadDataProcess::slot_openCurrentProjectDir()
 {
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·å…ˆæ‰“å¼€å·¥ç¨‹"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÏÈ´ò¿ª¹¤³Ì"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
@@ -3842,7 +4084,7 @@ void hnRoadDataProcess::slot_openCurrentProjectDir()
 		return;
 	}
 
-	// æ‰“å¼€æ–‡ä»¶å¤¹
+	// ´ò¿ªÎÄ¼ş¼Ğ
 	QString url = "file:///" + projectAbsulotelyPath;
 
 	QDesktopServices::openUrl(QUrl::fromLocalFile(url));
@@ -3850,9 +4092,9 @@ void hnRoadDataProcess::slot_openCurrentProjectDir()
 
 void hnRoadDataProcess::slot_outSimpleProject()
 {
-	//é€‰æ‹©è¾“å‡ºç›®å½•
-	//è·å–ç”¨æˆ·é€‰æ‹©çš„æ–‡ä»¶å¤¹
-	QString outProjectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("è¯·é€‰æ‹©å·¥ç¨‹è·¯å¾„"));
+	//Ñ¡ÔñÊä³öÄ¿Â¼
+	//»ñÈ¡ÓÃ»§Ñ¡ÔñµÄÎÄ¼ş¼Ğ
+	QString outProjectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("ÇëÑ¡Ôñ¹¤³ÌÂ·¾¶"));
 	if (outProjectPath.isEmpty())
 	{
 		return;
@@ -3942,7 +4184,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 					outBaseDir.mkdir(outBaseProjectDir);
 				}
 
-#pragma region å¤åˆ¶å·¥ç¨‹ä¿¡æ¯
+#pragma region ¸´ÖÆ¹¤³ÌĞÅÏ¢
 
 				QString settingInfoFilePath = outBaseProjectDir + "\\ProjectInfo.xml";
 				QFile toolFile;
@@ -3956,7 +4198,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 
 
 
-#pragma region å¤åˆ¶å¿…è¦çš„äºŒç»´æ•°æ®
+#pragma region ¸´ÖÆ±ØÒªµÄ¶şÎ¬Êı¾İ
 
 		project->getCurDB()->m_mileInfoTable.writeData_Simple(project->getCurrentMileVector());
 
@@ -3982,7 +4224,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 				tempFile.copy(realOut2dPath);
 			}
 		}
-		//å¤åˆ¶5å¼ å›¾åƒ
+		//¸´ÖÆ5ÕÅÍ¼Ïñ
 		QStringList roadPicturePaths = project->get2DProject()->getRoadPicturePath();
 		for (int picIdx = 0; picIdx <= 5; picIdx++)
 		{
@@ -3992,7 +4234,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 			}
 			QString curFilePath = roadPicturePaths[picIdx];
 			QFile curFile(curFilePath);
-			//æ„å»ºè¾“å‡ºè·¯å¾„
+			//¹¹½¨Êä³öÂ·¾¶
 			QString basePicPath = project2dBasePath + R"(\RoadImg\Camera0\Image_0000\)";
 
 			QDir tempDir(basePicPath);
@@ -4010,9 +4252,9 @@ void hnRoadDataProcess::slot_outSimpleProject()
 		}
 #pragma endregion
 
-#pragma region å¤åˆ¶æˆæœæ•°æ®
-		QString resultDbPath = project->getAbsulotelyPath() + QStringLiteral("\\æˆæœæ•°æ®\\");
-		QString outResultDbPath = outBaseProjectDir + QStringLiteral("\\æˆæœæ•°æ®\\");
+#pragma region ¸´ÖÆ³É¹ûÊı¾İ
+		QString resultDbPath = project->getAbsulotelyPath() + QStringLiteral("\\³É¹ûÊı¾İ\\");
+		QString outResultDbPath = outBaseProjectDir + QStringLiteral("\\³É¹ûÊı¾İ\\");
 		QDir resultDir(resultDbPath);
 		if (resultDir.exists())
 		{
@@ -4057,7 +4299,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 		case hnCommon::PROJECT_JD_3D_TYPE:
 		case hnCommon::PROJECT_23D_TYPE:
 		{
-#pragma region å¤åˆ¶å¿…è¦çš„ä¸‰ç»´æ•°æ®
+#pragma region ¸´ÖÆ±ØÒªµÄÈıÎ¬Êı¾İ
 			QString outPosBaseDir = outPath + "\\POS";
 			if (!outBaseDir.exists(outPosBaseDir))
 			{
@@ -4088,7 +4330,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 
 
 
-#pragma region å¤åˆ¶å¿…è¦çš„ä¸‰ç»´æ•°æ®
+#pragma region ¸´ÖÆ±ØÒªµÄÈıÎ¬Êı¾İ
 
 #pragma endregion
 
@@ -4100,7 +4342,7 @@ void hnRoadDataProcess::slot_outSimpleProject()
 	}
 
 
-	QMessageBox::about(this, QStringLiteral("æç¤º"), QStringLiteral("è¾“å‡ºå®Œæ¯•!"));
+	QMessageBox::about(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("Êä³öÍê±Ï!"));
 }
 
 void hnRoadDataProcess::slot_gpsMatching()
@@ -4113,8 +4355,8 @@ void hnRoadDataProcess::slot_gpsMatching()
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
 	auto allPorject = manager->getAllBaseProject();
 	QMessageBox msgBox;
-	msgBox.setWindowTitle(QStringLiteral("è®¾å¤‡é€‰æ‹©"));
-	msgBox.setText(QStringLiteral("äºŒä¸‰ç»´è®¾å¤‡é‡‡é›†é€‰æ‹©ã€æ˜¯ã€‘, æ¨¡å—åŒ–è®¾å¤‡é‡‡é›†é€‰æ‹©ã€å¦ã€‘"));
+	msgBox.setWindowTitle(QStringLiteral("Éè±¸Ñ¡Ôñ"));
+	msgBox.setText(QStringLiteral("¶şÈıÎ¬Éè±¸²É¼¯Ñ¡Ôñ¡¾ÊÇ¡¿, Ä£¿é»¯Éè±¸²É¼¯Ñ¡Ôñ¡¾·ñ¡¿"));
 	msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
 	msgBox.setDefaultButton(QMessageBox::Yes);
 	int ret = msgBox.exec();
@@ -4204,8 +4446,8 @@ void hnRoadDataProcess::MappingGPS2Mile(hnPro::hnProject* project, QString baseP
 		if (!ok)
 		{
 			QMessageBox msgBox;
-			msgBox.setWindowTitle(QStringLiteral("é”™è¯¯"));
-			msgBox.setText(project->get2DProName() + QStringLiteral("æ‰€æœ‰gpsæ–‡ä»¶æœ‰æ•ˆgpsä¿¡æ¯ä¸è¶³5æ¡,gpsè®¡ç®—å¤±è´¥!"));
+			msgBox.setWindowTitle(QStringLiteral("´íÎó"));
+			msgBox.setText(project->get2DProName() + QStringLiteral("ËùÓĞgpsÎÄ¼şÓĞĞ§gpsĞÅÏ¢²»×ã5Ìõ,gps¼ÆËãÊ§°Ü!"));
 			msgBox.setStandardButtons(QMessageBox::Ok);
 			msgBox.setDefaultButton(QMessageBox::Ok);
 			int ret = msgBox.exec();
@@ -4214,8 +4456,8 @@ void hnRoadDataProcess::MappingGPS2Mile(hnPro::hnProject* project, QString baseP
 	else
 	{
 		QMessageBox msgBox;
-		msgBox.setWindowTitle(QStringLiteral("é”™è¯¯"));
-		msgBox.setText(QStringLiteral("ç”Ÿæˆ GPSTime2Dmi.txt GPSæ—¶é—´å’Œé‡Œç¨‹æ˜ å°„æ–‡ä»¶ å¤±è´¥ï¼"));
+		msgBox.setWindowTitle(QStringLiteral("´íÎó"));
+		msgBox.setText(QStringLiteral("Éú³É GPSTime2Dmi.txt GPSÊ±¼äºÍÀï³ÌÓ³ÉäÎÄ¼ş Ê§°Ü£¡"));
 		msgBox.setStandardButtons(QMessageBox::Ok);
 		msgBox.setDefaultButton(QMessageBox::Ok);
 		int ret = msgBox.exec();
@@ -4254,7 +4496,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 	file.close();
 
 	QList<QString> tempStrs;
-	QSet<QString> filterSet = { "G", "g", "ï¿½" };
+	QSet<QString> filterSet = { "G", "g", "?" };
 
 	QList<QString> filteredList;
 	for (const QString &item : syntrigstrs)
@@ -4311,7 +4553,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 	if (syntrigstrs.size() < 1) return false;
 	QString gPath = QString("%1/%2Img/SYN/gps.txt").arg(project->get2DProPath()).arg(ImgSource);
 
-#pragma region 20250709 ä¿®å¤åŒæ­¥ç‰ˆ60æœªè¿›ä½å¯¼è‡´çš„bug
+#pragma region 20250709 ĞŞ¸´Í¬²½°æ60Î´½øÎ»µ¼ÖÂµÄbug
 	int addTime = 0;
 	QFile tempGpsFile(gPath);
 	if (tempGpsFile.exists())
@@ -4339,13 +4581,13 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 					if (timeStr.length() == 6)
 					{
 						bool ok;
-						//è§£æå°æ—¶éƒ¨åˆ†
+						//½âÎöĞ¡Ê±²¿·Ö
 						int hour = timeStr.mid(0, 2).toInt(&ok);
 						if (!ok)
 						{
 							hour = 0;
 						}
-						//è§£æåˆ†é’Ÿéƒ¨åˆ†
+						//½âÎö·ÖÖÓ²¿·Ö
 						int min = timeStr.mid(2, 2).toInt(&ok);
 						if (!ok)
 						{
@@ -4534,14 +4776,14 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 					}
 				}
 				catch (const QException& ex) {
-					qDebug() << "gpsæ¡©å·åŒ¹é…åŠŸèƒ½é”™è¯¯:æ–‡ä»¶" << fpath << "è§£ææ—¶åœ¨ç¬¬" << errorRow << "è¡Œå‡ºç°é”™è¯¯ï¼Œè¯·æäº¤ä¸“ä¸šäººå‘˜æ£€æŸ¥";
+					qDebug() << "gps×®ºÅÆ¥Åä¹¦ÄÜ´íÎó:ÎÄ¼ş" << fpath << "½âÎöÊ±ÔÚµÚ" << errorRow << "ĞĞ³öÏÖ´íÎó£¬ÇëÌá½»×¨ÒµÈËÔ±¼ì²é";
 					continue;
 				}
 			}
 			else {
 				continue;
 			}
-			dmival0 = std::round(dmival0 - startdmi0);  //å¸§å·å–è¯ é˜²æ­¢1999çš„æƒ…å†µ
+			dmival0 = std::round(dmival0 - startdmi0);  //Ö¡ºÅÈ¡Ö¤ ·ÀÖ¹1999µÄÇé¿ö
 			try {
 				if (syntriglist.size() > 0) {
 					// if (qAbs(syntriglist.last()._trigdmi.toDouble() - dmival0) > 2000) {
@@ -4550,7 +4792,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 				}
 			}
 			catch (const QException& ex) {
-				qDebug() << "gpsæ¡©å·åŒ¹é…åŠŸèƒ½é”™è¯¯:æ–‡ä»¶" << fpath << "è§£ææ—¶åœ¨ç¬¬*" << errorRow << "*è¡Œå‡ºç°é”™è¯¯ï¼Œè¯·æäº¤ä¸“ä¸šäººå‘˜æ£€æŸ¥";
+				qDebug() << "gps×®ºÅÆ¥Åä¹¦ÄÜ´íÎó:ÎÄ¼ş" << fpath << "½âÎöÊ±ÔÚµÚ*" << errorRow << "*ĞĞ³öÏÖ´íÎó£¬ÇëÌá½»×¨ÒµÈËÔ±¼ì²é";
 				continue;
 			}
 			SynTrigInfo tinfo(curIndex, project->get2DProject()->_DataDate, curtime, QString::number(dmival0));
@@ -4802,7 +5044,7 @@ bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps
 
 
 
-	// è·¨å¤©çš„æ—¶å€™ï¼Œæ—¥æœŸè¦åŠ 1
+	// ¿çÌìµÄÊ±ºò£¬ÈÕÆÚÒª¼Ó1
 	for (i = 1; i < utc_dmi_len; ++i)
 	{
 
@@ -4934,33 +5176,33 @@ void hnRoadDataProcess::writeStreetDiseaseMsgToExcel(int disType, hnProject* pro
 		}
 		int rowCount = i + 2;
 		int  startTrueMile = qRound(project->enclToTrueMile(dis.dDmi));
-		//å¼€å§‹æ¡©å·	
+		//¿ªÊ¼×®ºÅ	
 		int endTrueMile = qRound(project->enclToTrueMile(dis.dDmi));
 
 		xlsx.write(QString("A%1").arg(rowCount), startTrueMile);
 		xlsx.write(QString("B%1").arg(rowCount), endTrueMile);
 		xlsx.write(QString("C%1").arg(rowCount), disName);
-		QString level = dis.nLevel == 0 ? QStringLiteral("æ— ") : dis.nLevel == 1 ? QStringLiteral("è½»") : dis.nLevel == 2 ? QStringLiteral("ä¸­") : dis.nLevel == 3 ? QStringLiteral("é‡") : "";
+		QString level = dis.nLevel == 0 ? QStringLiteral("ÎŞ") : dis.nLevel == 1 ? QStringLiteral("Çá") : dis.nLevel == 2 ? QStringLiteral("ÖĞ") : dis.nLevel == 3 ? QStringLiteral("ÖØ") : "";
 		xlsx.write(QString("D%1").arg(rowCount), level);
 		xlsx.write(QString("E%1").arg(rowCount), setInfo.dEffectMeasure);
-		xlsx.write(QString("F%1").arg(rowCount), setInfo.nDWKF); //æ‰£åˆ†å€¼
-		QString judgeType = setInfo.dEffectMeasure == 0 ? QStringLiteral("é•¿åº¦") : setInfo.dEffectMeasure == 1 ? QStringLiteral("ä¸ªæ•°") : "";
-		xlsx.write(QString("G%1").arg(rowCount), judgeType); //ç—…å®³å•ä½
+		xlsx.write(QString("F%1").arg(rowCount), setInfo.nDWKF); //¿Û·ÖÖµ
+		QString judgeType = setInfo.dEffectMeasure == 0 ? QStringLiteral("³¤¶È") : setInfo.dEffectMeasure == 1 ? QStringLiteral("¸öÊı") : "";
+		xlsx.write(QString("G%1").arg(rowCount), judgeType); //²¡º¦µ¥Î»
 		xlsx.write(QString("H%1").arg(rowCount), dis.diseaseWeight);
 		xlsx.write(QString("I%1").arg(rowCount), dis.dArea);
 	}
 }
 
-// æ£€æŸ¥æ•°æ®
+// ¼ì²éÊı¾İ
 void hnRoadDataProcess::checkProSlot()
 {
 
 
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isOpenProject())
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("è­¦å‘Š"), QStringLiteral("è¯·ç¡®ä¿è‡³å°‘æ‰“å¼€ä¸€ä¸ªå·¥ç¨‹!"),
-			QString::fromLocal8Bit("ç¡®å®š"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("¾¯¸æ"), QStringLiteral("ÇëÈ·±£ÖÁÉÙ´ò¿ªÒ»¸ö¹¤³Ì!"),
+			QString::fromLocal8Bit("È·¶¨"));
 		return;
 	}
 
@@ -4968,16 +5210,16 @@ void hnRoadDataProcess::checkProSlot()
 	std::vector<hnPro::hnProject*> allPorject = manager->getAllBaseProject();
 	if (allPorject.size() > 0)
 	{
-		//åˆ›å»ºæ•°æ®æ£€æŸ¥ç»“æœæ–‡ä»¶txt
+		//´´½¨Êı¾İ¼ì²é½á¹ûÎÄ¼ştxt
 		hnPro::hnProject * firstPro = allPorject.at(0);
 		QString fPath;
 		if (firstPro->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || firstPro->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
 		{
-			fPath = firstPro->get3DProPath() + QStringLiteral("/æ£€æŸ¥ç»“æœ.txt");;
+			fPath = firstPro->get3DProPath() + QStringLiteral("/¼ì²é½á¹û.txt");;
 		}
 		else
 		{
-			fPath = firstPro->get2DProPath() + QStringLiteral("/æ£€æŸ¥ç»“æœ.txt");
+			fPath = firstPro->get2DProPath() + QStringLiteral("/¼ì²é½á¹û.txt");
 		}
 		QFile fFile(fPath);
 
@@ -4987,77 +5229,77 @@ void hnRoadDataProcess::checkProSlot()
 		}
 		if (!fFile.open(QIODevice::WriteOnly | QIODevice::Text))
 		{
-			qDebug() << QStringLiteral("æ— æ³•æ‰“å¼€æ–‡ä»¶");
+			qDebug() << QStringLiteral("ÎŞ·¨´ò¿ªÎÄ¼ş");
 			return;
 		}
 		QTextStream out(&fFile);
 		for (hnPro::hnProject* curProject : allPorject)
 		{
 
-			//åŒºåˆ†äºŒä¸‰ç»´é¡¹ç›®ç±»å‹ åˆ†åˆ«å¤„ç†
+			//Çø·Ö¶şÈıÎ¬ÏîÄ¿ÀàĞÍ ·Ö±ğ´¦Àí
 			if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || curProject->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
 			{
-				//çº¯ä¸‰ç»´é¡¹ç›®æ•°æ®æ£€æŸ¥ 
+				//´¿ÈıÎ¬ÏîÄ¿Êı¾İ¼ì²é 
 			}
 			else
 			{
 				QString curProjectName = curProject->get2DProName();
-				//äºŒä¸‰ç»´é¡¹ç›®æ•°æ®æ£€æŸ¥
-				//æ£€æŸ¥æ¡©å·æ˜¯å¦åˆæ³• å·¥ç¨‹æ•°æ®çš„å®Œæ•´æ€§
+				//¶şÈıÎ¬ÏîÄ¿Êı¾İ¼ì²é
+				//¼ì²é×®ºÅÊÇ·ñºÏ·¨ ¹¤³ÌÊı¾İµÄÍêÕûĞÔ
 				hnCommon::hnProjectSetInfo setInfo = curProject->getCurProSetInfo();
 				if (setInfo.nLineType == 1)
 				{
 					if (setInfo.dBegMile >= setInfo.dEndMile)
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%6é“è·¯åç§°:%5é“è·¯ç¼–å·:%4,èµ·ç‚¹æ¡©å·:%1,ç»ˆç‚¹æ¡©å·:%2,è¡Œè½¦æ–¹å‘:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
-							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("ä¸Šè¡Œ") : QStringLiteral("ä¸‹è¡Œ")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%6µÀÂ·Ãû³Æ:%5µÀÂ·±àºÅ:%4,Æğµã×®ºÅ:%1,ÖÕµã×®ºÅ:%2,ĞĞ³µ·½Ïò:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
+							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("ÉÏĞĞ") : QStringLiteral("ÏÂĞĞ")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 					}
 				}
 				else
 				{
 					if (setInfo.dBegMile <= setInfo.dEndMile)
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%6é“è·¯åç§°:%5é“è·¯ç¼–å·:%4,èµ·ç‚¹æ¡©å·:%1,ç»ˆç‚¹æ¡©å·:%2,è¡Œè½¦æ–¹å‘:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
-							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("ä¸Šè¡Œ") : QStringLiteral("ä¸‹è¡Œ")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%6µÀÂ·Ãû³Æ:%5µÀÂ·±àºÅ:%4,Æğµã×®ºÅ:%1,ÖÕµã×®ºÅ:%2,ĞĞ³µ·½Ïò:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
+							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("ÉÏĞĞ") : QStringLiteral("ÏÂĞĞ")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 					}
 				}
 				QString settingFile = curProject->get2DProPath() + QStringLiteral("/Setting.ini");
 				if (!QFile::exists(settingFile))
 				{
-					QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘å·¥ç¨‹é…ç½®æ–‡ä»¶Setting.ini,è¯·ä»å…¶ä»–åŒé…ç½®å·¥ç¨‹æ‹·è´åŒåæ–‡ä»¶åˆ°è·¯å¾„ä¸‹!")
+					QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙ¹¤³ÌÅäÖÃÎÄ¼şSetting.ini,Çë´ÓÆäËûÍ¬ÅäÖÃ¹¤³Ì¿½±´Í¬ÃûÎÄ¼şµ½Â·¾¶ÏÂ!")
 						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 					out << msg;
-					QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-						QString::fromLocal8Bit("ç¡®å®š"));
+					QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+						QString::fromLocal8Bit("È·¶¨"));
 				}
-				//æ£€æŸ¥è·¯é¢æ•°æ®çš„å®Œæ•´æ€§
+				//¼ì²éÂ·ÃæÊı¾İµÄÍêÕûĞÔ
 				if (curProject->get2DProject()->_IsRoad)
 				{
 					QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\RoadImg");
 					QDir roadDir(roadPath);
 					if (!roadDir.exists())
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘è·¯é¢æ–‡ä»¶å¤¹!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙÂ·ÃæÎÄ¼ş¼Ğ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 						return;
 					}
 					auto roadPicData = curProject->get2DProject()->getRoadPicturePath();
 					if (roadPicData.size() <= 0)
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘è·¯é¢å›¾åƒ!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙÂ·ÃæÍ¼Ïñ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 						return;
 					}
 					else
@@ -5076,53 +5318,53 @@ void hnRoadDataProcess::checkProSlot()
 						if (imgnum < dmi - setInfo.dRoadLength * 5)
 						{
 							int temp = dmi / setInfo.dRoadLength - imgnum / setInfo.dRoadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,è·¯é¢å›¾åƒç¼ºå°‘å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,Â·ÃæÍ¼ÏñÈ±ÉÙÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 						else if (imgnum > dmi + setInfo.dRoadLength * 5)
 						{
 							int temp = imgnum / setInfo.dRoadLength - dmi / setInfo.dRoadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,è·¯é¢å›¾åƒå¤šé‡‡å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,Â·ÃæÍ¼Ïñ¶à²ÉÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("ä¿¡æ¯"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::information(this, QString::fromLocal8Bit("ĞÅÏ¢"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 					}
 				}
-				//TODO æ£€æŸ¥æ•°æ® CWB å¤„ç†ä¸­
-				//æ£€æŸ¥é“è·¯æ ‡å‡†ä¸é“è·¯ç­‰çº§çš„åŒ¹é…æƒ…å†µç­‰ç­‰
-				//æ£€æŸ¥è½¦è¾™æ•°æ®çš„å®Œæ•´æ€§  
+				//TODO ¼ì²éÊı¾İ CWB ´¦ÀíÖĞ
+				//¼ì²éµÀÂ·±ê×¼ÓëµÀÂ·µÈ¼¶µÄÆ¥ÅäÇé¿öµÈµÈ
+				//¼ì²é³µÕŞÊı¾İµÄÍêÕûĞÔ  
 
 
 
 
-				//æ£€æŸ¥è·¯é¢æ•°æ®çš„å®Œæ•´æ€§
+				//¼ì²éÂ·ÃæÊı¾İµÄÍêÕûĞÔ
 				if (curProject->get2DProject()->_IsStreet)
 				{
 					QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\StreetImg");
 					QDir roadDir(roadPath);
 					if (!roadDir.exists())
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘æ™¯è§‚æ–‡ä»¶å¤¹!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙ¾°¹ÛÎÄ¼ş¼Ğ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 						return;
 					}
 
 					auto roadPciData = curProject->get2DProject()->getLeftStreetPicturePath();
 					if (roadPciData.size() <= 0)
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘å·¦ä¾§æ™¯è§‚å›¾åƒ!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙ×ó²à¾°¹ÛÍ¼Ïñ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 
 					}
 					else
@@ -5142,20 +5384,20 @@ void hnRoadDataProcess::checkProSlot()
 						if (imgnum < dmi - roadLength * 5)
 						{
 							int temp = dmi / roadLength - imgnum / roadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,å·¦ä¾§æ™¯è§‚å›¾åƒç¼ºå°‘å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,×ó²à¾°¹ÛÍ¼ÏñÈ±ÉÙÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 						else if (imgnum > dmi + roadLength * 5)
 						{
 							int temp = imgnum / roadLength - dmi / roadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,å·¦ä¾§æ™¯è§‚å›¾åƒå¤šé‡‡å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,×ó²à¾°¹ÛÍ¼Ïñ¶à²ÉÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 					}
 				}
@@ -5165,22 +5407,22 @@ void hnRoadDataProcess::checkProSlot()
 					QDir roadDir(roadPath);
 					if (!roadDir.exists())
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘æ™¯è§‚æ–‡ä»¶å¤¹!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙ¾°¹ÛÎÄ¼ş¼Ğ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 						return;
 					}
 
 					auto roadPciData = curProject->get2DProject()->getRightStreetPicturePath();
 					if (roadPciData.size() <= 0)
 					{
-						QString msg = QStringLiteral("ä¸åˆæ³•æ•°æ®,è¯·æ£€æŸ¥!\nå·¥ç¨‹åç§°:%3é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,ç¼ºå°‘å³ä¾§æ™¯è§‚å›¾åƒ!")
+						QString msg = QStringLiteral("²»ºÏ·¨Êı¾İ,Çë¼ì²é!\n¹¤³ÌÃû³Æ:%3µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,È±ÉÙÓÒ²à¾°¹ÛÍ¼Ïñ!")
 							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-							QString::fromLocal8Bit("ç¡®å®š"));
+						QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+							QString::fromLocal8Bit("È·¶¨"));
 					}
 					else
 					{
@@ -5200,20 +5442,20 @@ void hnRoadDataProcess::checkProSlot()
 						if (imgnum < dmi - roadLength * 5)
 						{
 							int temp = dmi / roadLength - imgnum / roadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,å³ä¾§æ™¯è§‚å›¾åƒç¼ºå°‘å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,ÓÒ²à¾°¹ÛÍ¼ÏñÈ±ÉÙÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("é”™è¯¯"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::critical(this, QString::fromLocal8Bit("´íÎó"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 						else if (imgnum > dmi + roadLength * 5)
 						{
 							int temp = imgnum / roadLength - dmi / roadLength;
-							QString msg = QStringLiteral("å·¥ç¨‹åç§°:%5é“è·¯åç§°:%1é“è·¯ç¼–å·:%2,å³ä¾§æ™¯è§‚å›¾åƒå¤šé‡‡å›¾åƒ%3å¼ ,è®¾ç½®æ‹ç…§è·ç¦»%4!")
+							QString msg = QStringLiteral("¹¤³ÌÃû³Æ:%5µÀÂ·Ãû³Æ:%1µÀÂ·±àºÅ:%2,ÓÒ²à¾°¹ÛÍ¼Ïñ¶à²ÉÍ¼Ïñ%3ÕÅ,ÉèÖÃÅÄÕÕ¾àÀë%4!")
 								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
 							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("è­¦å‘Š"), msg,
-								QString::fromLocal8Bit("ç¡®å®š"));
+							QMessageBox::information(this, QString::fromLocal8Bit("¾¯¸æ"), msg,
+								QString::fromLocal8Bit("È·¶¨"));
 						}
 					}
 				}
@@ -5221,28 +5463,28 @@ void hnRoadDataProcess::checkProSlot()
 			}
 		}
 		fFile.close();
-		QMessageBox::information(this, QString::fromLocal8Bit("æç¤º"), QString::fromLocal8Bit("æ•°æ®æ£€æŸ¥ç»“æŸ"));
+		QMessageBox::information(this, QString::fromLocal8Bit("ÌáÊ¾"), QString::fromLocal8Bit("Êı¾İ¼ì²é½áÊø"));
 
 	}
 }
 
-// å½±åƒç”Ÿæˆ
+// Ó°ÏñÉú³É
 void hnRoadDataProcess::createImageSlot()
 {
 	QProcess process;
 
-	//è·å–å½±åƒç”Ÿæˆè½¯ä»¶ç»å¯¹è·¯å¾„
+	//»ñÈ¡Ó°ÏñÉú³ÉÈí¼ş¾ø¶ÔÂ·¾¶
 	QString cutImageSoftName = QApplication::applicationDirPath() + "/createImageTool/hnCreate2DImage.exe";
 	QStringList arguments;
 
-	//å¯åŠ¨ç¨‹åº  éé˜»å¡çš„æ–¹å¼
+	//Æô¶¯³ÌĞò  ·Ç×èÈûµÄ·½Ê½
 	process.startDetached(cutImageSoftName, arguments);
 }
 
-// é‡Œç¨‹æ ¡å‡†
+// Àï³ÌĞ£×¼
 void hnRoadDataProcess::slot_mileCorrectSlot()
 {
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isOpenProject())
 	{
 		return;
@@ -5253,31 +5495,31 @@ void hnRoadDataProcess::slot_mileCorrectSlot()
 	if (result == QDialog::Accepted)
 	{
 		QVector<hnCommon::hnMilePile> nowPileInfos = dlg->getAllMileVec();
-		//æ›´æ–°marks ï¼Œxmlé‡Œé¢  mark.txt é‡Œé¢ æ•°æ®åº“ é‡Œé¢
+		//¸üĞÂmarks £¬xmlÀïÃæ  mark.txt ÀïÃæ Êı¾İ¿â ÀïÃæ
 
 		m_projects->getCurrentProject()->changeMilePile(nowPileInfos);
-		//æ›´æ–°è§†å›¾
-		// åŠ è½½å½“å‰å·¥ç¨‹æ•°æ®
+		//¸üĞÂÊÓÍ¼
+		// ¼ÓÔØµ±Ç°¹¤³ÌÊı¾İ
 		if (hnApp::hnDataManager::getDataManager()->getCurrentProject())
 		{
-			// åŠ è½½å½“å‰å·¥ç¨‹è·¯é¢å½±åƒ
+			// ¼ÓÔØµ±Ç°¹¤³ÌÂ·ÃæÓ°Ïñ
 			this->m_2dPixScrollWidget->loadRoadPicture();
 
-			// åŠ è½½å½“å‰å·¥ç¨‹æ™¯è§‚å½±åƒ
+			// ¼ÓÔØµ±Ç°¹¤³Ì¾°¹ÛÓ°Ïñ
 			//const QString streetImagePath =
 			//	hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProPath() + "/StreetImg/Camera0/Image_0000";
 			//this->m_streetContinousBrowsePixWidget->loadPix(streetImagePath);
 			QVector<hnCommon::hnMarkInfo> marks = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector();
 			emit signal_updateProject(hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo(), marks, nowPileInfos);
 
-			// åŠ è½½ä¸‰ç»´å½±åƒ
+			// ¼ÓÔØÈıÎ¬Ó°Ïñ
 			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 			{
 				m_3dPixScrollWidget->load3dImage();
 			}
 			this->m_diseaseListWidget->updateAllDiseases();
 		}
-		//é‡æ–°è®¡ç®— qvector<hnMile>
+		//ÖØĞÂ¼ÆËã qvector<hnMile>
 	}
 	else if (result == QDialog::Rejected)
 	{
@@ -5285,10 +5527,10 @@ void hnRoadDataProcess::slot_mileCorrectSlot()
 	}
 }
 
-// é‡‡é›†æ‰“æ ‡
+// ²É¼¯´ò±ê
 void hnRoadDataProcess::slot_markInfoSlot()
 {
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isOpenProject())
 	{
 		return;
@@ -5308,11 +5550,11 @@ void hnRoadDataProcess::slot_markInfoSlot()
 	{
 		QVector<hnCommon::hnMarkInfo> nowMarkInfos = dlg->getNewMarkVec();
 		QVector<int> nowDeleteMarkInfoIndexs = dlg->getDeleteMarkVec();
-		//æ›´æ–°marks ï¼Œxmlé‡Œé¢  mark.txt é‡Œé¢ æ•°æ®åº“ é‡Œé¢
+		//¸üĞÂmarks £¬xmlÀïÃæ  mark.txt ÀïÃæ Êı¾İ¿â ÀïÃæ
 		bool needUpdate = m_projects->getCurrentProject()->changeMark(nowMarkInfos, nowDeleteMarkInfoIndexs);
 
-		//æ›´æ–°è§†å›¾
-		// åŠ è½½å½“å‰å·¥ç¨‹æ•°æ®
+		//¸üĞÂÊÓÍ¼
+		// ¼ÓÔØµ±Ç°¹¤³ÌÊı¾İ
 		if (hnApp::hnDataManager::getDataManager()->getCurrentProject())
 		{
 			QVector<hnCommon::hnMilePile> datas = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
@@ -5321,11 +5563,11 @@ void hnRoadDataProcess::slot_markInfoSlot()
 				hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector(), datas);
 			if (needUpdate)
 			{
-				//// åŠ è½½å½“å‰å·¥ç¨‹è·¯é¢å½±åƒ
+				//// ¼ÓÔØµ±Ç°¹¤³ÌÂ·ÃæÓ°Ïñ
 				this->m_2dPixScrollWidget->loadRoadPicture();
 
 
-				// åŠ è½½ä¸‰ç»´å½±åƒ
+				// ¼ÓÔØÈıÎ¬Ó°Ïñ
 				if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 				{
 					m_3dPixScrollWidget->load3dImage();
@@ -5340,7 +5582,7 @@ void hnRoadDataProcess::slot_markInfoSlot()
 	}
 }
 
-// æ¸…é™¤å·¥ç¨‹
+// Çå³ı¹¤³Ì
 void hnRoadDataProcess::slot_clearProjectSlot()
 {
 
@@ -5352,11 +5594,11 @@ void hnRoadDataProcess::slot_regionJump()
 		return;
 	}
 
-	//å¼¹å‡ºå¯¹è¯æ¡†
+	//µ¯³ö¶Ô»°¿ò
 	m_regionJumpDlg->show();
 
 }
-//è½¯ä»¶è®¾ç½®
+//Èí¼şÉèÖÃ
 void hnRoadDataProcess::slot_openConfigWidget()
 {
 	m_projectConfgDialog->exec();
@@ -5365,12 +5607,12 @@ void hnRoadDataProcess::slot_openConfigWidget()
 void hnRoadDataProcess::slot_oepnCourseDocument()
 {
 	QProcess process;
-	//è·å–å½±åƒç”Ÿæˆè½¯ä»¶ç»å¯¹è·¯å¾„
-	QString cutImageSoftName = QApplication::applicationDirPath() + QStringLiteral("\\äºŒä¸‰ç»´ä¸€ä½“åŒ–å†…ä¸šå¤„ç†å¹³å°ä½¿ç”¨æ‰‹å†Œ.docx");
+	//»ñÈ¡Ó°ÏñÉú³ÉÈí¼ş¾ø¶ÔÂ·¾¶
+	QString cutImageSoftName = QApplication::applicationDirPath() + QStringLiteral("\\¶şÈıÎ¬Ò»Ìå»¯ÄÚÒµ´¦ÀíÆ½Ì¨Ê¹ÓÃÊÖ²á.docx");
 	QStringList arguments;
 	QUrl url = QUrl::fromLocalFile(cutImageSoftName);
 	QDesktopServices::openUrl(url);
-	//å¯åŠ¨ç¨‹åº  éé˜»å¡çš„æ–¹å¼
+	//Æô¶¯³ÌĞò  ·Ç×èÈûµÄ·½Ê½
 //	process.startDetached(cutImageSoftName, arguments);
 }
 
@@ -5388,7 +5630,7 @@ void hnRoadDataProcess::slot_outMergeExcel()
 	QString cutImageSoftName = QApplication::applicationDirPath() + "/MergeExcelSoftWare/MergeExcel.exe";
 	QStringList arguments;
 
-	//å¯åŠ¨ç¨‹åº  éé˜»å¡çš„æ–¹å¼
+	//Æô¶¯³ÌĞò  ·Ç×èÈûµÄ·½Ê½
 	process.startDetached(cutImageSoftName, arguments);
 
 
@@ -5396,16 +5638,16 @@ void hnRoadDataProcess::slot_outMergeExcel()
 
 void hnRoadDataProcess::slot_outputExcel()
 {
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isOpenProject())
 	{
 		return;
 	}
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isHasProject())
 	{
-		QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("å½“å‰æ²¡æœ‰å¯ç”¨çš„å·¥ç¨‹"),
-			QStringLiteral("ç¡®å®š"));
+		QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("µ±Ç°Ã»ÓĞ¿ÉÓÃµÄ¹¤³Ì"),
+			QStringLiteral("È·¶¨"));
 		return;
 	}
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
@@ -5418,8 +5660,8 @@ void hnRoadDataProcess::slot_outputExcel()
 		auto drawType = project->getCurProSetInfo().nDrawType;
 		if (starndar != defaultStarndar || drawType != defaultDrawType)
 		{
-			QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("å¤šæ¨¡å¼å‡ºè¡¨éœ€è¦ä¿è¯æ‰€æœ‰å·¥ç¨‹çš„[é“è·¯æ ‡å‡†åŠç»˜åˆ¶æ–¹å¼]ä¸€è‡´,è¯·æ£€æŸ¥æ•°æ®æˆ–å°è¯•å•ç‹¬å¯¼å…¥å·¥ç¨‹å‡ºè¡¨ï¼"),
-				QStringLiteral("ç¡®å®š"));
+			QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("¶àÄ£Ê½³ö±íĞèÒª±£Ö¤ËùÓĞ¹¤³ÌµÄ[µÀÂ·±ê×¼¼°»æÖÆ·½Ê½]Ò»ÖÂ,Çë¼ì²éÊı¾İ»ò³¢ÊÔµ¥¶Àµ¼Èë¹¤³Ì³ö±í£¡"),
+				QStringLiteral("È·¶¨"));
 			return;
 		}
 
@@ -5472,16 +5714,16 @@ void hnRoadDataProcess::slot_outputExcel()
 			}
 		}
 	}
-	//å¦‚æœç”¨æˆ·é€‰æ‹©äº†ä¸æ ¹æ®æ‰“æ ‡åˆ†æ®µ åˆ™è¾“å‡ºæ¯ä¸ªå·¥ç¨‹çš„è¾¾æ ‡æ–‡ä»¶  
+	//Èç¹ûÓÃ»§Ñ¡ÔñÁË²»¸ù¾İ´ò±ê·Ö¶Î ÔòÊä³öÃ¿¸ö¹¤³ÌµÄ´ï±êÎÄ¼ş  
 #if 0
-	//éœ€è¦çš„å‚æ•°æ˜¯
-	int  splitValue = 10; //åˆ†å‰²åŒºé—´å¤§å°  10 100 1000  n 
+	//ĞèÒªµÄ²ÎÊıÊÇ
+	int  splitValue = 10; //·Ö¸îÇø¼ä´óĞ¡  10 100 1000  n 
 
-	double sMile = 0; //èµ·å§‹æ¡©å· 
-	double  eMile = 1000; //ç»ˆç‚¹æ¡©å· 
+	double sMile = 0; //ÆğÊ¼×®ºÅ 
+	double  eMile = 1000; //ÖÕµã×®ºÅ 
 
-	//æ ¹æ®ç”¨æˆ·è¾“å…¥è¿›è¡ŒåŒºé—´åˆ†æ®µ
-	//æ³¨æ„æ¡ä»¶  é‡åˆ°è·¯é¢æ ‡å‡†åˆ‡æ¢éœ€è¦ç”Ÿæˆæ–°è¡¨
+	//¸ù¾İÓÃ»§ÊäÈë½øĞĞÇø¼ä·Ö¶Î
+	//×¢ÒâÌõ¼ş  Óöµ½Â·Ãæ±ê×¼ÇĞ»»ĞèÒªÉú³ÉĞÂ±í
 	hnRoadTypeSetInfo roadSetting;
 	auto projects = m_projects->getPorjectManager()->getAllBaseProject();
 	for (int i = 0; i < projects.size(); ++i)
@@ -5503,32 +5745,32 @@ void hnRoadDataProcess::slot_outputExcel()
 	//vector<hnRoadDiseaseInfo>& vecData, char* strQuery/* = NULL*/)
 	vector<hnRoadDiseaseInfo> vecData;
 	roadDisease.readAllData(vecData);
-	hnExcelIO * excel = new hnExcelIO("D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\æŠ¥è¡¨æ¨¡æ¿\\CPMSè·¯é¢ç—…å®³è°ƒæŸ¥è¡¨.xlsx",
-		"D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\è¾“å‡ºæŠ¥è¡¨\\CPMSè·¯é¢ç—…å®³è°ƒæŸ¥è¡¨Copy.xlsx");
+	hnExcelIO * excel = new hnExcelIO("D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\±¨±íÄ£°å\\CPMSÂ·Ãæ²¡º¦µ÷²é±í.xlsx",
+		"D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\Êä³ö±¨±í\\CPMSÂ·Ãæ²¡º¦µ÷²é±íCopy.xlsx");
 	if (excel->OpenExcel())
 	{
 		excel->SaveAndClose();
-		qDebug() << "å¤åˆ¶æˆåŠŸ" << endl;
+		qDebug() << "¸´ÖÆ³É¹¦" << endl;
 	}
 #endif
 					}
 
 void hnRoadDataProcess::slot_outAllResultDatas()
 {
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isOpenProject())
 	{
 		return;
 	}
-	//å¼¹å‡ºç•Œé¢
+	//µ¯³ö½çÃæ
 	if (!m_projects->isHasProject())
 	{
-		QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("å½“å‰æ²¡æœ‰å¯ç”¨çš„å·¥ç¨‹"),
-			QStringLiteral("ç¡®å®š"));
+		QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("µ±Ç°Ã»ÓĞ¿ÉÓÃµÄ¹¤³Ì"),
+			QStringLiteral("È·¶¨"));
 		return;
 	}
 
-	auto reply = QMessageBox::question(this, QStringLiteral("æç¤º"), QStringLiteral("å‡ºæ€»è¡¨æ—¶é—´è¾ƒé•¿,æ˜¯å¦ç»§ç»­"), QMessageBox::Yes | QMessageBox::No);
+	auto reply = QMessageBox::question(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("³ö×Ü±íÊ±¼ä½Ï³¤,ÊÇ·ñ¼ÌĞø"), QMessageBox::Yes | QMessageBox::No);
 
 	if (reply == QMessageBox::Yes)
 	{
@@ -5551,16 +5793,16 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	switch (defaultStarndar)
 	{
 	case HnProjectEnums::None:
-		modelStandard = QStringLiteral("ç­‰çº§å…¬è·¯2018");
+		modelStandard = QStringLiteral("µÈ¼¶¹«Â·2018");
 		break;
 	case HnProjectEnums::DegreeRoad2018:
-		modelStandard = QStringLiteral("ç­‰çº§å…¬è·¯2018");
+		modelStandard = QStringLiteral("µÈ¼¶¹«Â·2018");
 		break;
 	case HnProjectEnums::CityRoad:
-		modelStandard = QStringLiteral("åŸé•‡é“è·¯2024");
+		modelStandard = QStringLiteral("³ÇÕòµÀÂ·2024");
 		break;
 	case HnProjectEnums::RuralRoadlowLevel:
-		modelStandard = QStringLiteral("ä½ç­‰çº§å†œæ‘å…¬è·¯2024");
+		modelStandard = QStringLiteral("µÍµÈ¼¶Å©´å¹«Â·2024");
 		break;
 	default:
 		break;
@@ -5569,12 +5811,12 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	{
 	case  0:
 		break;
-		modelDrawType = QStringLiteral("äººå·¥æ¨¡å¼");
+		modelDrawType = QStringLiteral("ÈË¹¤Ä£Ê½");
 	case  1:
-		modelDrawType = QStringLiteral("è‡ªåŠ¨åŒ–æ¨¡å¼");
+		modelDrawType = QStringLiteral("×Ô¶¯»¯Ä£Ê½");
 		break;
 	case 2:
-		modelDrawType = QStringLiteral("è®¾è®¡æ¨¡å¼");
+		modelDrawType = QStringLiteral("Éè¼ÆÄ£Ê½");
 		break;
 	default:
 		break;
@@ -5586,8 +5828,8 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 		auto drawType = project->getCurProSetInfo().nDrawType;
 		if (starndar != defaultStarndar || drawType != defaultDrawType)
 		{
-			QMessageBox::warning(this, QStringLiteral("é”™è¯¯"), QStringLiteral("å¤šæ¨¡å¼å‡ºè¡¨éœ€è¦ä¿è¯æ‰€æœ‰å·¥ç¨‹çš„[é“è·¯æ ‡å‡†åŠç»˜åˆ¶æ–¹å¼]ä¸€è‡´,è¯·æ£€æŸ¥æ•°æ®æˆ–å°è¯•å•ç‹¬å¯¼å…¥å·¥ç¨‹å‡ºè¡¨ï¼"),
-				QStringLiteral("ç¡®å®š"));
+			QMessageBox::warning(this, QStringLiteral("´íÎó"), QStringLiteral("¶àÄ£Ê½³ö±íĞèÒª±£Ö¤ËùÓĞ¹¤³ÌµÄ[µÀÂ·±ê×¼¼°»æÖÆ·½Ê½]Ò»ÖÂ,Çë¼ì²éÊı¾İ»ò³¢ÊÔµ¥¶Àµ¼Èë¹¤³Ì³ö±í£¡"),
+				QStringLiteral("È·¶¨"));
 			return;
 		}
 
@@ -5600,13 +5842,14 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	bool outSucceed = true;
 	QVector<int> splitValueVec = { 10,100,1000 };
 
-	//è®¡ç®—æ€»ä»»åŠ¡æ•°é‡
+	//¼ÆËã×ÜÈÎÎñÊıÁ¿
 	int totalTasks = allPorject.size() * splitValueVec.size();
+	const int progressScale = 10;
 	int currentTask = 0;
-	//åˆ›å»ºè¿›åº¦å¯¹è¯æ¡†
-	QProgressDialog progress(QStringLiteral("å¤„ç†å·¥ç¨‹æ•°æ®..."), QStringLiteral("å–æ¶ˆ"), 0, totalTasks);
-	progress.setWindowModality(Qt::WindowModal);  //æ¨¡æ€
-	progress.setMinimumDuration(0);   //ç«‹å³æ˜¾ç¤º
+	//´´½¨½ø¶È¶Ô»°¿ò
+	QProgressDialog progress(QStringLiteral("´¦Àí¹¤³ÌÊı¾İ..."), QStringLiteral("È¡Ïû"), 0, totalTasks * progressScale);
+	progress.setWindowModality(Qt::WindowModal);  //Ä£Ì¬
+	progress.setMinimumDuration(0);   //Á¢¼´ÏÔÊ¾
 	for each (auto project in allPorject)
 	{
 		/*QElapsedTimer timer;
@@ -5616,16 +5859,15 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 		eMile = project->getCurProSetInfo().dEndMile;
 		for (int splitValue : splitValueVec)
 		{
-			//è·Ÿæ–°è¿›åº¦
-			currentTask++;
-			progress.setValue(currentTask);
-			progress.setLabelText(QStringLiteral("å¤„ç†	%1	(%2m)...").arg(project->get2DProName()).arg(splitValue));
+			//¸úĞÂ½ø¶È
+			progress.setValue(currentTask * progressScale + 2);
+			progress.setLabelText(QStringLiteral("ÕıÔÚ´¦Àí %1 (%2m)...").arg(project->get2DProName()).arg(splitValue));
 
 			if (progress.wasCanceled())
 			{
 				return;
 			}
-			QString xlsxAllDataTemplatePath = QApplication::applicationDirPath() + QStringLiteral("\\æŠ¥è¡¨æ¨¡æ¿\\å®šåˆ¶å‡ºè¡¨æ¨¡æ¿\\") + modelStandard + "\\" + modelDrawType + "\\";
+			QString xlsxAllDataTemplatePath = QApplication::applicationDirPath() + QStringLiteral("\\±¨±íÄ£°å\\¶¨ÖÆ³ö±íÄ£°å\\") + modelStandard + "\\" + modelDrawType + "\\";
 
 			QString xlsxAllDataTemplateFilePath = xlsxAllDataTemplatePath + "allInfo.xlsx";
 			QString xlsxAllDiseaseTemplateFilePath = xlsxAllDataTemplatePath + QStringLiteral("AllDisease.xlsx");
@@ -5634,12 +5876,12 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			{
 				QApplication::restoreOverrideCursor();
 
-				QMessageBox::about(this, QStringLiteral("æç¤º"), QStringLiteral("æ‰¾ä¸åˆ°æ¨¡æ¿æ–‡ä»¶!"));
+				QMessageBox::about(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("ÕÒ²»µ½Ä£°åÎÄ¼ş!"));
 
 
 				return;
 			}
-			//åŠ è½½è¡¨æ ¼æ¨¡æ¿
+			//¼ÓÔØ±í¸ñÄ£°å
 			Document xlsx(xlsxAllDataTemplateFilePath);
 
 			MyQtCommon::MyEquipment setEquip;
@@ -5659,10 +5901,10 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			if (!m_outExcelManage->getDataComplete())
 			{
 				QApplication::restoreOverrideCursor();
-				QMessageBox::about(this, QStringLiteral("é”™è¯¯"), project->get2DProName() + QStringLiteral("_å­˜åœ¨æŒ‡æ ‡æœªè¿›è¡Œè®¡ç®—ï¼Œè¯·æ ¹æ®æç¤ºè¿›è¡ŒIRMè®¡ç®—!"));
+				QMessageBox::about(this, QStringLiteral("´íÎó"), project->get2DProName() + QStringLiteral("_´æÔÚÖ¸±êÎ´½øĞĞ¼ÆËã£¬Çë¸ù¾İÌáÊ¾½øĞĞIRM¼ÆËã!"));
 				return;
 			}
-#pragma region å†™å…¥æŒ‡æ ‡æ•°æ®
+#pragma region Ğ´ÈëÖ¸±êÊı¾İ
 			if (!xlsx.selectSheet("score"))
 			{
 				return;
@@ -5685,9 +5927,9 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				xlsx.write(i + 2, colCnt++, curMile.getRutExcelStr());
 				xlsx.write(i + 2, colCnt++, curMile.getPBIScore());
 				xlsx.write(i + 2, colCnt++, curMile.getCenterMtdValue()); //mtd  
-				xlsx.write(i + 2, colCnt++, curMile.getPwiValueStr()); //ç£¨è€—
+				xlsx.write(i + 2, colCnt++, curMile.getPwiValueStr()); //Ä¥ºÄ
 
-				xlsx.write(i + 2, colCnt++, 100); //bci æ¡¥éš§
+				xlsx.write(i + 2, colCnt++, 100); //bci ÇÅËí
 				xlsx.write(i + 2, colCnt++, curMile.getTciValue()); //tci
 				xlsx.write(i + 2, colCnt++, curMile.getSciValue());
 				xlsx.write(i + 2, colCnt++, 100);//sri
@@ -5703,7 +5945,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 
 				if (splitValue != 10)
 				{
-					xlsx.write(i + 2, colCnt++, "");//è·³è½¦çºµæ–­é¢é«˜å·®
+					xlsx.write(i + 2, colCnt++, "");//Ìø³µ×İ¶ÏÃæ¸ß²î
 					xlsx.write(i + 2, colCnt++, "");
 					xlsx.write(i + 2, colCnt++, "");
 					xlsx.write(i + 2, colCnt++, curMile_10M.getPbEvaluateStr());
@@ -5712,7 +5954,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				}
 				else
 				{
-					xlsx.write(i + 2, colCnt++, curMile_10M.getLeftPbValue(10));//è·³è½¦çºµæ–­é¢é«˜å·®
+					xlsx.write(i + 2, colCnt++, curMile_10M.getLeftPbValue(10));//Ìø³µ×İ¶ÏÃæ¸ß²î
 					xlsx.write(i + 2, colCnt++, curMile_10M.getRightPbValue(10));
 					xlsx.write(i + 2, colCnt++, curMile_10M.getjudgePbValue(10));
 					xlsx.write(i + 2, colCnt++, curMile_10M.getPbEvaluateStr());
@@ -5720,15 +5962,15 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				}
 
 
-				xlsx.write(i + 2, colCnt++, curMile.getPbiNumber(1));//è·³è½¦
+				xlsx.write(i + 2, colCnt++, curMile.getPbiNumber(1));//Ìø³µ
 				xlsx.write(i + 2, colCnt++, curMile.getPbiNumber(2));
 				xlsx.write(i + 2, colCnt++, curMile.getPbiNumber(3));
 
 				xlsx.write(i + 2, colCnt++, curMile.getLeftMtdValue());//smtd
 				xlsx.write(i + 2, colCnt++, curMile.getRightMtdValue());
-				xlsx.write(i + 2, colCnt++, curMile.getRepresentSMtdValue()); //ä»£è¡¨smtd
+				xlsx.write(i + 2, colCnt++, curMile.getRepresentSMtdValue()); //´ú±ísmtd
 
-				xlsx.write(i + 2, colCnt++, curMile.getLeftMpdValue()); //mpd ç£¨è€—
+				xlsx.write(i + 2, colCnt++, curMile.getLeftMpdValue()); //mpd Ä¥ºÄ
 				xlsx.write(i + 2, colCnt++, curMile.getRightMpdValue());
 				xlsx.write(i + 2, colCnt++, curMile.getCenterMpdValue());
 				xlsx.write(i + 2, colCnt++, curMile.getMpdWrValue());
@@ -5736,39 +5978,39 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 
 
 
-				xlsx.write(i + 2, colCnt++, curMile.getLeftMtdValue());//mtd ç£¨è€—
+				xlsx.write(i + 2, colCnt++, curMile.getLeftMtdValue());//mtd Ä¥ºÄ
 				xlsx.write(i + 2, colCnt++, curMile.getRightMtdValue());
 				xlsx.write(i + 2, colCnt++, curMile.getCenterMtdValue());
 				xlsx.write(i + 2, colCnt++, curMile.getMtdWrValue());
-				xlsx.write(i + 2, colCnt++, curMile.getPwiValueStr()); //ç£¨è€—
+				xlsx.write(i + 2, colCnt++, curMile.getPwiValueStr()); //Ä¥ºÄ
 
 				xlsx.write(i + 2, colCnt++, curMile.getPqiEvaluateStr(i + 2, "F"));
 				xlsx.write(i + 2, colCnt++, curMile.getPciEvaluateStr("G", i + 2));
 				xlsx.write(i + 2, colCnt++, curMile.getIriEvaluateStr("H", i + 2));
 				xlsx.write(i + 2, colCnt++, curMile.getRutEvaluateStr("I", i + 2));
 				xlsx.write(i + 2, colCnt++, curMile.getPbiEvaluateStr("J", i + 2));
-				xlsx.write(i + 2, colCnt++, curMile.getMtdEvaluateStr("K", i + 2)); //åŸé•‡é“è·¯mt
+				xlsx.write(i + 2, colCnt++, curMile.getMtdEvaluateStr("K", i + 2)); //³ÇÕòµÀÂ·mt
 				xlsx.write(i + 2, colCnt++, curMile.getMtdEvaluateStr("L", i + 2));
 				xlsx.write(i + 2, colCnt++, curMile.getMpdEvaluateStr("AM", i + 2));
-				xlsx.write(i + 2, colCnt++, QStringLiteral("ä¼˜"));//BCIè¯„ä»·
+				xlsx.write(i + 2, colCnt++, QStringLiteral("ÓÅ"));//BCIÆÀ¼Û
 				xlsx.write(i + 2, colCnt++, curMile.getTciEvaluate());
 				xlsx.write(i + 2, colCnt++, curMile.getSciEvaluate());
 				_EXCELGPS_ sGps = curMile.getStartGpsStr();
 				_EXCELGPS_ eGps = curMile.getEndGpsStr();
 
-				xlsx.write(i + 2, colCnt++, sGps._longitude);//ç»åº¦
+				xlsx.write(i + 2, colCnt++, sGps._longitude);//¾­¶È
 				xlsx.write(i + 2, colCnt++, sGps._latitude);
 				xlsx.write(i + 2, colCnt++, sGps._elevation);
-				xlsx.write(i + 2, colCnt++, eGps._longitude);//ç»åº¦
+				xlsx.write(i + 2, colCnt++, eGps._longitude);//¾­¶È
 				xlsx.write(i + 2, colCnt++, eGps._latitude);
 				xlsx.write(i + 2, colCnt++, eGps._elevation);
 
-				xlsx.write(i + 2, colCnt++, curMile.getSpeed());//é€Ÿåº¦
-				xlsx.write(i + 2, colCnt++, curMile.getUnitStr());//é€Ÿåº¦ 
+				xlsx.write(i + 2, colCnt++, curMile.getSpeed());//ËÙ¶È
+				xlsx.write(i + 2, colCnt++, curMile.getUnitStr());//ËÙ¶È 
 			}
 #pragma endregion
 
-#pragma region å†™å…¥å·¥ç¨‹æ•°æ®
+#pragma region Ğ´Èë¹¤³ÌÊı¾İ
 			if (!xlsx.selectSheet("project_info"))
 			{
 				return;
@@ -5777,58 +6019,58 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			int rowIndex = 2;
 			int colIndex = 1;
 
-			//è·å–å·¥ç¨‹ä¿¡æ¯
+			//»ñÈ¡¹¤³ÌĞÅÏ¢
 			auto projectInfo = project->getCurProSetInfo();;
-			//çœ
+			//Ê¡
 			QString province = QString::fromLocal8Bit(projectInfo.strProvince);
 			xlsx.write(rowIndex, colIndex++, province);
-			//å¸‚
+			//ÊĞ
 			QString city = QString::fromLocal8Bit(projectInfo.strCity);
 
 			xlsx.write(rowIndex, colIndex++, city);
-			//å¿
+			//ÏØ
 			QString county = QString::fromLocal8Bit(projectInfo.strCounty);
 
 			xlsx.write(rowIndex, colIndex++, county);
-			//é“è·¯ç¼–å·
+			//µÀÂ·±àºÅ
 			QString roadNum = QString::fromLocal8Bit(projectInfo.strNumber);
 
 			xlsx.write(rowIndex, colIndex++, roadNum);
-			//é“è·¯åç§°
+			//µÀÂ·Ãû³Æ
 			QString roadName = QString::fromLocal8Bit(projectInfo.strRoadName);
 
 			xlsx.write(rowIndex, colIndex++, roadName);
-			//èµ·ç‚¹æ¡©å· 
+			//Æğµã×®ºÅ 
 			xlsx.write(rowIndex, colIndex++, m_outExcelManage->getStartMile());
-			//è¡Œè½¦æ–¹å‘
-			QString direction = projectInfo.nLineType == 1 ? QString::fromLocal8Bit("ä¸Šè¡Œ") : QString::fromLocal8Bit("ä¸‹è¡Œ");
+			//ĞĞ³µ·½Ïò
+			QString direction = projectInfo.nLineType == 1 ? QString::fromLocal8Bit("ÉÏĞĞ") : QString::fromLocal8Bit("ÏÂĞĞ");
 
 			xlsx.write(rowIndex, colIndex++, direction);
-			//å…¬è·¯ç­‰çº§
+			//¹«Â·µÈ¼¶
 			QString roadLevel = QString::fromLocal8Bit(projectInfo.strRoadLevel);
 			xlsx.write(rowIndex, colIndex++, roadLevel);
-			//è½¦é“
+			//³µµÀ
 			QString lane = QString::fromLocal8Bit(projectInfo.strRoadNO);
 			xlsx.write(rowIndex, colIndex++, lane);
-			//é‡‡é›†æ—¥æœŸ  
+			//²É¼¯ÈÕÆÚ  
 			xlsx.write(rowIndex, colIndex++, projectInfo.strDate);
-			//å·¥ç¨‹å¼€å§‹æ—¶åˆ» 
+			//¹¤³Ì¿ªÊ¼Ê±¿Ì 
 			xlsx.write(rowIndex, colIndex++, projectInfo.strTimer);
-			//æ£€æµ‹å‘˜
+			//¼ì²âÔ±
 			QString detectPeople = QString::fromLocal8Bit(projectInfo.strSurveyor);
 			xlsx.write(rowIndex, colIndex++, detectPeople);
-			//æ£€æµ‹å¤©æ°”
+			//¼ì²âÌìÆø
 			QString wheather = QString::fromLocal8Bit(projectInfo.strWeather);
 
 			xlsx.write(rowIndex, colIndex++, wheather);
-			//è·¯é¢æè´¨
+			//Â·Ãæ²ÄÖÊ
 			QString roadType = QString::fromLocal8Bit(projectInfo.getRSurfaceType().data());
 
 			xlsx.write(rowIndex, colIndex++, roadType);
-			//ç»ˆç‚¹æ¡©å·
+			//ÖÕµã×®ºÅ
 
 			xlsx.write(rowIndex, colIndex++, m_outExcelManage->getEndMile());
-			//æ£€æµ‹é‡Œç¨‹ï¼ˆkmï¼‰
+			//¼ì²âÀï³Ì£¨km£©
 
 			xlsx.write(rowIndex, colIndex++, qAbs(m_outExcelManage->getStartMile() - m_outExcelManage->getEndMile()) * 0.001);
 			QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
@@ -5840,12 +6082,12 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			xlsx.write(rowIndex, colIndex++, projectInfo.dRoadWidth);
 #pragma endregion
 
-#pragma region å†™å…¥è·¯é¢ç—…å®³æ•°æ®
+#pragma region Ğ´ÈëÂ·Ãæ²¡º¦Êı¾İ
 			if (!xlsx.selectSheet("road_Dis"))
 			{
 				return;
 			}
-			//è·å–ç—…å®³
+			//»ñÈ¡²¡º¦
 			QVector<hnCommon::hnRoadDiseaseInfo> diss;
 
 			diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(); 
@@ -5857,32 +6099,32 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				{
 					auto dis = diss.at(i);
 					int  startTrueMile = qRound(project->enclToTrueMile(dis.dMileage));
-					//å¼€å§‹æ¡©å·	
+					//¿ªÊ¼×®ºÅ	
 					xlsx.write(QString("A%1").arg(rowCount), startTrueMile);
-					//è½¦é“	 
+					//³µµÀ	 
 					QString RoadNum = QString::fromLocal8Bit(projectInfo.strRoadNO);
 					xlsx.write(QString("B%1").arg(rowCount), RoadNum);
-					//ç—…å®³ç±»å‹
+					//²¡º¦ÀàĞÍ
 					QString disName = QString::fromLocal8Bit(dis.strDisName);
 					QStringList disSplit = disName.split('.');
 					if (disSplit.size() > 1)
 					{
 						xlsx.write(QString("C%1").arg(rowCount), disSplit.at(0));
-						//ç—…å®³ç¨‹åº¦ 
+						//²¡º¦³Ì¶È 
 						xlsx.write(QString("D%1").arg(rowCount), disSplit.at(1));
 					}
 					else
 					{
 						xlsx.write(QString("C%1").arg(rowCount), disSplit.at(0));
-						//ç—…å®³ç¨‹åº¦ 
-						xlsx.write(QString("D%1").arg(rowCount), QStringLiteral("æ— "));
+						//²¡º¦³Ì¶È 
+						xlsx.write(QString("D%1").arg(rowCount), QStringLiteral("ÎŞ"));
 					}
-					//ç—…å®³æ¡†é•¿åº¦ï¼ˆmï¼‰
+					//²¡º¦¿ò³¤¶È£¨m£©
 					xlsx.write(QString("E%1").arg(rowCount), dis.dLength);
-					//ç—…å®³æ¡†å®½åº¦ï¼ˆmï¼‰
+					//²¡º¦¿ò¿í¶È£¨m£©
 					xlsx.write(QString("F%1").arg(rowCount), dis.dWidth);
-					//ç—…å®³ä¸­å¿ƒä½ç½®ï¼ˆè·è·¯é¢å›¾åƒå³è¾¹è·ç¦»ï¼‰ï¼ˆmï¼‰
-					//å•ä½æ˜¯ç±³
+					//²¡º¦ÖĞĞÄÎ»ÖÃ£¨¾àÂ·ÃæÍ¼ÏñÓÒ±ß¾àÀë£©£¨m£©
+					//µ¥Î»ÊÇÃ×
 					double distance = 0.0;
 					if (dis.vec2dRect.size() != 0)
 					{
@@ -5895,18 +6137,18 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					}
 
 					xlsx.write(QString("G%1").arg(rowCount), distance);
-					//ç—…å®³é¢ç§¯(m2)
+					//²¡º¦Ãæ»ı(m2)
 					xlsx.write(QString("H%1").arg(rowCount), dis.dArea);
-					//ç—…å®³è®¡ç®—é•¿åº¦ï¼ˆmï¼‰
+					//²¡º¦¼ÆËã³¤¶È£¨m£©
 					xlsx.write(QString("I%1").arg(rowCount), dis.dRealLen);
-					//ç—…å®³è®¡ç®—å®½åº¦ï¼ˆmï¼‰
+					//²¡º¦¼ÆËã¿í¶È£¨m£©
 					xlsx.write(QString("J%1").arg(rowCount), dis.dReaWidth);
-					//ç—…å®³æ·±åº¦ ï¼ˆmmï¼‰
+					//²¡º¦Éî¶È £¨mm£©
 					xlsx.write(QString("K%1").arg(rowCount), dis.dDepth * 1000);
 					hnMile curMile;
 					double disCurMile = project->enclToTrueMile(dis.dMileage);
 					double mileLenght = 100000;
-					//æ ¹æ®æ¡©å·æ‰¾åˆ°åŒ¹é…å›¾ç‰‡
+					//¸ù¾İ×®ºÅÕÒµ½Æ¥ÅäÍ¼Æ¬
 					for (int i = 0; i < curMiles.size(); ++i)
 					{
 
@@ -5921,16 +6163,16 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					int findIndex = curMile.picturePath.lastIndexOf("/");
 					QString subName = curMile.picturePath.mid(findIndex + 1);
 
-					//è·¯é¢å›¾åƒåç§°
+					//Â·ÃæÍ¼ÏñÃû³Æ
 					xlsx.write(QString("L%1").arg(rowCount), subName);
 
 					findIndex = curMile.picturePath.indexOf("RoadImg");
 					subName = "/" + curMile.picturePath.mid(findIndex);
-					//è·¯é¢å›¾åƒç›¸å¯¹è·¯å¾„
+					//Â·ÃæÍ¼ÏñÏà¶ÔÂ·¾¶
 					xlsx.write(QString("M%1").arg(rowCount), subName);
-					//è·¯é¢æè´¨
-					QString roadType = dis.nRSurfaceType == 0 ? QStringLiteral("æ²¥é’") :
-						dis.nRSurfaceType == 1 ? QStringLiteral("æ°´æ³¥") : QString("");
+					//Â·Ãæ²ÄÖÊ
+					QString roadType = dis.nRSurfaceType == 0 ? QStringLiteral("Á¤Çà") :
+						dis.nRSurfaceType == 1 ? QStringLiteral("Ë®Äà") : QString("");
 					xlsx.write(QString("N%1").arg(rowCount), roadType);
 					double lat = 0.0;
 					double lon = 0.0;
@@ -5965,7 +6207,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					xlsx.write(QString("O%1").arg(rowCount), lon);
 					xlsx.write(QString("P%1").arg(rowCount), lat);
 					xlsx.write(QString("Q%1").arg(rowCount), height);
-					//å¤‡æ³¨ 
+					//±¸×¢ 
 					QString mark = dis.strRemark;
 					xlsx.write(QString("R%1").arg(rowCount), mark);
 				}
@@ -5977,33 +6219,33 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					auto dis = diss.at(i);
 					int  startTrueMile = qRound(project->enclToTrueMile(dis.dMileage));
 
-					//å¼€å§‹æ¡©å·	
+					//¿ªÊ¼×®ºÅ	
 
 					xlsx.write(QString("A%1").arg(rowCount), startTrueMile);
-					//è½¦é“	 
+					//³µµÀ	 
 					QString RoadNum = QString::fromLocal8Bit(projectInfo.strRoadNO);
 					xlsx.write(QString("B%1").arg(rowCount), RoadNum);
-					//ç—…å®³ç±»å‹  
+					//²¡º¦ÀàĞÍ  
 					QString disName = QString::fromLocal8Bit(dis.strDisName);
 					QStringList disSplit = disName.split('.');
 					if (disSplit.size() > 1)
 					{
 						xlsx.write(QString("C%1").arg(rowCount), disSplit.at(0));
-						//ç—…å®³ç¨‹åº¦  
+						//²¡º¦³Ì¶È  
 						xlsx.write(QString("D%1").arg(rowCount), disSplit.at(1));
 					}
 					else
 					{
 						xlsx.write(QString("C%1").arg(rowCount), disSplit.at(0));
-						//ç—…å®³ç¨‹åº¦  
-						xlsx.write(QString("D%1").arg(rowCount), QStringLiteral("æ— "));
+						//²¡º¦³Ì¶È  
+						xlsx.write(QString("D%1").arg(rowCount), QStringLiteral("ÎŞ"));
 					}
 
-					//ç—…å®³é¢ç§¯(m2) 
+					//²¡º¦Ãæ»ı(m2) 
 					xlsx.write(QString("H%1").arg(rowCount), dis.dArea);
 
-					//å…·ä½“ä½ç½®_è·å³ä¾§æ ‡çº¿ä½ç½®(m) 
-					//ç®—å‡ºè‡ªåŠ¨åŒ–æ¨¡å¼å°æ–¹æ ¼æ¨ªå‘çš„ä¸­ç‚¹ï¼Œç„¶åå†ç”¨é“è·¯å®½åº¦å‡å»ä¸­ç‚¹
+					//¾ßÌåÎ»ÖÃ_¾àÓÒ²à±êÏßÎ»ÖÃ(m) 
+					//Ëã³ö×Ô¶¯»¯Ä£Ê½Ğ¡·½¸ñºáÏòµÄÖĞµã£¬È»ºóÔÙÓÃµÀÂ·¿í¶È¼õÈ¥ÖĞµã
 					double distance = 0.0;
 					if (dis.vec2dRect.size() != 0)
 					{
@@ -6026,7 +6268,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					hnMile curMile;
 					double disCurMile = project->enclToTrueMile(dis.dMileage);
 					double mileLenght = 100000;
-					//æ ¹æ®æ¡©å·æ‰¾åˆ°åŒ¹é…å›¾ç‰‡
+					//¸ù¾İ×®ºÅÕÒµ½Æ¥ÅäÍ¼Æ¬
 					for (int i = 0; i < curMiles.size(); ++i)
 					{
 						double dCurMile = curMiles.at(i).dTrueMile;
@@ -6037,21 +6279,21 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 							curMile = curMiles.at(i);
 						}
 					}
-					//è·¯é¢å›¾åƒåç§° 
+					//Â·ÃæÍ¼ÏñÃû³Æ 
 					int findIndex = curMile.picturePath.lastIndexOf("/");
 					QString subName = curMile.picturePath.mid(findIndex + 1);
 
-					//è·¯é¢å›¾åƒåç§°
+					//Â·ÃæÍ¼ÏñÃû³Æ
 					xlsx.write(QString("L%1").arg(rowCount), subName);
 
 					findIndex = curMile.picturePath.indexOf("RoadImg");
 					subName = "/" + curMile.picturePath.mid(findIndex);
-					//è·¯é¢å›¾åƒç›¸å¯¹è·¯å¾„
+					//Â·ÃæÍ¼ÏñÏà¶ÔÂ·¾¶
 					xlsx.write(QString("M%1").arg(rowCount), subName);
 
-					//è·¯é¢æè´¨ 
-					QString roadType = dis.nRSurfaceType == 0 ? QStringLiteral("æ²¥é’") :
-						dis.nRSurfaceType == 1 ? QStringLiteral("æ°´æ³¥") : QString("");
+					//Â·Ãæ²ÄÖÊ 
+					QString roadType = dis.nRSurfaceType == 0 ? QStringLiteral("Á¤Çà") :
+						dis.nRSurfaceType == 1 ? QStringLiteral("Ë®Äà") : QString("");
 					xlsx.write(QString("N%1").arg(rowCount), roadType);
 					double lat = 0.0;
 					double lon = 0.0;
@@ -6076,7 +6318,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				}
 			}
 #pragma endregion 
-#pragma region å†™å…¥æ™¯è§‚ç—…å®³æ•°æ®
+#pragma region Ğ´Èë¾°¹Û²¡º¦Êı¾İ
 
 			if (!xlsx.selectSheet("street_YXDis"))
 			{
@@ -6090,14 +6332,17 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			writeStreetDiseaseMsgToExcel(2, project, xlsx);
 #pragma endregion   
 
-			QString saveExcelName = project->getAbsulotelyPath() + QStringLiteral("\\æˆæœæ•°æ®\\") + project->get2DProName() + QStringLiteral("\\%1_hnResult_23dDatas_%2m.xlsx").arg(project->get2DProName()).arg(splitValue);
+			QString saveExcelName = project->getAbsulotelyPath() + QStringLiteral("\\³É¹ûÊı¾İ\\") + project->get2DProName() + QStringLiteral("\\%1_hnResult_23dDatas_%2m.xlsx").arg(project->get2DProName()).arg(splitValue);
 
+
+			progress.setValue((currentTask + 1) * progressScale);
+			++currentTask;
 
 			if (!xlsx.saveAs(saveExcelName))
 			{
 				outSucceed = false;
 				QApplication::restoreOverrideCursor();
-				QMessageBox::about(this, QStringLiteral("é”™è¯¯"), saveExcelName + "\n" + QStringLiteral("å­˜å‚¨è·¯å¾„æ–‡ä»¶è¢«æ‰“å¼€,æ— æ³•å†™å…¥!"));
+				QMessageBox::about(this, QStringLiteral("´íÎó"), saveExcelName + "\n" + QStringLiteral("´æ´¢Â·¾¶ÎÄ¼ş±»´ò¿ª,ÎŞ·¨Ğ´Èë!"));
 				return;
 			}
 		}
@@ -6107,9 +6352,8 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	QApplication::restoreOverrideCursor();
 	if (outSucceed)
 	{
-		QMessageBox::about(this, QStringLiteral("æç¤º"), QStringLiteral("è¾“å‡ºå®Œæ¯•!"));
+		QMessageBox::about(this, QStringLiteral("ÌáÊ¾"), QStringLiteral("Êä³öÍê±Ï!"));
 	}
-	//æ‰“å¼€å‡ºè¡¨è½¯ä»¶
+	//´ò¿ª³ö±íÈí¼ş
 
 }
-

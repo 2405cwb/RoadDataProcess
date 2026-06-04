@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QLabel>
+#include <QTimer>
 
 calculateIrmForm::calculateIrmForm(QWidget* parent)
 	: QDialog(parent)
@@ -15,12 +16,14 @@ calculateIrmForm::calculateIrmForm(QWidget* parent)
 	, m_flatnessProgressBar(nullptr)
 	, m_rutProgressBar(nullptr)
 	, m_smtdProgressBar(nullptr)
-	, m_stopRequested(false), 
+	, m_stopRequested(false),
+	 m_isRunning(false),
+	m_runningTaskCount(0),
 	projectCount(0)
- 
+
 {
-	setModal(true); 
-	//进行计算 
+	setModal(true);
+	//进行计算
 	setWindowTitle(QStringLiteral("IRM计算"));
 	// 初始化控件
 	QLabel* allProjectsLabel = new QLabel(QStringLiteral("总进度"), this);
@@ -28,11 +31,11 @@ calculateIrmForm::calculateIrmForm(QWidget* parent)
 	m_rutCheckbox = new QCheckBox(QStringLiteral("计算车辙RUT"), this);
 	m_smtdCheckbox = new QCheckBox(QStringLiteral("计算SMTD"), this);
 	m_smpdCheckbox = new QCheckBox(QStringLiteral("计算磨耗"), this);
-	m_jhxxCheckbox = new QCheckBox(QStringLiteral("几何线性"), this);
+	m_jhxxCheckbox = new QCheckBox(QStringLiteral("几何线型"), this);
 	m_smtdCheckbox->setChecked(true);
 		m_smpdCheckbox->setChecked(true);
 		m_jhxxCheckbox->setChecked(false);
-		m_flatnessCheckbox->setChecked(true);	
+		m_flatnessCheckbox->setChecked(true);
 		m_rutCheckbox->setChecked(true);
 	m_allProjectProgressBar = new QProgressBar(this);
 	m_flatnessProgressBar = new QProgressBar(this);
@@ -44,7 +47,7 @@ calculateIrmForm::calculateIrmForm(QWidget* parent)
 	QPushButton* cancelButton = new QPushButton(QStringLiteral("取消"), this);
 
 	// 设置进度条的范围和最小值
-	m_allProjectProgressBar->setMinimum(0); 
+	m_allProjectProgressBar->setMinimum(0);
 	//m_allProjectProgressBar->setMaximum(projectCount);
 	m_flatnessProgressBar->setMinimum(0);
 	m_flatnessProgressBar->setMaximum(100);
@@ -60,22 +63,22 @@ calculateIrmForm::calculateIrmForm(QWidget* parent)
 	m_jhxxProgressBar->setMaximum(100);
 	resize(650, 400);
 	// 使用布局将控件放置在窗口中
-	QVBoxLayout* mainLayout = new QVBoxLayout(this); 
-	QGridLayout * allProjectBOX = new QGridLayout(this); 
-	allProjectBOX->addWidget( allProjectsLabel,0,0); 
-	allProjectBOX->addWidget(m_allProjectProgressBar,0,1); 
-	allProjectBOX->addWidget(m_flatnessCheckbox,1,0); 
+	QVBoxLayout* mainLayout = new QVBoxLayout(this);
+	QGridLayout * allProjectBOX = new QGridLayout(this);
+	allProjectBOX->addWidget( allProjectsLabel,0,0);
+	allProjectBOX->addWidget(m_allProjectProgressBar,0,1);
+	allProjectBOX->addWidget(m_flatnessCheckbox,1,0);
 	//flatnessLayout->addSpacerItem(new QSpacerItem(8, 0, QSizePolicy::Fixed, QSizePolicy::Minimum));//添加固定间距
-	allProjectBOX->addWidget(m_flatnessProgressBar,1,1); 
-	allProjectBOX->addWidget(m_rutCheckbox,2,0); 
-	allProjectBOX->addWidget(m_rutProgressBar,2,1);  
-	allProjectBOX->addWidget(m_smtdCheckbox,3,0); 
-	allProjectBOX->addWidget(m_smtdProgressBar,3,1); 
-	allProjectBOX->addWidget(m_smpdCheckbox,4,0); 
-	allProjectBOX->addWidget(m_smpdProgressBar,4,1);  
-	allProjectBOX->addWidget(m_jhxxCheckbox,5,0); 
-	allProjectBOX->addWidget(m_jhxxProgressBar,5,1);  
-	QHBoxLayout* buttonLayout = new QHBoxLayout; 
+	allProjectBOX->addWidget(m_flatnessProgressBar,1,1);
+	allProjectBOX->addWidget(m_rutCheckbox,2,0);
+	allProjectBOX->addWidget(m_rutProgressBar,2,1);
+	allProjectBOX->addWidget(m_smtdCheckbox,3,0);
+	allProjectBOX->addWidget(m_smtdProgressBar,3,1);
+	allProjectBOX->addWidget(m_smpdCheckbox,4,0);
+	allProjectBOX->addWidget(m_smpdProgressBar,4,1);
+	allProjectBOX->addWidget(m_jhxxCheckbox,5,0);
+	allProjectBOX->addWidget(m_jhxxProgressBar,5,1);
+	QHBoxLayout* buttonLayout = new QHBoxLayout;
 	allProjectBOX->setVerticalSpacing(15);
 	mainLayout->addLayout(allProjectBOX);
 	buttonLayout->addSpacerItem(new QSpacerItem(35, 20));
@@ -83,12 +86,12 @@ calculateIrmForm::calculateIrmForm(QWidget* parent)
 	buttonLayout->addSpacerItem(new QSpacerItem(20, 20));
 
 	buttonLayout->addWidget(cancelButton);
-	buttonLayout->addSpacerItem(new QSpacerItem(35, 20)); 
-	mainLayout->addLayout(buttonLayout); 
+	buttonLayout->addSpacerItem(new QSpacerItem(35, 20));
+	mainLayout->addLayout(buttonLayout);
 	// 连接信号和槽
 	connect(calculateButton, &QPushButton::clicked, this, &calculateIrmForm::onCalculateButtonClicked);
 	connect(cancelButton, &QPushButton::clicked, this, &calculateIrmForm::onCancelButtonClicked);
-	
+
 }
 
 calculateIrmForm::~calculateIrmForm()
@@ -107,9 +110,19 @@ calculateIrmForm::~calculateIrmForm()
 void calculateIrmForm::onCalculateButtonClicked()
 {
 	m_Pools = QThreadPool::globalInstance();
-	int idealThreadCount = QThread::idealThreadCount();
-	m_Pools->setMaxThreadCount(idealThreadCount *2); 
-	m_threads.clear(); 
+	int idealThreadCount = qMax(1, QThread::idealThreadCount());
+	 m_Pools->setMaxThreadCount(idealThreadCount);
+	 if (m_isRunning)
+	 {
+		 QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("IRM计算正在进行中，请先等待完成或取消。"));
+		 return;
+	 }
+	 for (int i = 0; i < m_threads.size(); ++i)
+	 {
+		 delete m_threads[i];
+	 }
+	 m_threads.clear();
+	 sumProgressHelpMap.clear();
 	if (!m_flatnessCheckbox->isChecked() && !m_rutCheckbox->isChecked() && !m_smtdCheckbox->isChecked()
 		&&!m_smpdCheckbox->isChecked()&&!m_jhxxCheckbox->isChecked())
 	{
@@ -119,8 +132,8 @@ void calculateIrmForm::onCalculateButtonClicked()
 	//进行计算
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
 	std::vector<hnPro::hnProject*> allPorject = manager->getAllBaseProject();
-	
-	 
+
+
 	for (int i = 0;i<allPorject.size();++i)
 	{
 		hnPro::hnProject*  currentProject = allPorject.at(i);
@@ -129,18 +142,18 @@ void calculateIrmForm::onCalculateButtonClicked()
 		if (m_flatnessCheckbox->isChecked())
 		{
 			auto flatnessThread = new CalculationThread(CalculationThread::IRI, i, currentProject);
-			connect(flatnessThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated); 
+			connect(flatnessThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated);
 			connect(flatnessThread, &CalculationThread::error, this, &calculateIrmForm::error);
 			//flatnessThread->start();
 			m_threads.push_back(flatnessThread);
 			typeSumVec.push_back( qMakePair( CalculationThread::IRI,0));
-			
+
 		}
 
 		if (m_rutCheckbox->isChecked())
 		{
 			auto rutThread = new CalculationThread(CalculationThread::Rut,  i, currentProject);
-			connect(rutThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated); 
+			connect(rutThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated);
 			connect(rutThread, &CalculationThread::error, this, &calculateIrmForm::error);
 			//rutThread->start();
 			m_threads.push_back(rutThread);
@@ -150,7 +163,7 @@ void calculateIrmForm::onCalculateButtonClicked()
 		if (m_smtdCheckbox->isChecked())
 		{
 			auto smtdThread = new CalculationThread(CalculationThread::Smtd,i, currentProject);
-			connect(smtdThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated); 
+			connect(smtdThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated);
 			connect(smtdThread, &CalculationThread::error, this, &calculateIrmForm::error);
 			//smtdThread->start();
 			m_threads.push_back(smtdThread);
@@ -168,12 +181,12 @@ void calculateIrmForm::onCalculateButtonClicked()
 		if (m_jhxxCheckbox->isChecked())
 		{
 			auto jhxxThread = new CalculationThread(CalculationThread::Jhxx, i, currentProject);
-			connect(jhxxThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated); 
+			connect(jhxxThread, &CalculationThread::progressUpdated, this, &calculateIrmForm::onProgressUpdated);
 			connect(jhxxThread, &CalculationThread::error, this, &calculateIrmForm::error);
 			//smtdThread->start();
 			m_threads.push_back(jhxxThread);
 			typeSumVec.push_back(qMakePair(CalculationThread::Jhxx,0));
-		} 
+		}
 
 		sumProgressHelpMap.insert(currentProject, typeSumVec);
 	}
@@ -192,20 +205,40 @@ void calculateIrmForm::onCalculateButtonClicked()
 		SetProgressRange(CalculationThread::Smtd, 0, allPorject.size() * 100);
 		SetProgressRange(CalculationThread::Jhxx, 0, allPorject.size() * 100);
 	}
-
-
+	m_isRunning = true;
+	m_runningTaskCount = m_threads.size();
+	if (m_runningTaskCount == 0)
+	{
+		m_isRunning = false;
+		return;
+	}
+	for (CalculationThread* thread : qAsConst(m_threads))
+	{
+		connect(thread, &CalculationThread::stopped, this, [this]()
+		{
+			if (m_runningTaskCount > 0)
+			{
+				--m_runningTaskCount;
+			}
+			if (m_runningTaskCount == 0)
+			{
+				m_isRunning = false;
+			}
+		}, Qt::QueuedConnection);
+	}
 	for (auto i = 0; i < m_threads.size(); i++)
 	{
-		m_Pools->start(m_threads[i]);
+		 m_Pools->start(m_threads[i]);
 	}
 }
 
 void calculateIrmForm::onCancelButtonClicked()
 {
-	for (int i = m_threads.size()-1; i >0; --i)
+	for (int i = m_threads.size() - 1; i >= 0; --i)
 	{
 		m_threads[i]->stop();
 	}
+	m_stopRequested = true;
 	hide();
 }
 
@@ -235,21 +268,21 @@ void calculateIrmForm::handelControls(int calculationType,QProgressBar*&  progre
 
 void calculateIrmForm::onProgressUpdated(hnPro::hnProject*project, int calculationType,double progress,bool isInt)
 {
-	
-	QProgressBar* progressBar = nullptr; 
+
+	QProgressBar* progressBar = nullptr;
 	handelControls(calculationType, progressBar );
 	int progressValue = 0;
 
-	
+
 	if (isInt) //是整数
 	{
 		progressValue = progress;
 	}
 	else
 	{
-		progressValue = progress * 100; 
+		progressValue = progress * 100;
 	}
-	 
+
 	if (sumProgressHelpMap.contains(project))
 	{
 		for (int i = 0; i < sumProgressHelpMap[project].size(); i++)
@@ -257,31 +290,34 @@ void calculateIrmForm::onProgressUpdated(hnPro::hnProject*project, int calculati
 			if (sumProgressHelpMap[project][i].first ==calculationType)
 			{
 				//设置该工程该指标进度到100
-				sumProgressHelpMap[project][i].second = progressValue;
+				sumProgressHelpMap[project][i].second = qMax(sumProgressHelpMap[project][i].second, qBound(0, progressValue, 100));
 			}
 		}
 	}
-	int sumValue = 0; 
+	int sumValue = 0;
 	auto it = sumProgressHelpMap.begin();
 	while (it != sumProgressHelpMap.end())
-	{ 
+	{
 		for (int i = 0; i < it.value().size(); ++i)
 		{
 			if (it.value()[i].first  == calculationType)
 			{
 				sumValue += it.value()[i].second;
 			}
-		} 
+		}
 		++it;
 
 	}
-		progressBar->setValue(sumValue);
+		if (progressBar != nullptr)
+		{
+			progressBar->setValue(sumValue);
+		}
 		ThreadFinish();
 }
 void calculateIrmForm::ThreadFinish()
-{ 
+{
 		int completeCount = 0;
-		auto it = sumProgressHelpMap.begin(); 
+		auto it = sumProgressHelpMap.begin();
 		/*	while (it != sumProgressHelpMap.end())
 			{
 				bool complete = true;
@@ -305,15 +341,18 @@ void calculateIrmForm::ThreadFinish()
 			for (int i = 0 ; i<it.value().size(); ++i)
 			{
 				completeCount += it.value()[i].second;
-			} 
+			}
 			++it;
 			}
 		m_allProjectProgressBar->setValue(completeCount);
 		if (completeCount == projectCount)
 		{
-			QThread::sleep(1);
-			emit calculationFinished();
-			close();
+			m_isRunning = false;
+			QTimer::singleShot(1000, this, [this]()
+			{
+				emit calculationFinished();
+				close();
+			});
 		}
 }
 void calculateIrmForm::onSetProgressMaxValue(int calculationType, int value)

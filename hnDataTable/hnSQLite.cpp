@@ -67,7 +67,7 @@
 		if (nRet != SQLITE_OK)
 		{
 			// 打开失败时提示错误信息
-			MessageBoxW(NULL, MbcsToUnicode(GetLastErrorMsg()), MbcsToUnicode("err"), MB_OK);
+			MessageBox(NULL, MbcsToUnicode(GetLastErrorMsg()), MbcsToUnicode("err"), MB_OK);
 			return false;
 		}
 

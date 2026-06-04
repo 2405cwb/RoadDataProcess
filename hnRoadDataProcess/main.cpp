@@ -6,6 +6,12 @@
 #include <QtWidgets/QApplication>
 #include "logMgr.h"
 #include <windows.h>
+#include <QEvent>
+#include <QTimer>
+#include <QWidget>
+#include <QElapsedTimer>
+#include <QDateTime>
+#include <QAbstractEventDispatcher>
 //
 //
 //#ifdef _DEBUG
@@ -16,64 +22,166 @@
 //#endif // DEBUG
 
 
+
+namespace
+{
+	QString hnEventTypeName(QEvent::Type type)
+	{
+		switch (type)
+		{
+		case QEvent::ApplicationActivate: return "ApplicationActivate";
+		case QEvent::ApplicationDeactivate: return "ApplicationDeactivate";
+		case QEvent::WindowActivate: return "WindowActivate";
+		case QEvent::WindowDeactivate: return "WindowDeactivate";
+		case QEvent::ActivationChange: return "ActivationChange";
+		case QEvent::WindowStateChange: return "WindowStateChange";
+		case QEvent::FocusIn: return "FocusIn";
+		case QEvent::FocusOut: return "FocusOut";
+		case QEvent::Move: return "Move";
+		case QEvent::Resize: return "Resize";
+		case QEvent::Show: return "Show";
+		case QEvent::Hide: return "Hide";
+		default: return QString::number(static_cast<int>(type));
+		}
+	}
+
+	QString hnWidgetInfo(QWidget* widget)
+	{
+		if (!widget)
+		{
+			return QString();
+		}
+
+		const QRect geo = widget->geometry();
+		return QString("class=%1 object=%2 title=%3 visible=%4 active=%5 minimized=%6 maximized=%7 fullScreen=%8 geo=%9,%10,%11,%12")
+			.arg(widget->metaObject() ? widget->metaObject()->className() : "")
+			.arg(widget->objectName())
+			.arg(widget->windowTitle())
+			.arg(widget->isVisible())
+			.arg(widget->isActiveWindow())
+			.arg(widget->isMinimized())
+			.arg(widget->isMaximized())
+			.arg(widget->isFullScreen())
+			.arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height());
+	}
+
+	bool hnShouldLogWidgetEvent(QWidget* widget, QEvent::Type type)
+	{
+		if (!widget)
+		{
+			return false;
+		}
+
+		const bool importantWindowEvent =
+			type == QEvent::WindowActivate ||
+			type == QEvent::WindowDeactivate ||
+			type == QEvent::ActivationChange ||
+			type == QEvent::WindowStateChange ||
+			type == QEvent::Show ||
+			type == QEvent::Hide ||
+			type == QEvent::Move ||
+			type == QEvent::Resize;
+
+		return importantWindowEvent && widget->isWindow();
+	}
+
+	class HnRuntimeEventProbe : public QObject
+	{
+	public:
+		explicit HnRuntimeEventProbe(QObject* parent = nullptr)
+			: QObject(parent)
+		{
+			m_lastHeartbeat.start();
+		}
+
+		bool eventFilter(QObject* watched, QEvent* event) override
+		{
+			if (!event)
+			{
+				return QObject::eventFilter(watched, event);
+			}
+
+			const QEvent::Type type = event->type();
+			if (type == QEvent::ApplicationActivate || type == QEvent::ApplicationDeactivate)
+			{
+				qDebug().noquote() << "[HN_PERF][AppEvent]"
+					<< "event=" << hnEventTypeName(type)
+					<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+			}
+			else
+			{
+				QWidget* widget = qobject_cast<QWidget*>(watched);
+				if (hnShouldLogWidgetEvent(widget, type))
+				{
+					qDebug().noquote() << "[HN_PERF][WidgetEvent]"
+						<< "event=" << hnEventTypeName(type)
+						<< hnWidgetInfo(widget);
+				}
+			}
+
+			return QObject::eventFilter(watched, event);
+		}
+
+		void startHeartbeat()
+		{
+			QTimer* timer = new QTimer(this);
+			timer->setInterval(1000);
+			connect(timer, &QTimer::timeout, this, [this]() {
+				const qint64 gapMs = m_lastHeartbeat.elapsed();
+				if (gapMs >= 3000)
+				{
+					qDebug().noquote() << "[HN_PERF][EventLoopGap]"
+						<< "gapMs=" << gapMs
+						<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+				}
+				m_lastHeartbeat.restart();
+			});
+			timer->start();
+		}
+
+	private:
+		QElapsedTimer m_lastHeartbeat;
+	};
+}
 using namespace std;
 void logOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
-	static thread_local bool isWritingLog = false;
-	if (isWritingLog)
-	{
-		return;
-	}
-
 	//过滤掉libping的警告
 	if (msg.contains("libpng"))	return;
 
-	isWritingLog = true;
-	try
+	QString text;
+
+	//加入debug类型
+	switch (type)
 	{
-		QString text;
+	case QtInfoMsg:
+		text.append("[Info]");
+		break;
 
-		//加入debug类型
-		switch (type)
-		{
-		case QtInfoMsg:
-			text.append("[Info]");
-			break;
+	case QtDebugMsg:
+		text.append("[Debug]");
+		break;
 
-		case QtDebugMsg:
-			text.append("[Debug]");
-			break;
+	case QtWarningMsg:
+		text.append("[Warning]");
+		break;
 
-		case QtWarningMsg:
-			text.append("[Warning]");
-			break;
+	case QtCriticalMsg:
+		text.append("[Critical]");
+		break;
 
-		case QtCriticalMsg:
-			text.append("[Critical]");
-			break;
-
-		case QtFatalMsg:
-			text.append("[Fatal]");
-		}
-
-		if (context.file != nullptr && context.line > 0)
-		{
-			text += QString("[%1:%2]").arg(QString::fromLocal8Bit(context.file)).arg(context.line);
-		}
-
-		//加入debug信息
-		text += msg;
-
-		//调用日志模块记录日志
-		logMgr::instance()->writeLog(text);
+	case QtFatalMsg:
+		text.append("[Fatal]");
 	}
-	catch (...)
-	{
-		//日志系统不能反过来导致 Qt 消息处理崩溃。
-	}
-	isWritingLog = false;
+
+	//加入debug信息
+	text += msg;
+
+	//调用日志模块记录日志
+	logMgr::instance()->writeLog(text);
 
 }
+
 int main(int argc, char *argv[])
 {
 	SetProcessDPIAware();
@@ -88,6 +196,10 @@ int main(int argc, char *argv[])
 
 	try { 
     QApplication a(argc, argv);
+	HnRuntimeEventProbe runtimeEventProbe(&a);
+	a.installEventFilter(&runtimeEventProbe);
+	runtimeEventProbe.startHeartbeat();
+	qDebug().noquote() << "[HN_PERF][AppStart]" << "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
 
 	//从文件中读取qss，应用
 	QString qssFileName = QApplication::applicationDirPath() + "/config/blue.css";

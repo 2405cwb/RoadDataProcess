@@ -149,7 +149,6 @@ public:
 
 	   //界面移动鼠标退回阈值
 	   int movePictureBackMouseRatio;
-	   bool wheelScrollOneImage = false;
 
 	   //是否根据打标分段
 	   bool  outMileWithMark;
@@ -188,9 +187,14 @@ public:
 	   //显示矩形框
 	   bool diseaseRectShow;
 
+	   //校桩选择整数
+	   bool mile2dmiToInt;
+
 	   //记录最近的五条备注信息
 	   QString diseaseMarkTxts;
 
 	   QString diseaseMarkTxt;
+
+	   bool wheelScrollOneImage;
 };
  

@@ -16,9 +16,66 @@
 #include <fstream>
 #include <filesystem>
 #include "../hnQtCommon/MyPoint.h"
-#include <QtCore/QtMath>  
+#include <QtCore/QtMath>
 #include <array>
-#include <QTimer>  
+#include <QTimer>
+#include <QMetaObject>
+#include <QMutexLocker>
+#include <algorithm>
+#include <cmath>
+#include <deque>
+#include <iterator>
+#include <numeric>
+#include <set>
+
+namespace
+{
+class SlidingUpperMedianWindow
+{
+public:
+	void append(double value)
+	{
+		m_values.push_back(value);
+		m_sorted.insert(value);
+	}
+
+	void slide(double value)
+	{
+		if (!m_values.empty())
+		{
+			const double oldest = m_values.front();
+			m_values.pop_front();
+			auto iter = m_sorted.find(oldest);
+			if (iter != m_sorted.end())
+			{
+				m_sorted.erase(iter);
+			}
+		}
+		append(value);
+	}
+
+	int size() const
+	{
+		return static_cast<int>(m_values.size());
+	}
+
+	bool isEmpty() const
+	{
+		return m_values.empty();
+	}
+
+	double upperMedian() const
+	{
+		auto iter = m_sorted.begin();
+		std::advance(iter, m_sorted.size() / 2);
+		return *iter;
+	}
+
+private:
+	std::deque<double> m_values;
+	std::multiset<double> m_sorted;
+};
+}
 
 CalculationThread::CalculationThread(CalculationType type, int taskId, hnPro::hnProject* project)
 	: m_type(type), m_stopRequested(false), currentPorject(project), m_taskID(taskId)
@@ -27,11 +84,17 @@ CalculationThread::CalculationThread(CalculationType type, int taskId, hnPro::hn
 	m_stdProcessValue = 0;
 	m_spdProcessValue = 0;
 	m_Project = project;
+	setAutoDelete(false);
+}
+
+bool CalculationThread::isStopRequested() const
+{
+	return m_stopRequested.load(std::memory_order_relaxed);
 }
 
 void CalculationThread::StartIRMThread(hnPro::hnProject* pro, const QString iriPath, const QString & daqBasePath, const QString& resamplePath, int side)
 {
-	bool datasrc = JudgMTDval(iriPath, side); 
+	bool datasrc = JudgMTDval(iriPath, side);
 	GenerateIRI_NEW(resamplePath.toStdString(), 10, "resample.txt", datasrc);
 	emit progressUpdated(m_Project, m_type, 90, true);
 }
@@ -272,7 +335,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //	QStringList results;
 //	int  count = 0;
 //	double speedval = 0;
-//	double 	DeltLen = 0.25; 
+//	double 	DeltLen = 0.25;
 //	double YSU = 0.0;
 //	QVector<double> m_sZU; m_sZU.resize(4);
 //	QVector<double>m_pZU; m_pZU.resize(4);
@@ -284,7 +347,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //	m_oldZSU[1] = listIRI[1] - listIRI[0];
 //	m_oldZSU[2] = 0;
 //	m_oldZSU[3] = 0;
-//	for (int i = 0; i < listIRI.size(); i++)  //10/0.25   100/0.25  1000/0.25 
+//	for (int i = 0; i < listIRI.size(); i++)  //10/0.25   100/0.25  1000/0.25
 //	{
 //		if (i%sumCount == 0 && listIRIInfo.size() > 1)
 //		{
@@ -320,7 +383,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //			value = irisum / plusenum;
 //
 //
-//			//根据车速进行矫正 
+//			//根据车速进行矫正
 //			if (datasrc)
 //			{
 //				value = value *m_IRI_k + m_IRI_b;
@@ -411,7 +474,7 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 	double irisum = 0;
 	double irival = 0;
 	double 	DeltLen = 0.25;
-	int plusenum = (int)(dIntervel / DeltLen);//IRI距离内有多少个250mm 
+	int plusenum = (int)(dIntervel / DeltLen);//IRI距离内有多少个250mm
 	double stime = 0;
 	double etime = 0;
 
@@ -447,7 +510,7 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 
 	int speedInx = 0;
 
-	for (int i = 1; i < listIRI.size(); i++)  //10/0.25   100/0.25  1000/0.25 
+	for (int i = 1; i < listIRI.size(); i++)  //10/0.25   100/0.25  1000/0.25
 	{
 		if (i%sumCount == 0)
 		{
@@ -567,7 +630,7 @@ void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, co
 	bool isParmFile;
 	std::vector<double>  speedparms, kparms, bparms;
 	int parmnum;
-	std::tie(isParmFile, speedparms, kparms, bparms, parmnum) = result1; 
+	std::tie(isParmFile, speedparms, kparms, bparms, parmnum) = result1;
 
 	// 步骤2: 加载和预处理原始数据
 	double DeltLen = 0.1; // 采样间隔（0.1m 或 0.25m）
@@ -577,7 +640,23 @@ void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, co
 	std::vector<std::string> sdata;
 	int len;
 	std::tie(oridata, toridata, oritime, sdata, len) = result2;
-	 
+
+	if (m_Project != nullptr)
+	{
+		int maxRawLen = static_cast<int>(std::round(m_Project->getCurProSetInfo().dEndEnclMile / 0.05));
+
+		len = qMin(len, maxRawLen);
+
+		if (len < 0)
+			len = 0;
+
+		oridata.resize(len);
+		toridata.resize(len);
+		oritime.resize(len);
+		sdata.resize(len);
+	}
+
+
 	// 步骤3: 应用均值滤波（可选，默认注释，与原始版本一致）
 	for (int i = 2; i < len - 2; ++i) {
 		oridata[i] = (toridata[i - 2] + toridata[i - 1] + toridata[i] + toridata[i + 1] + toridata[i + 2]) / 5.0;
@@ -590,8 +669,12 @@ void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, co
 	std::vector<double> iridata;
 	std::vector<int> iritime;
 	std::tie(iridata, iritime) = result3;
-	 
+
 	len = static_cast<int>(iridata.size());
+	if (len <= 0)
+	{
+		return;
+	}
 
 	// 步骤4: 初始化状态变量
 	std::vector<double> oldZSU = InitializeState(iridata, DeltLen, len);
@@ -835,8 +918,8 @@ double CalculationThread::ApplyCorrection(double irival, bool datasrc, double sp
 		irival = irival *  1 + 0;
 	}
 	else {
-		 
-		if (isParmFile)
+
+		if (isParmFile && parmnum > 0 && kparms.size() >= static_cast<size_t>(parmnum) && bparms.size() >= static_cast<size_t>(parmnum))
 		{
 			double kparm = kparms[parmnum - 1];
 			double bparm = bparms[parmnum - 1];
@@ -848,7 +931,7 @@ double CalculationThread::ApplyCorrection(double irival, bool datasrc, double sp
 					bparm = bparms[pi];
 					break;
 				}
-				
+
 
 			}*/
 			kparm = std::accumulate(kparms.begin(), kparms.end(), 0.0) / kparms.size();
@@ -861,7 +944,7 @@ double CalculationThread::ApplyCorrection(double irival, bool datasrc, double sp
 		}
 	}
 	return irival;
-} 
+}
 bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 {
 	std::vector< float>c2wmatrix;
@@ -885,7 +968,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 
 		QSettings settings(cfg[0], QSettings::IniFormat);
 
-		//设置要读取的组名 
+		//设置要读取的组名
 		settings.beginGroup(QString("camera"));
 		float hpix = settings.value("hpixel").toFloat();
 		if (hpix == 0)
@@ -981,7 +1064,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 						{
 							qDebug() << "read error line:" << n;
 							break;
-						} 
+						}
 						std::memcpy(matobj3d.get(), rbmat.get(), temp);
 						for (int k = 0; k < hpix; ++k)
 						{
@@ -1104,9 +1187,9 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 					QDir dirRes(nowPath0);
 					MyCommonMethods::createMultipleFolders(nowPath0);
 					//读取所有dat文件
-					
+
 					QFile fs(_dats[j]);
-				 
+
 					std::ifstream filDat(nowDatPath, std::ios::binary);
 					if (filDat)
 					{
@@ -1127,7 +1210,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 						temp = hpix * 2;
 						while (true)
 						{
-							if (m_stopRequested)
+							if (isStopRequested())
 							{
 								return false;
 
@@ -1171,7 +1254,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 				}
 				catch (...)
 				{
-				//	throw; 
+				//	throw;
 					THROW_EX("车辙计算失败！");
 				}
 
@@ -1207,7 +1290,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 				int _partlen = 256, _asp = 0, _aep = 0, _bsp = 0, _bep = 0, _csp = 0, _cep = 0, _gslen = 0, _ThrPoint = 0;
 				QSettings settings0(cfg[i], QSettings::IniFormat);
 
-				//设置要读取的组名 
+				//设置要读取的组名
 				settings0.beginGroup(QString("camera"));
 				_asp = settings0.value("rutastart").toInt();
 
@@ -1311,7 +1394,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 							filDat.seekg(0, std::ios::beg);
 							while (true)
 							{
-								if (m_stopRequested)
+								if (isStopRequested())
 								{
 									return false;
 
@@ -1396,7 +1479,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 										crutval = 0;
 										brutval = 0;
 									}
-									if (m_stopRequested)
+									if (isStopRequested())
 									{
 										return false;
 
@@ -1843,7 +1926,7 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 	if (isIRI)
 	{
 		  dirName = QString("%1\\IRIMTD\\DAQ%2").arg(currentPorject->get2DProject()->getBasePath()).arg(QString::number(side));
-		  QString fileName; 
+		  QString fileName;
 		dir.setPath(dirName);
 		if (dir.exists())
 		{
@@ -1886,14 +1969,14 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 			file.close();
 		}
 	}
-	 
-	
+
+
 	else
 	{
 		_MTDCali.resize(3);
 		_MPDCali.resize(3);
 		_mmPerPoint.resize(3);
-		 
+
 		for (int i = 0 ; i <3 ; i++)
 		{
 			_MTDCali[i].resize(2);
@@ -1914,7 +1997,7 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 				_mmPerPoint[i] = settings.value("PMode").toInt();
 				settings.endGroup();
 				// 如果存在这个文件，有两种情况：1、旧软件计算的，MPD不加系数，2、新软件计算的，MPD要加系数
-				// 如果不存在这个文件，那么就之间用这个新软件计算，MTD和MPD都会加系数 
+				// 如果不存在这个文件，那么就之间用这个新软件计算，MTD和MPD都会加系数
 				QFile file;
 				file.setFileName(mtdfname);
 				if (file.exists())
@@ -1950,14 +2033,49 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 			}
 		}
 
-		
-		
-	} 
+
+
+	}
 	m_mmutex.unlock();
 
 	return true;
 }
 
+
+void CalculationThread::reportSideProgress(int side, double progress)
+{
+	if (m_type != CalculationThread::Smtd && m_type != CalculationThread::Smpd)
+	{
+		emit progressUpdated(m_Project, m_type, progress, false);
+		return;
+	}
+
+	double aggregateProgress = progress;
+	{
+		QMutexLocker locker(&m_progressMutex);
+		if (m_metricSideIndexes.isEmpty() || side < 0 || side >= m_metricSideProgress.size())
+		{
+			aggregateProgress = progress;
+		}
+		else
+		{
+			const double boundedProgress = qBound(0.0, progress, 1.0);
+			m_metricSideProgress[side] = qMax(m_metricSideProgress[side], boundedProgress);
+
+			double sumProgress = 0.0;
+			for (int activeSide : qAsConst(m_metricSideIndexes))
+			{
+				if (activeSide >= 0 && activeSide < m_metricSideProgress.size())
+				{
+					sumProgress += m_metricSideProgress[activeSide];
+				}
+			}
+			aggregateProgress = sumProgress / m_metricSideIndexes.size();
+		}
+	}
+
+	emit progressUpdated(m_Project, m_type, aggregateProgress, false);
+}
 
 double CalculationThread::GetLaserThresh(const QString& fpath)
 {
@@ -2019,16 +2137,16 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 	QFile file(fname);
 	if (file.exists() && file.size() > 1)
 	{
-		emit progressUpdated(m_Project, m_type, 1.0, false);
+		reportSideProgress(side, 1.0);
 		return;
 	}
 	QVector<QString>lasfile;
 	MyCommonMethods::GetAllIRIFiles(prj, side, "Laser", "las", lasfile);
-	emit progressUpdated(m_Project, m_type, 0.1, false);
+	reportSideProgress(side, 0.1);
 	//m_stdMutex.lock();
 	//m_stdProcessValue += 10;
 	//emit progressUpdated(m_type, m_stdProcessValue, true);
-	//m_stdMutex.unlock();  
+	//m_stdMutex.unlock();
 
 	int MTDPOINT = 300 / _mmPerPoint[side] + 1;
 	std::unique_ptr<int[]> laserX = std::make_unique<int[]>(MTDPOINT);
@@ -2073,14 +2191,14 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 
 	if (fmtd.open(QIODevice::WriteOnly | QIODevice::Text))
 	{
-		if (m_stopRequested)
+		if (isStopRequested())
 		{
 
 			return;
 		}
 
 		QStringList outList;
-		QVector<double> value1M; //始终记录前500个点  用来获取中间值
+		SlidingUpperMedianWindow value1M; //始终记录前500个点  用来获取中间值
 
 		for (QString lf : lasfile)
 		{
@@ -2096,10 +2214,10 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 			in.setByteOrder(QDataStream::LittleEndian);
 			QVector<QString> temps;
 			int ceshiInt = 0;
-			//更新总迭代次数   
+			//更新总迭代次数
 			for (int i = 0; i < framenum; ++i, ++framecnt)
 			{
-				if (m_stopRequested)
+				if (isStopRequested())
 				{
 					return;
 				}
@@ -2117,15 +2235,14 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 
 						++ptcnt;
 					}
-					if (value1M.size() < 500) //记录500-》1m数据 
+					if (value1M.size() < 500) //记录500-》1m数据
 					{
-						value1M.push_back(ttval);
+						value1M.append(ttval);
 					}
 				}
 				if (value1M.size() >= 500)
 				{
-					value1M.remove(0);
-					value1M.push_back(ttval);
+					value1M.slide(ttval);
 				}
 				if (_Setting->IsOutputLasval)
 				{
@@ -2142,11 +2259,9 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 					}
 					filtersum = filtersum + ttval - filtermean;
 				}
-				QVector<double> tempSort(value1M);
-				std::sort(tempSort.begin(), tempSort.end());
-				if (value1M.size() > 0)
+				if (!value1M.isEmpty())
 				{
-					oldttval = tempSort[tempSort.size() / 2];
+					oldttval = value1M.upperMedian();
 				}
 				if (_Setting->IsOutputLasval)
 				{
@@ -2184,7 +2299,7 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 						if (++m_SMTDdCnt == m_SMTDdnum)
 						{
 							double value = 0.1 + 0.9 / lasfile.size() * (filecnt + (double)i / framenum);
-							emit progressUpdated(m_Project, m_type, value, false);
+							reportSideProgress(side, value);
 							m_CurMTD = m_SMTDdSum / m_SMTDValCnt * _MTDCali[side][0] + _MTDCali[side][1];
 							++m_MTDCnt;
 							QString lineStr = QString::number(m_MTDCnt) + QString(" ") + QString::number(m_CurMTD);
@@ -2232,12 +2347,12 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 	QFile file(fname);
 	if (file.exists() && file.size() > 1)
 	{
-		emit progressUpdated(m_Project, m_type, 1.0, false);
+		reportSideProgress(side, 1.0);
 		return;
 	}
 	QVector<QString>lasfile;
 	MyCommonMethods::GetAllIRIFiles(prj, side, "Laser", "las", lasfile);
-	emit progressUpdated(m_Project, m_type, 0.1, false);
+	reportSideProgress(side, 0.1);
 
 
 	double ttval = 0;
@@ -2274,7 +2389,7 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 	{
 
 		QStringList resultData;
-		QVector<double> value1M; //始终记录前25个点  用来获取中间值				
+		SlidingUpperMedianWindow value1M; //始终记录前25个点  用来获取中间值
 
 		for (QString lf : lasfile)
 		{
@@ -2293,7 +2408,7 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 			double tMile = 0;
 			for (int i = 0; i < framenum; ++i, ++framecnt)
 			{
-				if (m_stopRequested)
+				if (isStopRequested())
 				{
 					return;
 				}
@@ -2312,15 +2427,14 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 
 						++ptcnt;
 					}
-					if (value1M.size() < 500) //记录500-》1m数据 
+					if (value1M.size() < 500) //记录500-》1m数据
 					{
-						value1M.push_back(ttval);
+						value1M.append(ttval);
 					}
 				}
 				if (value1M.size() >= 500)
 				{
-					value1M.removeAt(0);
-					value1M.push_back(ttval);
+					value1M.slide(ttval);
 				}
 				if (ptcnt >= 25)
 				{
@@ -2335,13 +2449,9 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 				}
 
 
-				QVector<double> tempSort(value1M);
-
-				std::sort(tempSort.begin(), tempSort.end());
-
-				if (value1M.size() > 0)
+				if (!value1M.isEmpty())
 				{
-					oldttval = tempSort[tempSort.size() / 2];
+					oldttval = value1M.upperMedian();
 				}
 				if (framecnt < MPDPointNum)
 				{
@@ -2378,7 +2488,7 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 					if (MPDBCnt == MPDBNUM)
 					{
 						double value = 0.1 + 0.9 / lasfile.size() * (filecnt + (double)i / framenum);
-						emit progressUpdated(m_Project, m_type, value, false);
+						reportSideProgress(side, value);
 						++MPDCnt;
 						curMPD = curMPD / MPDBCnt;
 						curMPD = curMPD * _Setting->MPD_K + _Setting->MPD_B;
@@ -2468,14 +2578,22 @@ void CalculationThread::AdjustVal(QString fname, double Thrval, double scale)
 
 void CalculationThread::run()
 {
+	struct StoppedEmitter
+	{
+		CalculationThread* thread;
+		~StoppedEmitter()
+		{
+			QMetaObject::invokeMethod(thread, "stopped", Qt::QueuedConnection);
+		}
+	} stoppedEmitter{ this };
 	/*m_smutex.lock();
 	CheckSetting(currentPorject);
 	m_smutex.unlock();*/
 	switch (m_type)
 	{
 	case CalculationThread::IRI:
-	{  
-		QString iriPath = currentPorject->get2DProject()->getIRIPath(); 
+	{
+		QString iriPath = currentPorject->get2DProject()->getIRIPath();
 		for (int i = 0; i < 2; ++i)
 		{
 			int temp = i;
@@ -2483,7 +2601,7 @@ void CalculationThread::run()
 			{
 				return;
 			}
-			if (m_stopRequested)
+			if (isStopRequested())
 			{
 				return;
 			}
@@ -2505,12 +2623,12 @@ void CalculationThread::run()
 					{
 						QFile::remove(fpath);
 						MyCommonMethods::moveFile(fpath + ".bak", fpath);
-					} 
+					}
 				}
-				StartIRMThread(currentPorject, iriPath, nowIriPath, fpath, t); 
+				StartIRMThread(currentPorject, iriPath, nowIriPath, fpath, t);
 			}
 		}
-		if (!m_stopRequested)
+		if (!isStopRequested())
 		{
 			emit progressUpdated(m_Project, m_type, 100, true);
 		}
@@ -2550,7 +2668,7 @@ void CalculationThread::run()
 		default:
 			break;
 		}
-		if (!m_stopRequested)
+		if (!isStopRequested())
 		{
 			emit progressUpdated(m_Project, m_type, 100, true);
 
@@ -2563,7 +2681,7 @@ void CalculationThread::run()
 	case CalculationThread::Smpd:
 	{
 		QString iriPath = currentPorject->get2DProject()->getIRIPath();
-	
+
 		if (currentPorject->get2DProject()->_IsMMTD)
 		{
 		}
@@ -2571,6 +2689,19 @@ void CalculationThread::run()
 		{
 		}
 		std::vector<std::unique_ptr<QThread>> threads;
+		{
+			QMutexLocker locker(&m_progressMutex);
+			m_metricSideIndexes.clear();
+			m_metricSideProgress = QVector<double>(3, 0.0);
+			for (int side = 0; side < 3; ++side)
+			{
+				if (side == 2 && !currentPorject->get2DProject()->_IsMMTD)
+				{
+					continue;
+				}
+				m_metricSideIndexes.append(side);
+			}
+		}
 		if (!loadParm(false, -1))
 		{
 			return;
@@ -2578,7 +2709,7 @@ void CalculationThread::run()
 		for (int i = 0; i < 3; ++i)
 		{
 			int temp = i;
-		
+
 			if (i == 2)
 			{
 				if (!currentPorject->get2DProject()->_IsMMTD)
@@ -2586,11 +2717,12 @@ void CalculationThread::run()
 					continue;
 				}
 			}
-			auto thread = std::make_unique<QThread>(this);
+			auto thread = std::make_unique<QThread>();
 			QObject::connect(thread.get(), &QThread::started, [this, i, iriPath, thread = thread.get()]()
 			{
-				if (m_stopRequested)
+				if (isStopRequested())
 				{
+					thread->quit();
 					return;
 				}
 				QDir dir;
@@ -2612,17 +2744,16 @@ void CalculationThread::run()
 						if (m_type == CalculationThread::Smtd)
 						{
 							ComputeMTD(iriPath, i, 10, lasthreshval);
-							thread->quit();
 
 						}
 						if (m_type == CalculationThread::Smpd)
 						{
 							ComputeMPD(iriPath, i, 10, lasthreshval);
-							thread->quit();
 						}
 
 					}
 				}
+				thread->quit();
 			}
 			);
 			threads.push_back(std::move(thread));
@@ -2639,7 +2770,7 @@ void CalculationThread::run()
 			thread->wait();
 
 		}
-		if (!m_stopRequested)
+		if (!isStopRequested())
 		{
 			emit progressUpdated(m_Project, m_type, 100, true);
 		}
@@ -2647,11 +2778,11 @@ void CalculationThread::run()
 	}
 	case CalculationThread::Jhxx:
 	{
-		if (m_stopRequested)
+		if (isStopRequested())
 		{
 			return;
 		}
-		if (!m_stopRequested)
+		if (!isStopRequested())
 		{
 			emit progressUpdated(m_Project, m_type, 100, true);
 		}
@@ -2667,7 +2798,7 @@ void CalculationThread::run()
 }
 void CalculationThread::stop()
 {
-	m_stopRequested = true;
+	m_stopRequested.store(true, std::memory_order_relaxed);
 }
 
 

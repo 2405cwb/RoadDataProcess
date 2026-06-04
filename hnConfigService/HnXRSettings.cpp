@@ -37,7 +37,6 @@ void HnXRSettings::readData()
 	sheetRoundingOffNum = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum", 0);
 	sheetRoundingOffNum_Dr = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum_Dr", 0);
 	movePictureBackMouseRatio= m_Setting->ReadInteger("SETTING", "movePictureBackMouseRatio", 0);
-	wheelScrollOneImage = m_Setting->ReadBool("SETTING", "wheelScrollOneImage", false);
 	diseaseMarkTxt = m_Setting->ReadString("SETTING", "diseaseMarkTxt", "");
 	diseaseMarkTxts = m_Setting->ReadString("SETTING", "diseaseMarkTxts", "");
 	Las_Filter = m_Setting->ReadBool("IRM", "Las_Filter", true);
@@ -81,6 +80,8 @@ void HnXRSettings::readData()
 	diseaseRectShow = m_Setting->ReadBool("SETTING", "diseaseRectShow", false);
 	showGpsInfo = m_Setting->ReadBool("SETTING", "showGpsInfo", false);
 	RutDisWidth = m_Setting->ReadDouble("SETTING", "RutDisWidth", 0.00);
+	wheelScrollOneImage = m_Setting->ReadBool("SETTING", "wheelScrollOneImage", false);
+	mile2dmiToInt = m_Setting->ReadBool("SETTING", "mile2dmiToInt", false);
 }
 void HnXRSettings::writeData()
 {
@@ -90,7 +91,6 @@ void HnXRSettings::writeData()
 	m_Setting->WriteInteger("SETTING", "sheetRoundingOffNum_Dr", sheetRoundingOffNum_Dr);
 
 	m_Setting->WriteInteger("SETTING", "movePictureBackMouseRatio", movePictureBackMouseRatio);
-	m_Setting->WriteBool("SETTING", "wheelScrollOneImage", wheelScrollOneImage);
 	m_Setting->WriteBool("SETTING", "gpsFormat", gpsFormat);
 	m_Setting->WriteString("SETTING", "DefaultPath", DefaultPath);
 	m_Setting->WriteString("SETTING", "lastProjectName", lastProjectName);
@@ -100,8 +100,8 @@ void HnXRSettings::writeData()
 	m_Setting->WriteString("SETTING", "diseaseMarkTxt", diseaseMarkTxt);
 	m_Setting->WriteBool("SETTING", "diseaseRectShow", diseaseRectShow);
 	m_Setting->WriteBool("SETTING", "showGpsInfo", showGpsInfo);
-
-
+	m_Setting->WriteBool("SETTING", "wheelScrollOneImage", wheelScrollOneImage);
+	m_Setting->WriteBool("SETTING", "mile2dmiToInt", mile2dmiToInt);
 
 	m_Setting->WriteBool("IRM", "Las_Filter", Las_Filter);
 	m_Setting->WriteDouble("IRM", "Las_Filter_Thresh0", Las_Filter_Thresh0);

@@ -3,14 +3,14 @@
 /*! @hnBrowsePixWidget.h
 ********************************************************************************
 <PRE>
-模块名       : 
+模块名       :
 文件名       : hnBrowsePixWidget.h
-相关文件     : 
+相关文件     :
 文件实现功能 : 通用的显示图片的窗口 需和hnContinuouslyBrowsePixWidget配合使用
 作者         : 陈智超
 版本         : 1.0.0
 --------------------------------------------------------------------------------
-备注         : 
+备注         :
 --------------------------------------------------------------------------------
 修改记录 :
 日期        版本     修改人              修改内容
@@ -44,7 +44,6 @@
 #include <QSize>
 #include <QResizeEvent>
 #include <QFuture>
-#include <QElapsedTimer>
 #pragma endregion
 
 
@@ -88,7 +87,7 @@ public:
 	*函数简介：清空储存图片的map
 	*/
 	void clearPix();
-	
+
 	/*
 	*接口名称：getPixPos
 	*接口简介：获取某一张图片的左下角坐标，坐标系以左下角为原点,是全局坐标
@@ -101,7 +100,7 @@ public:
 	*接口名称：singleImagePointToBigImagePoint
 	*接口简介: 把一张小image的坐标转换成拼接iamge的坐标，例如：从一张image的坐标转成四张拼接image的坐标
 	*参数一介绍：[QPoint][IN]在一张image中的坐标
-	*参数二介绍：[QString][IN] 图片名称的绝对路径      
+	*参数二介绍：[QString][IN] 图片名称的绝对路径
 	*返回值：[QPoint]拼接image后的坐标 如果有异常，返回QPoint(-1,-1)
 	*备注：
 	*/
@@ -111,7 +110,7 @@ public:
 	*接口名称：bigImagePointToSingleImagePoint
 	*接口简介: 把拼接后image的坐标，转换成在某一张image的坐标
 	*参数一介绍：[QPoint][IN]在拼接image中的坐标
-	*参数二介绍：[QString][OUT] 图片名称的绝对路径  如果有异常，则返回空指针 
+	*参数二介绍：[QString][OUT] 图片名称的绝对路径  如果有异常，则返回空指针
 	*返回值：[QPoint]单独image的坐标 如果有异常，返回QPoint(-1,-1)  pixName 返回空的字符串""
 	*备注：
 	*/
@@ -172,7 +171,7 @@ public:
 	*函数名称：getImageNameFromFrameIdx
 	*函数简介：帧序号转图片名称
 	*参数一说明：帧序号 从1开始
-	*返回值：转换完成的图片名称  不带路径  
+	*返回值：转换完成的图片名称  不带路径
 	*备注：如果不存在该帧序号，则返回空字符串
 	*/
 	QString getImageNameFromFrameIdx(const int frameIdx);
@@ -240,7 +239,7 @@ signals:
 
 	/*槽函数*/
 public slots:
-	//更新图片  
+	//更新图片
 	void drawPicture(QImage &image);
 
 	//槽函数：更新当前的滚动条值
@@ -254,15 +253,13 @@ public:
 	void setLoadFrameNum(const int num);
 
 	//设置被选中的病害id
-	void setSelectedDiseaseId(int diseaseId);
+	void setSelectedDiseaseId(int diseaseId, const QString& tableName = QString());
 protected:
 	//获取鼠标位置的原始比例窗口
 	QImage getOriginalImage(const QPoint mousePos,const QImage &tmpImageWithoutDisease ,
 		const int originalWidgetWidth, const int originalWidgetHeight);
 private:
 	void drawAllPixOnLabel(QImage &labelImage,const int framePixHeight,const int framePixWidth, const double heightScale);
-	bool getCachedImage(int frameIdx, QImage* image);
-	void drawPerformanceOverlay(QPainter& painter);
 
 	//封装私有函数   更新鼠标位置帧数值
 	void updateMousePosFrameIdx(QMouseEvent *event);
@@ -272,7 +269,7 @@ private:
 	//坐标转换  当前鼠标坐标转化到显示图片的image坐标
 	QPoint transformPos(const QPoint &point);
 
-	//封装函数，从labelimage的坐标转换成帧序号 
+	//封装函数，从labelimage的坐标转换成帧序号
 	int getFrameIdxFromImagePoint(const QPoint &point);
 
 	//浮点数取余数 返回a除以b的余数 比如  2.5/1.1   返回0.3
@@ -283,14 +280,20 @@ protected:
 	bool isValidPoint(const QPoint &screenPoint);
 
 private:
-	//多线程  根据底部帧序号更新imagemap 
+	//多线程  根据底部帧序号更新imagemap
 	//void updateImageMapBasedOnBottomFrameIdx();
 
 	bool ensureImageLoaded( const int frameIdx);
 
+	bool getLoadedImage(const int frameIdx, QImage& image);
+
+	bool getCachedImage(const int frameIdx, QImage& image);
+
+	bool shouldDeferPreload() const;
+
 
 	void schedulePreloadImages(int bottomFrameIdx);
-	void updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx);
+	void updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int loadFrameNum, int maxImagesToLoad);
 protected:
 	//往图片上画东西， 供子类重载
 	virtual void drawSomeThingOnImage(QImage &image);
@@ -326,7 +329,7 @@ protected:
 	QMap<int, QString> m_currentWidgetPixNames;
 
 
-	
+
 private:
 	//储存image的map，帧数对应QImage  帧数从1开始
 	QMap<int, QImage> m_imageMap;
@@ -385,7 +388,7 @@ protected:
 	//是否允许画路面图片
 	bool m_isAllowDrawPix;
 
-	 
+
 	//临时内容画板
 	QImage m_tmpContectImage;
 
@@ -406,17 +409,12 @@ private:
 
 	QFuture<void> m_preloadFuture;
 	int m_lastPreloadBottomFrameIdx = -1;
-	qint64 m_perfLastPaintMs = 0;
-	qint64 m_perfLastDrawMs = 0;
-	qint64 m_perfLastPreloadMs = 0;
-	qint64 m_perfLastSyncLoadMs = 0;
-	int m_perfLastCacheSize = 0;
-	int m_perfLastScrollValue = 0;
-	int m_perfPaintCount = 0;
-	double m_perfFps = 0.0;
-	QElapsedTimer m_perfFpsTimer;
-	QString m_perfLastStatus;
-	 
+	int m_pendingPreloadBottomFrameIdx = -1;
+	int m_lastDeferredPreloadBottomFrameIdx = -1;
+	int m_preloadMaxImagesPerRun = 0;
+	int m_imageLoadGeneration = 0;
+	bool m_reupdatePending = false;
+
 public:
 	//获取是否允许联动
 	bool getIsAllowLinked();
@@ -425,6 +423,7 @@ protected:
 	//是否允许联动
 	bool m_isAllowLinked;
 	int selectedDiseaseId = -1;
+	QString selectedDiseaseTableName;
 protected:
 		HnXRSettings* m_setting;
 };

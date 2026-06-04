@@ -28,7 +28,8 @@ public:
 		double sMile = 0,
 		double eMile = 0,
 		int& progressValue = progressDefault,
-		QProgressDialog* process = nullptr
+		QProgressDialog* process = nullptr,
+		int progressScale = 1
 	);
 
 
@@ -43,7 +44,8 @@ public:
 		double sMile = 0,
 		double eMile = 0
 		, int& progressValue = progressDefault,
-		QProgressDialog* process = nullptr
+		QProgressDialog* process = nullptr,
+		int progressScale = 1
 	);
 
 public:

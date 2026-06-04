@@ -14,8 +14,6 @@
 #include <QFuture>
 #include <QElapsedTimer>
 #include <QTimer>
-#include <QFont>
-#include <QColor>
 #include <QMutexLocker>
 #include "imageLoader.h"
 #include "hnImagePainter.h"
@@ -31,6 +29,7 @@ hnBrowsePixWidget::hnBrowsePixWidget(QWidget *parent)
 	this->init();
 	m_setting=m_setting->getInstance();
 	selectedDiseaseId = -1;
+	selectedDiseaseTableName.clear();
 }
 
 hnBrowsePixWidget::~hnBrowsePixWidget()
@@ -41,7 +40,13 @@ void hnBrowsePixWidget::loadPix(const QString & pixDirName)
 {
 	imageLoader imgloader;
 	this->m_pixNameMap.clear();
-	this->m_imageMap.clear();
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		++m_imageLoadGeneration;
+		this->m_imageMap.clear();
+	}
+	m_lastPreloadBottomFrameIdx = -1;
+	m_pendingPreloadBottomFrameIdx = -1;
 	this->m_pixNameMap = imgloader.loadImageNamesToMap(pixDirName,false);
 
 	//获取分辨率
@@ -54,18 +59,24 @@ void hnBrowsePixWidget::loadPix(const QString & pixDirName)
 
 	//加载工程后进行的操作，供子类重载
 	this->afterLoadPictures();
-	
+
 }
 
 void hnBrowsePixWidget::loadPix(const QStringList & pixNames)
 {
-	if(pixNames.empty()) 
+	if(pixNames.empty())
 	{
 		return;
 	}
 	imageLoader imgloader;
 	this->m_pixNameMap.clear();
-	this->m_imageMap.clear();
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		++m_imageLoadGeneration;
+		this->m_imageMap.clear();
+	}
+	m_lastPreloadBottomFrameIdx = -1;
+	m_pendingPreloadBottomFrameIdx = -1;
 	this->m_pixNameMap = imgloader.loadImageNamesToMap(pixNames,this->m_reversePixNameMap);
 
 	int scrollBarMaxValue = this->m_pixNameMap.size() * 2;
@@ -106,7 +117,7 @@ bool hnBrowsePixWidget::reloadPix(const std::vector<QString>& vecImageName)
 	emit sig_scrollBarValueChanged(scrollBarMaxValue);
 
 	this->update();
-	
+
 	return true;
 }
 
@@ -125,6 +136,14 @@ bool hnBrowsePixWidget::reloadPix()
 void hnBrowsePixWidget::clearPix()
 {
 	this->m_pixNameMap.clear();
+	this->m_reversePixNameMap.clear();
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		++m_imageLoadGeneration;
+		this->m_imageMap.clear();
+	}
+	m_lastPreloadBottomFrameIdx = -1;
+	m_pendingPreloadBottomFrameIdx = -1;
 	this->update();
 }
 
@@ -226,7 +245,7 @@ QPoint hnBrowsePixWidget::singleImagePointToBigImagePoint(const QPoint & imagePo
 
 QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelImagePoint, QString * pixName)
 {
-	//获取帧序号 
+	//获取帧序号
 	int frameIdx = getFrameIdxFromImagePoint(labelImagePoint);
 
 	//找到该序号对应的图片
@@ -241,7 +260,7 @@ QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelIm
 		//QPoint point;
 		//point.setX(labelImagePoint.x());
 		//if (frameIdx < 1)
-		//{		
+		//{
 
 		//	*pixName = m_pixNameMap.first();
 		//	point.setY(0);
@@ -290,7 +309,7 @@ QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelIm
 		//弄不清楚就在纸上画一画，算一算他是怎么动的
 		int h = this->m_tmpPixImageWithoutDisease.height();
 		int y = (frameIdx + 1 - m_buttomFrameIdx)*this->m_pixHeight - (h- labelImagePoint.y());
-	 
+
 		dstPoint.setX(labelImagePoint.x());
 
 		dstPoint.setY(y);
@@ -311,7 +330,7 @@ QPoint hnBrowsePixWidget::screenPointToBigImagePoint(const QPoint & point)
 	const double yScale = imageSize.height() *1.0 / qMax(1, this->height());
 
 	return QPoint(qRound(point.x()*xScale), qRound(point.y()*yScale));
-	 
+
 }
 
 QPoint hnBrowsePixWidget::bigImagePointToScreenPoint(const QPoint & point)
@@ -460,7 +479,7 @@ void hnBrowsePixWidget::init()
 	//是否允许画图片
 	this->m_isAllowDrawPix = true;
 
-	 
+
 
 	//是否允许联动
 	m_isAllowLinked = true;
@@ -503,118 +522,72 @@ void hnBrowsePixWidget::setPixResolution(const int width, const int height)
 }
 
 //这个函数要丢到多线程去
-void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
+void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int loadFrameNum, int maxImagesToLoad)
 {
-	//this->m_imageMapMutex.lock();
-	//int btmIdx = m_buttomFrameIdx;
-	//const int LOAD_NUM = this->m_loadFrameNum;
-
-	//// 加载底部帧序号前后各LOAD_NUM张，注意不要重复添加了，如果imagemap中有，就不添加了
-	//for (auto idx = btmIdx - LOAD_NUM; idx < btmIdx + LOAD_NUM + 1; idx++)
-	//{
-	//	if (idx < 1)
-	//	{
-	//		continue;
-	//	}
-	//	auto iter = m_imageMap.find(idx);
-	//	//如果从imagemap中找不到图片，就加载
-	//	if (iter == m_imageMap.end() && idx < m_pixNameMap.size() + 1) //这里要加1，因为帧数是从1开始的
-	//	{
-	//		auto fileNameIter = this->m_pixNameMap.find(idx);
-	//		if (fileNameIter != this->m_pixNameMap.end())
-	//		{
-	//			QString fileName = m_pixNameMap.find(idx).value();
-	//			QImage image(fileName);
-
-	//			//镜像
-	//			image = image.mirrored(m_isHMirrored, m_isVMirrored);
-
-	//			this->m_imageMap.insert(idx, image);
-	//		}		
-	//	}
-	//}
-	//m_imageMapMaxFrameIdx  = btmIdx + LOAD_NUM + 1;
-
-	////对下面图片的处理（向上滑的时候）：如果大于0，删除所有下面的图片，只保留9张
-	//for (auto idx = btmIdx - LOAD_NUM; idx > 0; idx--)
-	//{
-	//	auto iter = m_imageMap.find(idx);
-	//	if (iter == m_imageMap.end())
-	//	{
-	//		continue;
-	//	}
-	//	else
-	//	{
-	//		m_imageMap.remove(idx);
-	//	}	
-	//}
-
-	////对上面图片的处理（向下滑的时候）： 删除最大帧序号上面的十张
-	//for (auto idx = m_imageMapMaxFrameIdx; idx < m_imageMapMaxFrameIdx + LOAD_NUM  + 1; idx++)
-	//{
-	//	auto iter = m_imageMap.find(idx);
-	//	if (iter == m_imageMap.end())
-	//	{
-	//		continue;
-	//	}
-	//	else
-	//	{
-	//		m_imageMap.remove(idx);
-	//	}
-	//}
-
-	////异常处理，如果图片大于100张，直接清空
-	//if (m_imageMap.size() > 50)
-	//{
-	//	m_imageMap.clear();
-	//}
-
-	//this->m_imageMapMutex.unlock();
-
-	QElapsedTimer timer;
-	timer.start();
-	qint64 maxSingleLoadMs = 0;
+	QElapsedTimer preloadTimer;
+	preloadTimer.start();
 	int loadedCount = 0;
-	int removedCount = 0;
+	qint64 maxSingleLoadMs = 0;
+	int slowestFrameIdx = -1;
+	QString slowestFileName;
 
 	const int btmIdx = bottomFrameIdx;
-	const int LOAD_NUM = this->m_loadFrameNum;
+	const int LOAD_NUM = loadFrameNum;
+	const int maxLoadCount = maxImagesToLoad > 0 ? maxImagesToLoad : 0;
 	const int minKeep = qMax(1, btmIdx - LOAD_NUM);
-	const int maxKeep = qMin(m_pixNameMap.size(), btmIdx + LOAD_NUM);
+	const int maxKeep = qMin(pixNameMap.size(), btmIdx + LOAD_NUM);
 
 	for (int idx = minKeep; idx <= maxKeep; ++idx)
 	{
 		{
 			QMutexLocker locker(&m_imageMapMutex);
+			if (generation != m_imageLoadGeneration)
+			{
+				return;
+			}
 			if (m_imageMap.contains(idx))
 			{
 				continue;
 			}
 		}
 
-		const QString fileName = m_pixNameMap.value(idx);
+		const QString fileName = pixNameMap.value(idx);
 		if (fileName.isEmpty())
 		{
 			continue;
 		}
 
-		QElapsedTimer loadTimer;
-		loadTimer.start();
+		QElapsedTimer singleLoadTimer;
+		singleLoadTimer.start();
 		QImage image(fileName);
+		const qint64 singleLoadMs = singleLoadTimer.elapsed();
+		if (singleLoadMs > maxSingleLoadMs)
+		{
+			maxSingleLoadMs = singleLoadMs;
+			slowestFrameIdx = idx;
+			slowestFileName = fileName;
+		}
 		if (image.isNull())
 		{
 			continue;
 		}
 
-		image = image.mirrored(m_isHMirrored, m_isVMirrored);
-		maxSingleLoadMs = qMax(maxSingleLoadMs, loadTimer.elapsed());
+		image = image.mirrored(hMirrored, vMirrored);
 
 		{
 			QMutexLocker locker(&m_imageMapMutex);
+			if (generation != m_imageLoadGeneration)
+			{
+				return;
+			}
 			if (!m_imageMap.contains(idx))
 			{
 				m_imageMap.insert(idx, image);
 				++loadedCount;
+				if (maxLoadCount > 0 && loadedCount >= maxLoadCount)
+				{
+					break;
+				}
 			}
 		}
 	}
@@ -622,6 +595,10 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 	QVector<int> removeKeys;
 	{
 		QMutexLocker locker(&m_imageMapMutex);
+		if (generation != m_imageLoadGeneration)
+		{
+			return;
+		}
 		for (auto it = m_imageMap.constBegin(); it != m_imageMap.constEnd(); ++it)
 		{
 			if (it.key() < minKeep || it.key() > maxKeep)
@@ -636,26 +613,56 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx)
 		}
 	}
 
-	removedCount = removeKeys.size();
+	int cacheSize = 0;
 	{
 		QMutexLocker locker(&m_imageMapMutex);
-		m_perfLastCacheSize = m_imageMap.size();
+		cacheSize = m_imageMap.size();
 	}
-
-	m_perfLastPreloadMs = timer.elapsed();
-	if (m_perfLastPreloadMs >= 50 || maxSingleLoadMs >= 25 || loadedCount > 0 || removedCount > 0)
+	const qint64 preloadMs = preloadTimer.elapsed();
+	if (preloadMs >= 80 || maxSingleLoadMs >= 40)
 	{
-		qDebug().noquote() << "[HN_PERF][Preload]"
+		qDebug().noquote() << "[HN_PERF][PreloadImages]"
 			<< "bottomFrameIdx=" << bottomFrameIdx
-			<< "elapsedMs=" << m_perfLastPreloadMs
+			<< "elapsedMs=" << preloadMs
 			<< "maxSingleLoadMs=" << maxSingleLoadMs
+			<< "slowestFrameIdx=" << slowestFrameIdx
+			<< "slowestFile=" << slowestFileName
 			<< "loadedCount=" << loadedCount
-			<< "removedCount=" << removedCount
+			<< "maxImagesToLoad=" << maxLoadCount
 			<< "keepRange=" << QString("%1-%2").arg(minKeep).arg(maxKeep)
-			<< "cacheSize=" << m_perfLastCacheSize;
+			<< "cacheSize=" << cacheSize;
 	}
-}
 
+	QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+	QTimer::singleShot(0, this, [this, bottomFrameIdx, generation]()
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		if (generation != m_imageLoadGeneration)
+		{
+			return;
+		}
+		locker.unlock();
+
+		const int pendingBottomFrameIdx = m_pendingPreloadBottomFrameIdx;
+		if (pendingBottomFrameIdx > 0 && pendingBottomFrameIdx != bottomFrameIdx)
+		{
+			if (shouldDeferPreload())
+			{
+				if (m_lastDeferredPreloadBottomFrameIdx != pendingBottomFrameIdx)
+				{
+					m_lastDeferredPreloadBottomFrameIdx = pendingBottomFrameIdx;
+					qDebug().noquote() << "[HN_PERF][PreloadDeferred]"
+						<< "bottomFrameIdx=" << pendingBottomFrameIdx
+						<< "reason=inactive-or-hidden-after-run";
+				}
+				return;
+			}
+			m_pendingPreloadBottomFrameIdx = -1;
+			m_lastPreloadBottomFrameIdx = -1;
+			schedulePreloadImages(pendingBottomFrameIdx);
+		}
+	});
+}
 bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 {
 	if (frameIdx < 1 || frameIdx > m_pixNameMap.size())
@@ -665,10 +672,8 @@ bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 
 	{
 		QMutexLocker locker(&m_imageMapMutex);
-		m_perfLastCacheSize = m_imageMap.size();
 		if (m_imageMap.contains(frameIdx))
 		{
-			m_perfLastSyncLoadMs = 0;
 			return true;
 		}
 	}
@@ -679,68 +684,103 @@ bool hnBrowsePixWidget::ensureImageLoaded(const int frameIdx)
 		return false;
 	}
 
-	QElapsedTimer timer;
-	timer.start();
 	QImage image(fileName);
 	if (image.isNull())
 	{
-		m_perfLastSyncLoadMs = timer.elapsed();
 		return false;
 	}
-
 	image = image.mirrored(m_isHMirrored, m_isVMirrored);
-	m_perfLastSyncLoadMs = timer.elapsed();
 
+	QMutexLocker locker(&m_imageMapMutex);
+	if (!m_imageMap.contains(frameIdx))
 	{
-		QMutexLocker locker(&m_imageMapMutex);
-		if (!m_imageMap.contains(frameIdx))
-		{
-			m_imageMap.insert(frameIdx, image);
-		}
-		m_perfLastCacheSize = m_imageMap.size();
-	}
-
-	if (m_perfLastSyncLoadMs >= 25)
-	{
-		qDebug().noquote() << "[HN_PERF][SyncImageLoad]"
-			<< "frameIdx=" << frameIdx
-			<< "elapsedMs=" << m_perfLastSyncLoadMs
-			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
-			<< "file=" << fileName;
+		m_imageMap.insert(frameIdx, image);
 	}
 	return true;
 }
-void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
+
+bool hnBrowsePixWidget::getLoadedImage(const int frameIdx, QImage& image)
 {
-    if (bottomFrameIdx <= 0)
-    {
-        return;
-    }
+	if (getCachedImage(frameIdx, image))
+	{
+		return true;
+	}
 
-    if (m_preloadFuture.isRunning())
-    {
-        qDebug().noquote() << "[HN_PERF][PreloadSkippedRunning]"
-            << "requestBottomFrameIdx=" << bottomFrameIdx
-            << "lastBottomFrameIdx=" << m_lastPreloadBottomFrameIdx
-            << "scrollValue=" << m_currentScrollBarValue
-            << "cacheSize=" << m_perfLastCacheSize;
-        m_perfLastStatus = QString("preload busy f%1").arg(bottomFrameIdx);
-        return;
-    }
-
-    if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
-    {
-        return;
-    }
-
-    m_lastPreloadBottomFrameIdx = bottomFrameIdx;
-    qDebug().noquote() << "[HN_PERF][PreloadScheduled]"
-        << "bottomFrameIdx=" << bottomFrameIdx
-        << "loadFrameNum=" << m_loadFrameNum
-        << "scrollValue=" << m_currentScrollBarValue;
-    m_preloadFuture = QtConcurrent::run(this, &hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx, bottomFrameIdx);
+	schedulePreloadImages(static_cast<int>(m_buttomFrameIdx));
+	return false;
 }
 
+bool hnBrowsePixWidget::getCachedImage(const int frameIdx, QImage& image)
+{
+	QMutexLocker locker(&m_imageMapMutex);
+	auto iter = m_imageMap.constFind(frameIdx);
+	if (iter == m_imageMap.constEnd())
+	{
+		return false;
+	}
+	image = iter.value();
+	return !image.isNull();
+}
+
+bool hnBrowsePixWidget::shouldDeferPreload() const
+{
+	QWidget* topWidget = window();
+	if (!isVisible() || (topWidget != Q_NULLPTR && topWidget->isMinimized()))
+	{
+		return true;
+	}
+	return QApplication::applicationState() != Qt::ApplicationActive;
+}
+
+void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
+{
+	if (bottomFrameIdx <= 0)
+	{
+		return;
+	}
+
+	if (shouldDeferPreload())
+	{
+		m_pendingPreloadBottomFrameIdx = bottomFrameIdx;
+		if (m_lastDeferredPreloadBottomFrameIdx != bottomFrameIdx)
+		{
+			m_lastDeferredPreloadBottomFrameIdx = bottomFrameIdx;
+			qDebug().noquote() << "[HN_PERF][PreloadDeferred]"
+				<< "bottomFrameIdx=" << bottomFrameIdx
+				<< "reason=inactive-or-hidden";
+		}
+		return;
+	}
+	m_lastDeferredPreloadBottomFrameIdx = -1;
+
+	if (m_preloadFuture.isRunning())
+	{
+		m_pendingPreloadBottomFrameIdx = bottomFrameIdx;
+		return;
+	}
+
+	if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
+	{
+		return;
+	}
+
+	m_pendingPreloadBottomFrameIdx = -1;
+	m_lastPreloadBottomFrameIdx = bottomFrameIdx;
+	int generation = 0;
+	{
+		QMutexLocker locker(&m_imageMapMutex);
+		generation = m_imageLoadGeneration;
+	}
+	const QMap<int, QString> pixNameMap = m_pixNameMap;
+	const bool hMirrored = m_isHMirrored;
+	const bool vMirrored = m_isVMirrored;
+	const int loadFrameNum = m_loadFrameNum;
+	const int maxImagesToLoad = m_preloadMaxImagesPerRun;
+	m_preloadFuture = QtConcurrent::run([this, bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, loadFrameNum, maxImagesToLoad]()
+	{
+		updateImageMapBasedOnBottomFrameIdx(bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, loadFrameNum, maxImagesToLoad);
+	});
+}
 void hnBrowsePixWidget::drawSomeThingOnImage(QImage & image)
 {
 }
@@ -751,85 +791,98 @@ void hnBrowsePixWidget::afterLoadPictures()
 
 void hnBrowsePixWidget::drawPicture(QImage &image)
 {
-    QElapsedTimer timer;
-    timer.start();
+	//异常处理
+	if (this->height() == 0 || this->width() == 0)
+	{
+		return;
+	}
 
-    //异常处理
-    if (this->height() == 0 || this->width() == 0)
-    {
-        qDebug().noquote() << "[HN_PERF][DrawPictureSkip]" << "reason=zeroWidgetSize";
-        return;
-    }
+	//计算每一帧照片的长和宽
+	double framePixWidth = m_pixWidth;
+	double framePixHeight = m_pixHeight;
 
-    //计算每一帧照片的长和宽
-    double framePixWidth = m_pixWidth;
-    double framePixHeight = m_pixHeight;
+	//往label上画图片
+	this->drawAllPixOnLabel(image, framePixHeight, framePixWidth, m_heightScale);
 
-    //往label上画图片
-    this->drawAllPixOnLabel(image, framePixHeight, framePixWidth, m_heightScale);
+	//画完图片后  储存临时的、只含有图片的image 用于局部放大
+	this->m_tmpPixImageWithoutDisease = image;
 
-    //画完图片后  储存临时的、只含有图片的image 用于局部放大
-    this->m_tmpPixImageWithoutDisease = image;
-
-    m_perfLastDrawMs = timer.elapsed();
-    if (m_perfLastDrawMs >= 16)
-    {
-        qDebug().noquote() << "[HN_PERF][DrawPicture]"
-            << "elapsedMs=" << m_perfLastDrawMs
-            << "scrollValue=" << m_currentScrollBarValue
-            << "bottomFrame=" << m_buttomFrameIdx
-            << "currentFrameNum=" << m_currentWidgetFrameNum
-            << "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
-            << "cacheSize=" << m_perfLastCacheSize;
-    }
 }
 
 void hnBrowsePixWidget::slot_updateCurrentScrollBar(const int scrollBarValue)
 {
-    QElapsedTimer timer;
-    timer.start();
+	QElapsedTimer slotTimer;
+	slotTimer.start();
 
-    //设置加载图片的张数为当前帧数的两倍
-    this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
+	//设置加载图片的张数为当前帧数的两倍
+	QDateTime currentDataTime = QDateTime::currentDateTime();
 
-    QDateTime currentDataTime = QDateTime::currentDateTime();
-    qint64 intervalTimeMS = m_lastTime.msecsTo(currentDataTime);
-    m_lastTime = currentDataTime;
+	qint64 intervalTimeMS = m_lastTime.msecsTo(currentDataTime);
 
-    //倒转滚动条的值
-    int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
-    const int oldValue = m_currentScrollBarValue;
-    m_currentScrollBarValue = tmpScrollBarValue;
-    m_perfLastScrollValue = scrollBarValue;
-    m_perfLastStatus = QString("scroll %1->%2").arg(oldValue).arg(tmpScrollBarValue);
+	m_lastTime = currentDataTime;
 
-    qDebug().noquote() << "[HN_PERF][ScrollBarUpdate]"
-        << "rawValue=" << scrollBarValue
-        << "mappedValue=" << tmpScrollBarValue
-        << "oldMappedValue=" << oldValue
-        << "delta=" << (tmpScrollBarValue - oldValue)
-        << "intervalMs=" << intervalTimeMS
-        << "loadFrameNum=" << m_loadFrameNum
-        << "slotMs=" << timer.elapsed();
+	const bool isAfterIdle = qAbs(intervalTimeMS) >= 3000;
+	if (isAfterIdle)
+	{
+		m_preloadMaxImagesPerRun = 1;
+		this->setLoadFrameNum(qMax(1, qMin(m_currentWidgetFrameNum, 2)));
+	}
+	else
+	{
+		m_preloadMaxImagesPerRun = 0;
+		this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
+	}
 
-    this->update();
+	//倒转滚动条的值
+	int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
+
+	//if (qAbs(tmpScrollBarValue - m_currentScrollBarValue) < 5 && qAbs(intervalTimeMS) > 70)
+	//{
+	//	this->update();
+	//}
+	////否则，延时进行更新，延时500ms
+	//else
+	//{
+	//	QTimer::singleShot(500, [=]() {
+	//		this->update();
+	//	});
+	//}
+	//m_currentScrollBarValue = tmpScrollBarValue;
+	const int oldValue = m_currentScrollBarValue;
+	m_currentScrollBarValue = tmpScrollBarValue;
+	this->update();
+
+	const qint64 slotMs = slotTimer.elapsed();
+	if (slotMs >= 20 || qAbs(intervalTimeMS) >= 3000)
+	{
+		qDebug().noquote() << "[HN_PERF][ScrollBarUpdate]"
+			<< "rawValue=" << scrollBarValue
+			<< "mappedValue=" << tmpScrollBarValue
+
+			<< "oldMappedValue=" << oldValue
+			<< "intervalMs=" << intervalTimeMS
+			<< "loadFrameNum=" << m_loadFrameNum
+			<< "slotMs=" << slotMs;
+	}
+	//
 }
 
 void hnBrowsePixWidget::slot_moveMouse(bool up,bool is2D)
-{ 
-	
+{
+
 
 }
 
 void hnBrowsePixWidget::setLoadFrameNum(const int num)
 {
-	this->m_loadFrameNum = num;	
+	this->m_loadFrameNum = num;
 }
 
 
-void hnBrowsePixWidget::setSelectedDiseaseId(int diseaseId )
+void hnBrowsePixWidget::setSelectedDiseaseId(int diseaseId, const QString& tableName)
 {
 	selectedDiseaseId = diseaseId;
+	selectedDiseaseTableName = tableName;
 }
 
 void hnBrowsePixWidget::updateMousePosFrameIdx(QMouseEvent *event)
@@ -838,7 +891,7 @@ void hnBrowsePixWidget::updateMousePosFrameIdx(QMouseEvent *event)
 	const int currentHeight = (this->height() - event->pos().y()) *( m_pixWidth/this->width() );
 
 	//计算每一帧照片的长和宽
-	double framePixWidth = m_pixWidth; 
+	double framePixWidth = m_pixWidth;
 	double framePixHeight = (framePixWidth / m_pixWidth) * m_pixHeight;
 
 	//计算的结果
@@ -967,7 +1020,7 @@ int hnBrowsePixWidget::getFrameIdxFromImagePoint(const QPoint & point)
 	//int pixMapHeight = (this->width() * m_pixHeight) / m_pixWidth;
 	int pixMapHeight = m_pixHeight;
 	//整张的时候
-	if (mod < 0.3) 
+	if (mod < 0.3)
 	{
 		//图片在底部上面的张数
 		num = h / pixMapHeight;
@@ -975,14 +1028,14 @@ int hnBrowsePixWidget::getFrameIdxFromImagePoint(const QPoint & point)
 		frameIdx = m_buttomFrameIdx + num;
 	}
 	//半张的时候
-	else			
+	else
 	{
 		//如果高度不足半张
 		if (h <= 0.5*pixMapHeight)
 		{
 				 num = h / pixMapHeight;
 				frameIdx  =  m_buttomFrameIdx - 0.5+num;
-				
+
 				return frameIdx;
 
 		    //frameIdx = m_buttomFrameIdx - 0.5;
@@ -1081,7 +1134,7 @@ QImage hnBrowsePixWidget::getOriginalImage(QPoint mousePos ,const QImage &tmpIma
 
 	//做一下判断，要是越界就控制一下
 
-	//如果左上角的x小于0  
+	//如果左上角的x小于0
 	if (leftTopX < 0)
 	{
 		leftTopX = 0;	//左上角的x就等于0
@@ -1129,7 +1182,7 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 	double frameIdx = 0;
 	this->m_currentWidgetPixNames.clear();
 
-	//判断滚动条值是奇数还是偶数	
+	//判断滚动条值是奇数还是偶数
 	if (m_currentScrollBarValue % 2 == 0)	//如果是偶数   就直接画
 	{
 		//要画的帧序号
@@ -1163,20 +1216,13 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 			int cnt;
 			cnt = frameNum - num;
 
-			const bool loaded = ensureImageLoaded(frameIdx);
-            QImage image;
-            if (!loaded || !getCachedImage(frameIdx, &image))
-            {
-                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
-                    << "reason=cacheMissAfterLoad"
-                    << "frameIdx=" << frameIdx
-                    << "scrollValue=" << m_currentScrollBarValue
-                    << "bottomFrame=" << m_buttomFrameIdx
-                    << "cacheSize=" << m_perfLastCacheSize;
-                this->delayReupdate();
-                return;
-            }
-	
+			QImage image;
+			if (!getLoadedImage(static_cast<int>(frameIdx), image))
+			{
+				this->delayReupdate();
+				return;
+			}
+
 			//往当前视图的图片名称数组中添加
 			auto pixNameiter = this->m_pixNameMap.find(frameIdx);
 			if (pixNameiter != this->m_pixNameMap.end())
@@ -1207,20 +1253,13 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 
 		frameIdx = frameIdx - 0.5;
 
-		const bool loaded = ensureImageLoaded(frameIdx);
-            QImage image;
-            if (!loaded || !getCachedImage(frameIdx, &image))
-            {
-                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
-                    << "reason=cacheMissAfterLoad"
-                    << "frameIdx=" << frameIdx
-                    << "scrollValue=" << m_currentScrollBarValue
-                    << "bottomFrame=" << m_buttomFrameIdx
-                    << "cacheSize=" << m_perfLastCacheSize;
-                this->delayReupdate();
-                return;
-            }
-		
+		QImage image;
+		if (!getLoadedImage(static_cast<int>(frameIdx), image))
+		{
+			this->delayReupdate();
+			return;
+		}
+
 
 
 		//底部的一半帧也要计入当前的病害名字数组
@@ -1229,8 +1268,8 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		{
 			this->m_currentWidgetPixNames.insert(frameIdx, pixNameiter.value());
 		}
-	
-	
+
+
 		//画帧序号的一半
 		hnImagePainter imagePainter;
 		imagePainter.drawImageOnAnotherImage(image, labelImage, 0, labelImage.height() - m_pixHeight / 2,
@@ -1260,19 +1299,12 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 		{
 			int cnt;
 			cnt = frameNum - num;
-			const bool loaded = ensureImageLoaded(frameIdx);
-            QImage image;
-            if (!loaded || !getCachedImage(frameIdx, &image))
-            {
-                qDebug().noquote() << "[HN_PERF][DrawAllAbort]"
-                    << "reason=cacheMissAfterLoad"
-                    << "frameIdx=" << frameIdx
-                    << "scrollValue=" << m_currentScrollBarValue
-                    << "bottomFrame=" << m_buttomFrameIdx
-                    << "cacheSize=" << m_perfLastCacheSize;
-                this->delayReupdate();
-                return;
-            }
+			QImage image;
+			if (!getLoadedImage(static_cast<int>(frameIdx), image))
+			{
+				this->delayReupdate();
+				return;
+			}
 
 			if (image.isNull() || image.bytesPerLine() == 0)
 			{
@@ -1294,171 +1326,108 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 			frameIdx++;
 		}
 	}
-	
+
 }
 
 
 
 void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 {
-    Q_UNUSED(event);
-    QElapsedTimer paintTimer;
-    paintTimer.start();
+	Q_UNUSED(event);
+	QElapsedTimer paintTimer;
+	paintTimer.start();
 
-    //异常处理，图片数组为空就推出
-    if (m_pixNameMap.isEmpty())
-    {
-        return;
-    }
+	//异常处理，图片数组为空就推出
+	if (m_pixNameMap.isEmpty())
+	{
+		return;
+	}
+	int tempH = this->height();
+	int tempw = this->width();
+	int tempValue = this->height()*(m_pixWidth / this->width());
 
-    const QSize imageSize = currentPaintImageSize();
-    QImage image(imageSize, QImage::Format_RGB888);
+	//QImage image(this->m_pixWidth, this->height()*(m_pixWidth / this->width()), QImage::Format_RGB888);
 
-    if (!m_isAllowDrawPix &&
-        !m_tmpPixImageWithoutDisease.isNull() &&
-        m_tmpPixImageWithoutDisease.size() == image.size())
-    {
-        image = m_tmpPixImageWithoutDisease.copy();
-    }
-    else
-    {
-        image.fill(Qt::black);
-    }
 
-    QElapsedTimer drawPixTimer;
-    drawPixTimer.start();
-    //允许画图片，就画上去
-    if (this->m_isAllowDrawPix)
-    {
-        //画图片 传image 进去  这个是固定的，把几张分开的图片画到image上
-        this->drawPicture(image);
-    }
-    const qint64 baseDrawMs = drawPixTimer.elapsed();
 
-    QElapsedTimer overlayTimer;
-    overlayTimer.start();
-    //画其他的 传image 进去 这个函数是可重载的
-    //这里面的临时内容判断，交由子类去自行处理
-    this->drawSomeThingOnImage(image);
-    const qint64 overlayMs = overlayTimer.elapsed();
+	const QSize  imageSize = currentPaintImageSize();
 
-    //将图片一次性画到this窗口上
-    QPainter painter(this);
-    painter.drawImage(this->rect(), image);
+	QImage image(imageSize, QImage::Format_RGB888);
 
-    ++m_perfPaintCount;
-    if (!m_perfFpsTimer.isValid())
-    {
-        m_perfFpsTimer.start();
-    }
-    const qint64 fpsWindowMs = m_perfFpsTimer.elapsed();
-    if (fpsWindowMs >= 500)
-    {
-        m_perfFps = (m_perfPaintCount * 1000.0) / qMax<qint64>(1, fpsWindowMs);
-        m_perfPaintCount = 0;
-        m_perfFpsTimer.restart();
-    }
 
-    m_perfLastPaintMs = paintTimer.elapsed();
-    drawPerformanceOverlay(painter);
 
-    if (m_perfLastPaintMs >= 33 || overlayMs >= 16 || baseDrawMs >= 16)
-    {
-        qDebug().noquote() << "[HN_PERF][PaintEvent]"
-            << "totalMs=" << m_perfLastPaintMs
-            << "baseDrawMs=" << baseDrawMs
-            << "overlayMs=" << overlayMs
-            << "fps=" << QString::number(m_perfFps, 'f', 1)
-            << "scrollValue=" << m_currentScrollBarValue
-            << "bottomFrame=" << m_buttomFrameIdx
-            << "widgetSize=" << QString("%1x%2").arg(width()).arg(height())
-            << "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height())
-            << "cacheSize=" << m_perfLastCacheSize;
-    }
+	if (!m_tmpPixImageWithoutDisease.isNull()&&
+		m_tmpPixImageWithoutDisease.size() == image.size())
+	{
+		image = m_tmpPixImageWithoutDisease.copy();
+	}
+	else
+	{
+		image.fill(Qt::black);
+	}
 
-    //记录上次滚动条的值
-    this->m_lastScrollBarValue = this->m_currentScrollBarValue;
+	//允许画图片，就画上去
+	QElapsedTimer baseDrawTimer;
+	baseDrawTimer.start();
+	if (this->m_isAllowDrawPix)
+	{
+		//画图片 传image 进去  这个是固定的，把几张分开的图片画到image上
+		this->drawPicture(image);
+	}
+
+
+
+	//画其他的 传image 进去 这个函数是可重载的
+	//这里面的临时内容判断，交由子类去自行处理
+	const qint64 baseDrawMs = baseDrawTimer.elapsed();
+
+	QElapsedTimer overlayTimer;
+	overlayTimer.start();
+	this->drawSomeThingOnImage(image);
+	const qint64 overlayMs = overlayTimer.elapsed();
+
+	//将图片一次性画到this窗口上
+	QPainter painter(this);
+	painter.drawImage(this->rect(), image);
+	const qint64 paintMs = paintTimer.elapsed();
+	if (paintMs >= 80 || baseDrawMs >= 40 || overlayMs >= 40)
+	{
+		qDebug().noquote() << "[HN_PERF][BrowsePaint]"
+			<< "totalMs=" << paintMs
+			<< "baseDrawMs=" << baseDrawMs
+			<< "overlayMs=" << overlayMs
+			<< "scrollValue=" << m_currentScrollBarValue
+			<< "bottomFrame=" << m_buttomFrameIdx
+			<< "visibleFrames=" << m_currentWidgetFrameNum
+			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
+	}
+
+
+	//记录上次滚动条的值
+	this->m_lastScrollBarValue = this->m_currentScrollBarValue;
 }
 
-bool hnBrowsePixWidget::getCachedImage(int frameIdx, QImage* image)
-{
-	if (image == nullptr)
-	{
-		return false;
-	}
-
-	QMutexLocker locker(&m_imageMapMutex);
-	auto iter = m_imageMap.constFind(frameIdx);
-	if (iter == m_imageMap.constEnd())
-	{
-		m_perfLastCacheSize = m_imageMap.size();
-		return false;
-	}
-
-	*image = iter.value();
-	m_perfLastCacheSize = m_imageMap.size();
-	return true;
-}
-
-void hnBrowsePixWidget::drawPerformanceOverlay(QPainter& painter)
-{
-	const QStringList lines = QStringList()
-		<< QString("FPS %1").arg(QString::number(m_perfFps, 'f', 1))
-		<< QString("paint %1ms draw %2ms").arg(m_perfLastPaintMs).arg(m_perfLastDrawMs)
-		<< QString("load %1ms preload %2ms").arg(m_perfLastSyncLoadMs).arg(m_perfLastPreloadMs)
-		<< QString("cache %1 frame %2").arg(m_perfLastCacheSize).arg(m_buttomFrameIdx, 0, 'f', 1)
-		<< m_perfLastStatus;
-
-	painter.save();
-	QFont font = painter.font();
-	font.setPixelSize(12);
-	painter.setFont(font);
-	QFontMetrics metrics(font);
-
-	int width = 0;
-	for (const QString& line : lines)
-	{
-		width = qMax(width, metrics.width(line));
-	}
-	const int padding = 6;
-	const int lineHeight = metrics.height();
-	const QRect bgRect(8, 8, width + padding * 2, lineHeight * lines.size() + padding * 2);
-
-	painter.setPen(Qt::NoPen);
-	painter.setBrush(QColor(0, 0, 0, 150));
-	painter.drawRect(bgRect);
-	painter.setPen(Qt::white);
-
-	int y = bgRect.top() + padding + metrics.ascent();
-	for (const QString& line : lines)
-	{
-		painter.drawText(bgRect.left() + padding, y, line);
-		y += lineHeight;
-	}
-	painter.restore();
-}
 void hnBrowsePixWidget::resizeEvent(QResizeEvent* event)
 {
-    qDebug().noquote() << "[HN_PERF][BrowseResize]"
-        << "oldSize=" << QString("%1x%2").arg(event ? event->oldSize().width() : -1).arg(event ? event->oldSize().height() : -1)
-        << "newSize=" << QString("%1x%2").arg(event ? event->size().width() : -1).arg(event ? event->size().height() : -1)
-        << "scrollValue=" << m_currentScrollBarValue
-        << "bottomFrame=" << m_buttomFrameIdx
-        << "wasTmpImageNull=" << m_tmpPixImageWithoutDisease.isNull();
-    m_perfLastStatus = "resize";
-    m_isAllowDrawPix = true;
-    m_tmpContectImage = QImage();
-    m_tmpPixImageWithoutDisease = QImage();
-    QWidget::resizeEvent(event);
-    update();
+	m_isAllowDrawPix = true;
+	m_tmpContectImage = QImage();
+	m_tmpPixImageWithoutDisease = QImage();
+	QWidget::resizeEvent(event);
+	update();
 }
 
 void hnBrowsePixWidget::delayReupdate()
 {
+	if (m_reupdatePending)
+	{
+		return;
+	}
+	m_reupdatePending = true;
 	const int delayTime = 30;
 
-	QTimer::singleShot(delayTime,this,[this]()
+	QTimer::singleShot(delayTime, this, [this]()
 	{
+		m_reupdatePending = false;
 		m_isAllowDrawPix = true;
 		this->update();
 	});
