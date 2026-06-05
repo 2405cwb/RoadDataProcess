@@ -3034,6 +3034,46 @@ bool hnOutExcelManage::exportLMMHPJDJB_GZQT(const QString& saveExcelDir, const Q
 	return true;
 }
 
+QVector<hnCommon::hnRoadDiseaseInfo> hnOutExcelManage::filterDiseasesByCurrentExportRange(const QVector<hnCommon::hnRoadDiseaseInfo>& diss, hnPro::hnProject*curProject)
+{
+	if (!curProject || !m_outExcelMileManage)
+	{
+		return diss;
+	}
+
+	double startDmi = curProject->trueMileToEncl(m_outExcelMileManage->getStartMile());
+	double endDmi = curProject->trueMileToEncl(m_outExcelMileManage->getEndMile());
+	double rangeStart = qMin(startDmi, endDmi);
+	double rangeEnd = qMax(startDmi, endDmi);
+	if (qFuzzyCompare(rangeStart + 1.0, rangeEnd + 1.0))
+	{
+		return diss;
+	}
+
+	QVector<hnCommon::hnRoadDiseaseInfo> result;
+	result.reserve(diss.size());
+	for (const auto& dis : diss)
+	{
+		double disStart = dis.dDmiStart;
+		double disEnd = dis.dDmiEnd;
+		if (qFuzzyCompare(disStart + 1.0, 1.0) && qFuzzyCompare(disEnd + 1.0, 1.0))
+		{
+			disStart = dis.dMileage;
+			disEnd = dis.dMileage;
+		}
+		if (disEnd < disStart)
+		{
+			qSwap(disStart, disEnd);
+		}
+		if (disEnd < rangeStart || disStart > rangeEnd)
+		{
+			continue;
+		}
+		result.append(dis);
+	}
+	return result;
+}
+
 bool hnOutExcelManage::exportLMBHMJTJB_RECT(const QString& saveExcelDir, const QString & modelBasePath, double xlslen, hnPro::hnProject*curProject)
 {
 	QString tableName = QString::fromLocal8Bit("路面病害面积统计表.xlsx");
@@ -3064,7 +3104,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_RECT(const QString& saveExcelDir, const Q
 	//	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->trueMileToEncl(m_outExcelMileManage->getStartMile()), curProject->trueMileToEncl(m_outExcelMileManage->getEndMile()), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 	////	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 	//}
-	diss =hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = filterDiseasesByCurrentExportRange(hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(), curProject);
 
 	QVector<hnCommon::hnRoadDiseaseInfo> rutDiss = m_outExcelMileManage->getRutDis();
 	if (rutDiss.size() > 0)
@@ -3131,7 +3171,7 @@ bool hnOutExcelManage::export3DLMBHMJTJB_RECT(const QString& saveExcelDir, const
 		curProject->getDB()->getDiseaseTable()->read3dRoadDiseaseData(HnProjectEnums::roadTypeEnumToQString(curProject->getBaseStandard()), sMile, eMile, dissVec);
 		 
 	}*/
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = filterDiseasesByCurrentExportRange(hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(), curProject);
 	//QVector<hnCommon::hnRoadDiseaseInfo> diss = QVector<hnCommon::hnRoadDiseaseInfo>::fromStdVector(dissVec);
 	
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
@@ -3177,7 +3217,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart(const QString& saveExcelDir, const 
 	auto curMiles = curProject->getCurrentMileVector();
 	//curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = filterDiseasesByCurrentExportRange(hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(), curProject);
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
 
 	std::vector<QString> surfaceTyes = hnApp::hnDataManager::getDataManager()->getRoadSurfaceType();
@@ -3201,7 +3241,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart(const QString& saveExcelDir, const 
 	return true;
 }
 
-void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCommon::hnRoadDiseaseInfo> diss, hnPro::hnProject*curProject)
+void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCommon::hnRoadDiseaseInfo>& diss, hnPro::hnProject*curProject)
 {
 
 	double streetSpace = curProject->get2DProject()->_StreetImgDis;
@@ -3588,7 +3628,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 	//获取病害
 	QVector<hnCommon::hnRoadDiseaseInfo> diss;
 //	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = filterDiseasesByCurrentExportRange(hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(), curProject);
 	int formatRowIndex = 3;
 	double streetSpace = curProject->get2DProject()->_StreetImgDis;
 	if (streetSpace == 10)
@@ -3788,7 +3828,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 	writeAsphaltDiseasesSumSheet_Smart_QTDZ(xlsx, excelMiles, curProject);
 
 	//水泥病害统计表
-	writeCementDiseasesStatisticsSheet_Smart_QTDZ(xlsx, excelMiles, curProject);
+	writeCementDiseasesStatisticsSheet_Smart_QTDZ(xlsx, diss, curProject);
 
 	//水泥病害汇总表
 	writeCementDiseasesSumSheet_Smart_QTDZ(xlsx, excelMiles, curProject);
@@ -3827,7 +3867,7 @@ bool hnOutExcelManage::export3DLMBHMJTJB_Smart(const QString& saveExcelDir, cons
 	//获取病害 
 	QVector<hnCommon::hnRoadDiseaseInfo> diss;
 	//curProject->getDB()->getDiseaseTable()->read3dRoadDiseaseData(HnProjectEnums::roadTypeEnumToQString(curProject->getBaseStandard()), sMile, eMile, dissVec);
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = filterDiseasesByCurrentExportRange(hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(), curProject);
 	 
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
 
@@ -5331,17 +5371,13 @@ bool hnOutExcelManage::writeAsphaltDiseasesSumSheet_Smart_QTDZ(Document &xlsx, Q
 	return true;
 }
 
-bool hnOutExcelManage::writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &xlsx, QVector<hnOutExcelMile> & excelMiles, hnPro::hnProject*curProject)
+bool hnOutExcelManage::writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &xlsx, const QVector<hnCommon::hnRoadDiseaseInfo>& diseases, hnPro::hnProject*curProject)
 {
 	if (!curProject)
 	{
 		return false;
 	}
 
-	//获取病害
-	QVector<hnCommon::hnRoadDiseaseInfo> diseases;
-	//curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diseases, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
-	diseases = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 	//获取面积
 	hnDiseaseSumAreaCaculate caculate;
 	QVector<double> areas = caculate.caculateSumArea(diseases, false, HnProjectEnums::StandardParmTypeEnum::DegreeRoad2018, 1, curProject);

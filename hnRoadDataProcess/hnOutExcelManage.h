@@ -121,8 +121,11 @@ private:
 	//自动化模式路面病害面积统计表
 	static	 bool exportLMBHMJTJB_Smart(const QString& saveExcelDir, const QString& modelBasePath, double xlslen, hnPro::hnProject*curProject);
 
-	//输出病害列表sheet页面
-	static	 void  exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCommon::hnRoadDiseaseInfo> diss, hnPro::hnProject*curProject);
+	//Filter diseases by current export range
+	static QVector<hnCommon::hnRoadDiseaseInfo> filterDiseasesByCurrentExportRange(const QVector<hnCommon::hnRoadDiseaseInfo>& diss, hnPro::hnProject*curProject);
+
+	//Output disease list sheet
+	static	 void  exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCommon::hnRoadDiseaseInfo>& diss, hnPro::hnProject*curProject);
 
 	//输出gps数据
 	static bool exportGPSExcel(const QString& saveExcelDir, const QString& modelBasePath, double xlslen, hnPro::hnProject*curProject);
@@ -189,7 +192,7 @@ private:
 	static bool writeAsphaltDiseasesSumSheet_Smart_QTDZ(Document &xlsx, QVector<hnOutExcelMile> & excelMiles, hnPro::hnProject*curProject);
 
 	// 填写《水泥病害统计表》sheet页，sheet页的名字必须是《水泥病害统计表》,传入的Document也必须有相应的模板，否则写入失败。 
-	static bool writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &xlsx, QVector<hnOutExcelMile> & excelMiles, hnPro::hnProject*curProject);
+	static bool writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &xlsx, const QVector<hnCommon::hnRoadDiseaseInfo>& diss, hnPro::hnProject*curProject);
 
 	// 填写《水泥病害汇总表》sheet页，sheet页的名字必须是《水泥病害统计表》,传入的Document也必须有相应的模板，否则写入失败。 
 	static bool writeCementDiseasesSumSheet_Smart_QTDZ(Document &xlsx, QVector<hnOutExcelMile> & excelMiles, hnPro::hnProject*curProject);
