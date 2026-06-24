@@ -185,7 +185,7 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 
 	//Ìí¼Ó³µÕÞ²¡º¦
 	if (m_equipMentList.ROAD
-		&&(m_project->getBaseStandard() == HnProjectEnums::DegreeRoad2018)||(m_project->getBaseStandard()== HnProjectEnums::CityRoad))
+		&& (m_project->getBaseStandard() == HnProjectEnums::DegreeRoad2018 || m_project->getBaseStandard() == HnProjectEnums::CityRoad))
 	{
 		if (m_xrSetting->outExcelFormatDmi)
 		{

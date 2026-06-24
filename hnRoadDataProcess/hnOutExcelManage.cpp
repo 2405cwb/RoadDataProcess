@@ -2875,7 +2875,7 @@ bool hnOutExcelManage::exportLMPSexcel_City(const QString& saveExcelDir, const Q
 
 		//PCI	
 		format = xlsx.cellAt("E3")->format();
-		double pci = nowExcelMile.getPCIExcelStr().toDouble();
+		QString pci = nowExcelMile.getPCIExcelStr();
 		xlsx.write(QString("E%1").arg(rowCount), pci, format);
 		//评价等级
 		//E3就是pci对应的单元格
@@ -3406,8 +3406,9 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 			if (curProject->getProjectType() == PROJECT_23D_TYPE || curProject->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE
 				|| curProject->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
 			{
-			    QString highGpsPath = 	curProject->get2DProject()->getBasePath() + "\\HighGps2Mile.txt";
-				if (QFile::exists(highGpsPath))
+				bool highGpsOk = false;
+				QString highGpsPath = curProject->get2DProject()->getBasePath() + "\\HighGps2Mile.txt";
+				if (QFile::exists(highGpsPath) && dis.vec2dRect.size() > 0)
 				{
 					hn2dRectI rect = dis.vec2dRect[0]; 
 					//存在高精度数据
@@ -3416,26 +3417,23 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 					int curPosY = (rect.p0.y +rect.p2.y)/2;
 					double curMile = std::round(curProject->enclToTrueMile(dis.dMileage));
 
-
-					m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile, curPosX, curPosY, lon, lat, height);
+					highGpsOk = m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile, curPosX, curPosY, lon, lat, height);
 				}
-				else
+				if (!highGpsOk && dis.vec3dRect.size() > 0)
 				{
-					if (dis.vec3dRect.size() > 0)
-					{
-						double centerX = (dis.vec3dRect[0].p0.x + dis.vec3dRect[0].p1.x + dis.vec3dRect[0].p2.x + dis.vec3dRect[0].p3.x) / 4;
-						double centerY = (dis.vec3dRect[0].p0.y + dis.vec3dRect[0].p1.y + dis.vec3dRect[0].p2.y + dis.vec3dRect[0].p3.y) / 4;
-						double centerZ = (dis.vec3dRect[0].p0.z + dis.vec3dRect[0].p1.z + dis.vec3dRect[0].p2.z + dis.vec3dRect[0].p3.z) / 4;
-						double mile = (dis.vec3dRect[0].p0.bottomEncoderMile + dis.vec3dRect[0].p1.bottomEncoderMile + dis.vec3dRect[0].p2.bottomEncoderMile + dis.vec3dRect[0].p3.bottomEncoderMile) / 4;
-						hnCommon::hn3dPointWithMileI pt(centerX, centerY, centerZ, mile);
-						hnDataManager::getDataManager()->getDiseaseLoction(pt, lat, lon, height);
-					}
-				} 
+					double centerX = (dis.vec3dRect[0].p0.x + dis.vec3dRect[0].p1.x + dis.vec3dRect[0].p2.x + dis.vec3dRect[0].p3.x) / 4;
+					double centerY = (dis.vec3dRect[0].p0.y + dis.vec3dRect[0].p1.y + dis.vec3dRect[0].p2.y + dis.vec3dRect[0].p3.y) / 4;
+					double centerZ = (dis.vec3dRect[0].p0.z + dis.vec3dRect[0].p1.z + dis.vec3dRect[0].p2.z + dis.vec3dRect[0].p3.z) / 4;
+					double mile = (dis.vec3dRect[0].p0.bottomEncoderMile + dis.vec3dRect[0].p1.bottomEncoderMile + dis.vec3dRect[0].p2.bottomEncoderMile + dis.vec3dRect[0].p3.bottomEncoderMile) / 4;
+					hnCommon::hn3dPointWithMileI pt(centerX, centerY, centerZ, mile);
+					hnDataManager::getDataManager()->getDiseaseLoction(pt, lat, lon, height);
+				}
 			}
 			else
 			{
+				bool highGpsOk = false;
 				QString highGpsPath = curProject->get2DProject()->getBasePath() + "\\HighGps2Mile.txt";
-				if (QFile::exists(highGpsPath))
+				if (QFile::exists(highGpsPath) && dis.vec2dRect.size() > 0)
 				{
 					hn2dRectI rect = dis.vec2dRect[0];
 					//存在高精度数据
@@ -3444,18 +3442,15 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 					int curPosY = (rect.p0.y + rect.p2.y) / 2;
 					double curMile =  std::round( curProject->enclToTrueMile(dis.dMileage));
 
-
-					m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile, curPosX, curPosY, lon, lat, height);
+					highGpsOk = m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile, curPosX, curPosY, lon, lat, height);
 				}
-				else
+				if (!highGpsOk)
 				{
 					auto gps = curProject->get2DProject()->findCloseGpsInfoFromDmi(dis.dMileage, 0, 0);
 					lon = gps._longitude;
 					lat = gps._latitude;
 					height = gps._elevation;
 				}
-
-			
 			}
 			xlsx.writeAndFormat(rowCount, colCount++, lon, formatRowIndex);
 			xlsx.writeAndFormat(rowCount, colCount++, lat, formatRowIndex);
@@ -4793,7 +4788,7 @@ bool hnOutExcelManage::exporDesignSnDiseaseSum(const QString& saveExcelDir, cons
 			format = xlsx.cellAt("F2")->format();
 			xlsx.write(QString("F%1").arg(rowCount), lfLength, format);
 
-			//破碎版(m²)
+			//破碎版(m2)
 			format = xlsx.cellAt("G2")->format();
 			xlsx.write(QString("G%1").arg(rowCount), psbArea, format);
 
@@ -4807,7 +4802,7 @@ bool hnOutExcelManage::exporDesignSnDiseaseSum(const QString& saveExcelDir, cons
 			xlsx.write(QString("I%1").arg(rowCount), bjdlCount, format);
 
 
-			//修补(m²)
+			//修补(m2)
 			format = xlsx.cellAt("J2")->format();
 			xlsx.write(QString("J%1").arg(rowCount), xbArea, format);
 		}

@@ -46,7 +46,9 @@ void hnBrowsePixWidget::loadPix(const QString & pixDirName)
 		this->m_imageMap.clear();
 	}
 	m_lastPreloadBottomFrameIdx = -1;
+	m_lastPreloadPriorityFrameIdx = -1;
 	m_pendingPreloadBottomFrameIdx = -1;
+	m_pendingPreloadPriorityFrameIdx = -1;
 	this->m_pixNameMap = imgloader.loadImageNamesToMap(pixDirName,false);
 
 	//获取分辨率
@@ -76,7 +78,9 @@ void hnBrowsePixWidget::loadPix(const QStringList & pixNames)
 		this->m_imageMap.clear();
 	}
 	m_lastPreloadBottomFrameIdx = -1;
+	m_lastPreloadPriorityFrameIdx = -1;
 	m_pendingPreloadBottomFrameIdx = -1;
+	m_pendingPreloadPriorityFrameIdx = -1;
 	this->m_pixNameMap = imgloader.loadImageNamesToMap(pixNames,this->m_reversePixNameMap);
 
 	int scrollBarMaxValue = this->m_pixNameMap.size() * 2;
@@ -143,7 +147,9 @@ void hnBrowsePixWidget::clearPix()
 		this->m_imageMap.clear();
 	}
 	m_lastPreloadBottomFrameIdx = -1;
+	m_lastPreloadPriorityFrameIdx = -1;
 	m_pendingPreloadBottomFrameIdx = -1;
+	m_pendingPreloadPriorityFrameIdx = -1;
 	this->update();
 }
 
@@ -522,7 +528,7 @@ void hnBrowsePixWidget::setPixResolution(const int width, const int height)
 }
 
 //这个函数要丢到多线程去
-void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int loadFrameNum, int maxImagesToLoad)
+void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int priorityFrameIdx, int loadFrameNum, int maxImagesToLoad)
 {
 	QElapsedTimer preloadTimer;
 	preloadTimer.start();
@@ -537,7 +543,23 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, 
 	const int minKeep = qMax(1, btmIdx - LOAD_NUM);
 	const int maxKeep = qMin(pixNameMap.size(), btmIdx + LOAD_NUM);
 
-	for (int idx = minKeep; idx <= maxKeep; ++idx)
+	QVector<int> loadOrder;
+	auto appendFrameIdx = [&](int idx)
+	{
+		if (idx >= minKeep && idx <= maxKeep && !loadOrder.contains(idx))
+		{
+			loadOrder.append(idx);
+		}
+	};
+	appendFrameIdx(priorityFrameIdx);
+	appendFrameIdx(btmIdx);
+	for (int offset = 1; offset <= LOAD_NUM; ++offset)
+	{
+		appendFrameIdx(btmIdx + offset);
+		appendFrameIdx(btmIdx - offset);
+	}
+
+	for (int idx : qAsConst(loadOrder))
 	{
 		{
 			QMutexLocker locker(&m_imageMapMutex);
@@ -623,6 +645,7 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, 
 	{
 		qDebug().noquote() << "[HN_PERF][PreloadImages]"
 			<< "bottomFrameIdx=" << bottomFrameIdx
+			<< "priorityFrameIdx=" << priorityFrameIdx
 			<< "elapsedMs=" << preloadMs
 			<< "maxSingleLoadMs=" << maxSingleLoadMs
 			<< "slowestFrameIdx=" << slowestFrameIdx
@@ -644,6 +667,7 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, 
 		locker.unlock();
 
 		const int pendingBottomFrameIdx = m_pendingPreloadBottomFrameIdx;
+		const int pendingPriorityFrameIdx = m_pendingPreloadPriorityFrameIdx;
 		if (pendingBottomFrameIdx > 0 && pendingBottomFrameIdx != bottomFrameIdx)
 		{
 			if (shouldDeferPreload())
@@ -658,8 +682,10 @@ void hnBrowsePixWidget::updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, 
 				return;
 			}
 			m_pendingPreloadBottomFrameIdx = -1;
+			m_pendingPreloadPriorityFrameIdx = -1;
 			m_lastPreloadBottomFrameIdx = -1;
-			schedulePreloadImages(pendingBottomFrameIdx);
+			m_lastPreloadPriorityFrameIdx = -1;
+			schedulePreloadImages(pendingBottomFrameIdx, pendingPriorityFrameIdx);
 		}
 	});
 }
@@ -706,7 +732,7 @@ bool hnBrowsePixWidget::getLoadedImage(const int frameIdx, QImage& image)
 		return true;
 	}
 
-	schedulePreloadImages(static_cast<int>(m_buttomFrameIdx));
+	schedulePreloadImages(static_cast<int>(m_buttomFrameIdx), frameIdx);
 	return false;
 }
 
@@ -732,7 +758,7 @@ bool hnBrowsePixWidget::shouldDeferPreload() const
 	return QApplication::applicationState() != Qt::ApplicationActive;
 }
 
-void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
+void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx, int priorityFrameIdx)
 {
 	if (bottomFrameIdx <= 0)
 	{
@@ -742,6 +768,7 @@ void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
 	if (shouldDeferPreload())
 	{
 		m_pendingPreloadBottomFrameIdx = bottomFrameIdx;
+		m_pendingPreloadPriorityFrameIdx = priorityFrameIdx;
 		if (m_lastDeferredPreloadBottomFrameIdx != bottomFrameIdx)
 		{
 			m_lastDeferredPreloadBottomFrameIdx = bottomFrameIdx;
@@ -756,16 +783,19 @@ void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
 	if (m_preloadFuture.isRunning())
 	{
 		m_pendingPreloadBottomFrameIdx = bottomFrameIdx;
+		m_pendingPreloadPriorityFrameIdx = priorityFrameIdx;
 		return;
 	}
 
-	if (m_lastPreloadBottomFrameIdx == bottomFrameIdx)
+	if (m_lastPreloadBottomFrameIdx == bottomFrameIdx && m_lastPreloadPriorityFrameIdx == priorityFrameIdx)
 	{
 		return;
 	}
 
 	m_pendingPreloadBottomFrameIdx = -1;
+	m_pendingPreloadPriorityFrameIdx = -1;
 	m_lastPreloadBottomFrameIdx = bottomFrameIdx;
+	m_lastPreloadPriorityFrameIdx = priorityFrameIdx;
 	int generation = 0;
 	{
 		QMutexLocker locker(&m_imageMapMutex);
@@ -774,11 +804,12 @@ void hnBrowsePixWidget::schedulePreloadImages(int bottomFrameIdx)
 	const QMap<int, QString> pixNameMap = m_pixNameMap;
 	const bool hMirrored = m_isHMirrored;
 	const bool vMirrored = m_isVMirrored;
+	const int priorityFrame = priorityFrameIdx;
 	const int loadFrameNum = m_loadFrameNum;
 	const int maxImagesToLoad = m_preloadMaxImagesPerRun;
-	m_preloadFuture = QtConcurrent::run([this, bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, loadFrameNum, maxImagesToLoad]()
+	m_preloadFuture = QtConcurrent::run([this, bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, priorityFrame, loadFrameNum, maxImagesToLoad]()
 	{
-		updateImageMapBasedOnBottomFrameIdx(bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, loadFrameNum, maxImagesToLoad);
+		updateImageMapBasedOnBottomFrameIdx(bottomFrameIdx, generation, pixNameMap, hMirrored, vMirrored, priorityFrame, loadFrameNum, maxImagesToLoad);
 	});
 }
 void hnBrowsePixWidget::drawSomeThingOnImage(QImage & image)
@@ -829,7 +860,7 @@ void hnBrowsePixWidget::slot_updateCurrentScrollBar(const int scrollBarValue)
 	}
 	else
 	{
-		m_preloadMaxImagesPerRun = 0;
+		m_preloadMaxImagesPerRun = qMax(2, qMin(m_currentWidgetFrameNum + 1, 4));
 		this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
 	}
 

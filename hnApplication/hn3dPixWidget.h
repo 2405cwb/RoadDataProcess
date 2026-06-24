@@ -195,6 +195,12 @@ private:
 	//根据三维图片名字获取对应的hnMile 这个图片名字 灰度图和深度图都可以,传入绝对路径
 	hnMile getHnMileBy3dPixName(const QString &pix3dName);
 
+	QVector<hnMile> create3dMileVector();
+
+	hnMile create3dHnMile(double encoderMile, const QString &pixName);
+
+	QVector<hnDiseaseSetInfo> get3dProjectRoadDiseaseSetInfos(hnCommon::ROAD_WORK_TYPE drawType);
+
 
 	//获取鼠标位置的病害  inDisease : 
 	hnRoadDiseaseInfo getMousePosDisease(const QPoint & mousePoint);

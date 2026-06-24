@@ -12,7 +12,15 @@ MapGPSMile::MapGPSMile(QString txt)
  if (infos.size()>5)
  {
 	 GPSInfo info;
-	 info._utctime = QDateTime::fromString(infos[0]);
+	 QTime time = QTime::fromString(infos[0], "HHmmsszzz");
+	 if (time.isValid())
+	 {
+	 	 info._utctime = QDateTime(QDate::currentDate(), time);
+	 }
+	 else
+	 {
+	 	 info._utctime = QDateTime::fromString(infos[0]);
+	 }
 	 info._longitude = infos[1].toDouble();
 	 info._latitude = infos[2].toDouble();
 	 info._elevation = infos[3].toDouble();

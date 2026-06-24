@@ -698,7 +698,11 @@ void hn2dPixWidget::mouseMoveEvent(QMouseEvent * event)
 		{
 			curPosY = pictureH - curPosY;
 		}
-		m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile,curPosX,curPosY , dDiseaseLon, dDiseaseLat, dDiseaseH);
+		if (!m_highAccuracy->getHighAccPosition(m_xrSetting->gpsFormat, m_xrSetting->equipType, curMile,curPosX,curPosY , dDiseaseLon, dDiseaseLat, dDiseaseH))
+		{
+			m_lblCoordinates->hide();
+			return;
+		}
 		m_latitude    = QString::number(dDiseaseLat, 'f', 6);
 		m_longitude = QString::number(dDiseaseLon, 'f', 6);
 		m_centerH    = QString::number(dDiseaseH, 'f', 2);

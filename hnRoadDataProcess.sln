@@ -71,6 +71,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hnCoordTranslate", "hnCoord
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hnPcdCoordinate", "hnPcdCoordinate\hnPcdCoordinate.vcxproj", "{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TunnelViewerSDK", "SDK\TunnelViewerSDK.vcxproj", "{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -1730,6 +1732,62 @@ Global
 		{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}.Static lib - Release|x64.Build.0 = Release|x64
 		{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}.Static lib - Release|x86.ActiveCfg = Release|Win32
 		{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}.Static lib - Release|x86.Build.0 = Release|Win32
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|ARM.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|ARM.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|Itanium.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|Itanium.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|x64.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|x64.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|x86.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Debug|x86.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|ARM.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|ARM.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|Itanium.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|Itanium.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|x64.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|x64.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|x86.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release - Fast FPU|x86.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|ARM.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|ARM.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|Itanium.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|Itanium.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|x64.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|x64.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|x86.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Release|x86.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|ARM.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|ARM.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|Itanium.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|Itanium.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|x64.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|x64.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|x86.ActiveCfg = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.SDL-Debug|x86.Build.0 = Debug|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|ARM.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|ARM.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|Itanium.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|Itanium.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|x64.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|x64.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|x86.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Debug|x86.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|ARM.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|ARM.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|Itanium.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|Itanium.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|x64.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|x64.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|x86.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release - Fast FPU|x86.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|ARM.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|ARM.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|Itanium.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|Itanium.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|x64.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|x64.Build.0 = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|x86.ActiveCfg = Release|x64
+		{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}.Static lib - Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1747,7 +1805,7 @@ Global
 		{FE21890F-D3AE-4170-9C28-DC859CAFE6E3} = {8B7F5ADE-E26A-490F-A9F8-A83700BC8EDE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {3975FB6D-A9C1-490B-B385-6DCF311A431A}
 		Qt5Version = QT5.8.0
+		SolutionGuid = {3975FB6D-A9C1-490B-B385-6DCF311A431A}
 	EndGlobalSection
 EndGlobal

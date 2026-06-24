@@ -58,12 +58,16 @@ void hn3dPixWidget::load3DImagePictures()
 	this->m_pixWidth = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImagePixelWidth();
 	this->m_pixHeight = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImagePixelHeight();
 
-	// 获取里程信息
-	this->m_2dMileVector = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
-
 	// 获取灰度影像图像
 	this->m_vecGreyImageName = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getAllImage();
 	this->m_strGreyImaePath = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getGreyImagePath();
+
+	// 获取里程信息。纯三维工程没有二维里程表，使用三维影像里程补齐。
+	this->m_2dMileVector = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
+	if (this->m_2dMileVector.isEmpty() && hnCommon::PROJECT_23D_TYPE != m_projectType)
+	{
+		this->m_2dMileVector = this->create3dMileVector();
+	}
 
 	//灰度图转编码器里程数组
 	this->m_3dEncoderMileVector = this->grayImageNamesToEncoderMileVector();
@@ -147,7 +151,105 @@ void hn3dPixWidget::setMileVector(QVector<hnMile>& hnMiles)
 	this->m_2dMileVector = hnMiles;
 }
 
+QVector<hnMile> hn3dPixWidget::create3dMileVector()
+{
+	QVector<hnMile> result;
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	{
+		return result;
+	}
+	if (!hnApp::hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+	{
+		return result;
+	}
 
+	QVector<QString> imageNames = this->m_vecGreyImageName;
+	if (imageNames.isEmpty())
+	{
+		imageNames = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getAllImage();
+	}
+
+	for (int i = 0; i < imageNames.size(); ++i)
+	{
+		const double encoderMile = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getMileByImage(imageNames[i]);
+		if (encoderMile < 0)
+		{
+			continue;
+		}
+
+		hnMile mile = this->create3dHnMile(encoderMile, imageNames[i]);
+		mile.nID = i;
+		result.push_back(mile);
+	}
+
+	std::sort(result.begin(), result.end(), [](const hnMile &left, const hnMile &right)
+	{
+		return left.dEnclMile < right.dEnclMile;
+	});
+
+	return result;
+}
+
+hnMile hn3dPixWidget::create3dHnMile(double encoderMile, const QString &pixName)
+{
+	hnMile mile;
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	{
+		return mile;
+	}
+
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return mile;
+	}
+
+	const hnCommon::hnProjectSetInfo setting = project->getCurProSetInfo();
+	mile.dEnclMile = encoderMile;
+	mile.dTrueMile = project->enclToTrueMile(encoderMile);
+	mile.picturePath = pixName;
+	mile.drawType = static_cast<hnCommon::ROAD_WORK_TYPE>(setting.nDrawType);
+	mile.roadType = static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType);
+	mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(QString::fromLocal8Bit(setting.strRoadStandard));
+	mile.roadGradStr = QString::fromLocal8Bit(setting.strRoadLevel);
+	if (!mile.roadGradStr.isEmpty())
+	{
+		mile.roadGrad = mile.GradStrToGrad(mile.roadGradStr);
+	}
+	mile.roadWidth = project->get3DProject() ? project->get3DProject()->getRoadWidth() : setting.dRoadWidth;
+	if (setting.dWheelPerimeter != 0)
+	{
+		mile.nDMi = static_cast<long long>((setting.nFrequency * encoderMile) / setting.dWheelPerimeter);
+	}
+
+	return mile;
+}
+
+QVector<hnDiseaseSetInfo> hn3dPixWidget::get3dProjectRoadDiseaseSetInfos(hnCommon::ROAD_WORK_TYPE drawType)
+{
+	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	{
+		return QVector<hnDiseaseSetInfo>();
+	}
+
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return QVector<hnDiseaseSetInfo>();
+	}
+
+	if (drawType == hnCommon::DESIGN)
+	{
+		drawType = hnCommon::ROAD_WORK_LARGE_RECT;
+	}
+
+	const hnCommon::hnProjectSetInfo setting = project->getCurProSetInfo();
+	return hnApp::hnDataManager::getDataManager()->getRoadDisease(
+		HnProjectEnums::roadTypeQStringToEnum(QString::fromLocal8Bit(setting.strRoadStandard)),
+		drawType,
+		static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType),
+		0);
+}
 
 QString hn3dPixWidget::generateStatusInfo(const QPoint & eventPos)
 {
@@ -1476,9 +1578,7 @@ void hn3dPixWidget::editDisease(hnRoadDiseaseInfo &disease, const QPoint & mouse
 	}
 	else
 	{
-		auto setting = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		diseaseSetInfos = hnApp::hnDataManager::getDataManager()->getRoadDisease(HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard),
-			(ROAD_WORK_TYPE)setting.nDrawType, (ROAD_SURFACE_TYPE)setting.nRSurfaceType, 0);
+		diseaseSetInfos = this->get3dProjectRoadDiseaseSetInfos(static_cast<hnCommon::ROAD_WORK_TYPE>(disease.nDrawType));
 	} 
 	QList<QPair<QString, QString>> diseaseNameAndKey;
 	for (auto diseseSetInfo : diseaseSetInfos)
@@ -1817,6 +1917,10 @@ hnMile hn3dPixWidget::getHnMileFromPoint(const QPoint & allImagePoint)
 	auto iter = this->m_encoderMileHnMileMap.find(mile);
 	if (iter == this->m_encoderMileHnMileMap.end())
 	{
+		if (PROJECT_23D_TYPE != m_projectType)
+		{
+			return this->create3dHnMile(mile, picName);
+		}
 		return dstHnMile;
 	}
 	dstHnMile = iter.value();
@@ -2338,8 +2442,7 @@ bool hn3dPixWidget::drawBigFrameProcess()
 	}
 	else
 	{
-		diseaseSetInfos = hnApp::hnDataManager::getDataManager()->getRoadDisease(HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard),
-			(ROAD_WORK_TYPE)0, (ROAD_SURFACE_TYPE)setting.nRSurfaceType, 0);
+		diseaseSetInfos = this->get3dProjectRoadDiseaseSetInfos(hnCommon::ROAD_WORK_LARGE_RECT);
 	}
 	QList<QPair<QString, QString>> diseaseNameAndKey;
 	 
@@ -2644,6 +2747,10 @@ hnMile hn3dPixWidget::getHnMileBy3dPixName(const QString & pix3dName)
 	//根据里程 获取hnMile
 	if (m_encoderMileHnMileMap.find(encoderMile) == m_encoderMileHnMileMap.end())
 	{
+		if (PROJECT_23D_TYPE != m_projectType)
+		{
+			return this->create3dHnMile(encoderMile, pixFileName);
+		}
 		return resultMile;
 	}
 	resultMile = m_encoderMileHnMileMap.find(encoderMile).value();
@@ -2656,6 +2763,11 @@ QMap < double, hnMile> hn3dPixWidget::encoderMilesToEncoderMileHnMileMap()
 	QMap<double, hnMile> dstMap; 
 	QVector<double> sortedData3d = m_3dEncoderMileVector;
 	QVector<hnMile> sortedMile = m_2dMileVector;
+	std::sort(sortedData3d.begin(), sortedData3d.end());
+	std::sort(sortedMile.begin(), sortedMile.end(), [](const hnMile &left, const hnMile &right)
+	{
+		return left.dEnclMile < right.dEnclMile;
+	});
 	  
 	//双指针遍历
 
@@ -2763,9 +2875,7 @@ bool hn3dPixWidget::littleFrameProcess()
 	}
 	else
 	{
-		auto setting = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		diseaseSetInfos = hnApp::hnDataManager::getDataManager()->getRoadDisease(HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard),
-			(ROAD_WORK_TYPE)setting.nDrawType, (ROAD_SURFACE_TYPE)setting.nRSurfaceType, 0);
+		diseaseSetInfos = this->get3dProjectRoadDiseaseSetInfos(hnCommon::ROAD_WORK_SMALL_RECT);
 	}
 
 

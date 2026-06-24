@@ -12,6 +12,7 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QDateTime>
+#include <algorithm>
 #include "..\hnQtRibbonUI\hnRibbonBar.h"
 #include "..\hnQtRibbonUI\hnRibbonCategory.h"
 #include "..\hnQtRibbonUI\hnRibbonPannel.h"
@@ -2925,6 +2926,7 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		std::unique_ptr<HighAccuracyPositioning>m_highAccuracy =
 			std::make_unique<  HighAccuracyPositioning>(hnApp::hnDataManager::getDataManager()->getCurrentProject());
 		std::vector<	hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>*> disVector;
+		int skipPositionFailCount = 0;
 		hnHighAcc2Plane plane;
 		plane.initialParam(&config);
 		for (auto diseaseInfo : allDiseaseInfos)
@@ -2936,14 +2938,16 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 				auto rect2d = diseaseInfo.vec2dRect.at(0);
 				hnCommon::hn2dGpsPoint pt2d00, pt2d01, pt2d02, pt2d03;
 				hnCommon::hn2dGpsPoint ptResult0, ptResult1, ptResult2, ptResult3;
+				bool p0Ok = m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
+				bool p1Ok = m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p1.m_dmi), rect2d.p1.x, rect2d.p1.y, pt2d01.x, pt2d01.y, pt2d01.z);
+				bool p2Ok = m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p2.m_dmi), rect2d.p2.x, rect2d.p2.y, pt2d02.x, pt2d02.y, pt2d02.z);
+				bool p3Ok = m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p3.m_dmi), rect2d.p3.x, rect2d.p3.y, pt2d03.x, pt2d03.y, pt2d03.z);
+				if (!p0Ok || !p1Ok || !p2Ok || !p3Ok)
+				{
+					++skipPositionFailCount;
+					continue;
+				}
 
-				 
-			m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
-				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p1.m_dmi), rect2d.p1.x, rect2d.p1.y, pt2d01.x, pt2d01.y, pt2d01.z);
-				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p2.m_dmi), rect2d.p2.x, rect2d.p2.y, pt2d02.x, pt2d02.y, pt2d02.z);
-				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p3.m_dmi), rect2d.p3.x, rect2d.p3.y, pt2d03.x, pt2d03.y, pt2d03.z);
-
-			
 				plane.convertBLHToProjection(pt2d00.x, pt2d00.y, pt2d00.z, ptResult0.x, ptResult0.y, ptResult0.z);
 				plane.convertBLHToProjection(pt2d01.x, pt2d01.y, pt2d01.z, ptResult1.x, ptResult1.y, ptResult1.z);
 				plane.convertBLHToProjection(pt2d02.x, pt2d02.y, pt2d02.z, ptResult2.x, ptResult2.y, ptResult2.z);
@@ -2977,7 +2981,10 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		QByteArray temp1 = outFilePath.toLocal8Bit();
 		if (OutputDisease2dGpsDxf(temp1.constData(), disVector, type))
 		{
-			QMessageBox::information(this, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("处理完成"));
+			QString msg = skipPositionFailCount > 0
+				? QStringLiteral("处理完成，跳过%1条定位失败病害").arg(skipPositionFailCount)
+				: QStringLiteral("处理完成");
+			QMessageBox::information(this, QStringLiteral("提示"), msg);
 
 		}
 		else
@@ -4925,7 +4932,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 
 bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps_fname)
 {
-	int i = 0, j = 0;
+	int i = 0;
 	int hour = 0;
 	int minute = 0;
 	int second = 0;
@@ -5058,9 +5065,9 @@ bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps
 		}
 
 
-		MyCommonMethods::printDateTime(nowValid);
+		/*MyCommonMethods::printDateTime(nowValid);
 		qDebug() << "_____________________________";
-		MyCommonMethods::printDateTime(nextValid);
+		MyCommonMethods::printDateTime(nextValid);*/
 
 		if (t3 < -72000000)
 		{
@@ -5083,40 +5090,36 @@ bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps
 		GPSMileList[i]._gpsinfo._utctime = GPSMileList[i]._gpsinfo._utctime.addDays(1);
 	}
 
-	bool isfind = false;
-	QList<DataIdx> SynIdx;
 	for (i = 0; i < utc_dmi_len; ++i)
 	{
-		isfind = false;
-		for (j = 1; j < gps_len; ++j)
-		{
+		const QDateTime targetTime = GPSMileList[i]._gpsinfo._utctime;
+		auto rightIt = std::upper_bound(
+			GPSInfoList.constBegin(),
+			GPSInfoList.constEnd(),
+			targetTime,
+			[](const QDateTime& time, const GPSInfo& gpsInfo)
+			{
+				return time < gpsInfo._utctime;
+			});
 
-			QString curTime = GPSMileList[i]._gpsinfo._utctime.time().toString("HHmmsszzz");
-
-			if (GPSInfoList[j - 1]._utctime <= GPSMileList[i]._gpsinfo._utctime &&
-				GPSInfoList[j]._utctime > GPSMileList[i]._gpsinfo._utctime)
-			{
-				QString findTime0 = QString(GPSInfoList[j - 1]);
-				QString findTime = QString(GPSInfoList[j]);
-				GPSMileList[i]._gpsinfo = GPSInfo(GPSInfoList[j - 1], GPSInfoList[j], GPSMileList[i]._gpsinfo._utctime);
-				GPSMileStrList.append(GPSMileList[i]);
-				isfind = true;
-				break;
-			}
-		}
-		if (!isfind)
+		int rightIdx = static_cast<int>(rightIt - GPSInfoList.constBegin());
+		int leftIdx = 0;
+		if (rightIdx <= 0)
 		{
-			if (GPSInfoList[0]._utctime > GPSMileList[i]._gpsinfo._utctime)
-			{
-				GPSMileList[i]._gpsinfo = GPSInfo(GPSInfoList[0], GPSInfoList[1], GPSMileList[i]._gpsinfo._utctime);
-				GPSMileStrList.append(GPSMileList[i]);
-			}
-			else if (GPSInfoList.last()._utctime <= GPSMileList[i]._gpsinfo._utctime)
-			{
-				GPSMileList[i]._gpsinfo = GPSInfo(GPSInfoList[GPSInfoList.size() - 2], GPSInfoList.last(), GPSMileList[i]._gpsinfo._utctime);
-				GPSMileStrList.append(GPSMileList[i]);
-			}
+			rightIdx = 1;
 		}
+		else if (rightIdx >= gps_len)
+		{
+			leftIdx = gps_len - 2;
+			rightIdx = gps_len - 1;
+		}
+		else
+		{
+			leftIdx = rightIdx - 1;
+		}
+
+		GPSMileList[i]._gpsinfo = GPSInfo(GPSInfoList[leftIdx], GPSInfoList[rightIdx], targetTime);
+		GPSMileStrList.append(GPSMileList[i]);
 	}
 
 	if (GPSMileStrList.size() == GPSMileList.size())

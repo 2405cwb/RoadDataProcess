@@ -292,8 +292,8 @@ private:
 	bool shouldDeferPreload() const;
 
 
-	void schedulePreloadImages(int bottomFrameIdx);
-	void updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int loadFrameNum, int maxImagesToLoad);
+	void schedulePreloadImages(int bottomFrameIdx, int priorityFrameIdx = -1);
+	void updateImageMapBasedOnBottomFrameIdx(int bottomFrameIdx, int generation, QMap<int, QString> pixNameMap, bool hMirrored, bool vMirrored, int priorityFrameIdx, int loadFrameNum, int maxImagesToLoad);
 protected:
 	//往图片上画东西， 供子类重载
 	virtual void drawSomeThingOnImage(QImage &image);
@@ -409,7 +409,9 @@ private:
 
 	QFuture<void> m_preloadFuture;
 	int m_lastPreloadBottomFrameIdx = -1;
+	int m_lastPreloadPriorityFrameIdx = -1;
 	int m_pendingPreloadBottomFrameIdx = -1;
+	int m_pendingPreloadPriorityFrameIdx = -1;
 	int m_lastDeferredPreloadBottomFrameIdx = -1;
 	int m_preloadMaxImagesPerRun = 0;
 	int m_imageLoadGeneration = 0;
