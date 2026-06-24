@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="国省道导出">
+      <UniqueIdentifier>{a0e929a9-d7df-4393-bc5b-8a0f5c6331e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="城镇道路导出">
+      <UniqueIdentifier>{a24c733c-fccf-4667-a58d-8ac1b6c084d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="等级公路2018">
+      <UniqueIdentifier>{b47e1dfe-800f-4904-82f3-9fdad69bfc93}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="等级公路2018\大框">
+      <UniqueIdentifier>{8872c13d-ec64-4f6a-940f-2bdcd26d00d7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="等级公路2018\小框">
+      <UniqueIdentifier>{f0da3844-af4c-4ec1-ad65-fd747c9be66a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="基类">
+      <UniqueIdentifier>{fc81a315-2a5f-4dd1-9787-fc999f88c7a4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+    <None Include="ClassDiagram1.cd" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_attributes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_codes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_creationadapter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_creationinterface.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_dxf.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_entities.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_exception.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_extrusion.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_global.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_writer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="dl_writer_ascii.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="test_creationclass.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputRoadDiseaseXR_ProvinceRoad.h">
+      <Filter>国省道导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputXRProvinceRoad.h">
+      <Filter>国省道导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutDiseaseDxf_ProvinceRoad.h">
+      <Filter>国省道导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnDiseaseDxfDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputXRCityRoad.h">
+      <Filter>城镇道路导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutDiseaseDxf_CityRoad.h">
+      <Filter>城镇道路导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputRoadDiseaseXR_CityRoad.h">
+      <Filter>城镇道路导出</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutDiseaseDxf.h">
+      <Filter>等级公路2018\大框</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputRoadDiseaseXR.h">
+      <Filter>等级公路2018\大框</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputXR.h">
+      <Filter>等级公路2018\大框</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutputRoadDisease.h">
+      <Filter>基类</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutDisease3dDxf.h">
+      <Filter>等级公路2018\大框</Filter>
+    </ClInclude>
+    <ClInclude Include="hnOutDisease2dGpsDxf.h">
+      <Filter>等级公路2018\大框</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDxfIO.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dl_dxf.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dl_writer_ascii.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="test_creationclass.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputRoadDiseaseXR_ProvinceRoad.cpp">
+      <Filter>国省道导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputXRProvinceRoad.cpp">
+      <Filter>国省道导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutDiseaseDxf_ProvinceRoad.cpp">
+      <Filter>国省道导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputXRCityRoad.cpp">
+      <Filter>城镇道路导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutDiseaseDxf_CityRoad.cpp">
+      <Filter>城镇道路导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputRoadDiseaseXR_CityRoad.cpp">
+      <Filter>城镇道路导出</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputXR.cpp">
+      <Filter>等级公路2018\大框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputRoadDiseaseXR.cpp">
+      <Filter>等级公路2018\大框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutDiseaseDxf.cpp">
+      <Filter>等级公路2018\大框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutputRoadDisease.cpp">
+      <Filter>基类</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutDisease3dDxf.cpp">
+      <Filter>等级公路2018\大框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnOutDisease2dGpsDxf.cpp">
+      <Filter>等级公路2018\大框</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

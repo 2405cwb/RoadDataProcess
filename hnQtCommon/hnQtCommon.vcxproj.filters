@@ -1,0 +1,108 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{D9D6E242-F8AF-46E4-B9FD-80ECBC20BA3E}</UniqueIdentifier>
+      <Extensions>qrc;*</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
+    <Filter Include="公共方法">
+      <UniqueIdentifier>{2269d198-3ed6-4334-a49a-f18f8b774dcc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+      <ParseFiles>true</ParseFiles>
+    </Filter>
+    <Filter Include="GpsTools">
+      <UniqueIdentifier>{91f0be93-e9e3-448c-b53a-9894ef09fbf5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="hnqtcommon_global.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hnMile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MyCommonMethods.h">
+      <Filter>公共方法</Filter>
+    </ClInclude>
+    <ClInclude Include="HnProjectEnums.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MyPoint.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EquipmentList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TempGpsStrs.h">
+      <Filter>GpsTools</Filter>
+    </ClInclude>
+    <ClInclude Include="SynTrigInfo.h">
+      <Filter>GpsTools</Filter>
+    </ClInclude>
+    <ClInclude Include="GPSInfo.h">
+      <Filter>GpsTools</Filter>
+    </ClInclude>
+    <ClInclude Include="DataIdx.h">
+      <Filter>GpsTools</Filter>
+    </ClInclude>
+    <ClInclude Include="MapGPSMile.h">
+      <Filter>GpsTools</Filter>
+    </ClInclude>
+    <ClInclude Include="ExcelGPS.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HighAccuracyInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BaseException.h">
+      <Filter>公共方法</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="TempGpsStrs.cpp">
+      <Filter>GpsTools</Filter>
+    </ClCompile>
+    <ClCompile Include="SynTrigInfo.cpp">
+      <Filter>GpsTools</Filter>
+    </ClCompile>
+    <ClCompile Include="GPSInfo.cpp">
+      <Filter>GpsTools</Filter>
+    </ClCompile>
+    <ClCompile Include="DataIdx.cpp">
+      <Filter>GpsTools</Filter>
+    </ClCompile>
+    <ClCompile Include="MapGPSMile.cpp">
+      <Filter>GpsTools</Filter>
+    </ClCompile>
+    <ClCompile Include="hnCenterToast.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BusyLoadingDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnCenterToast.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="BusyLoadingDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+  </ItemGroup>
+</Project>

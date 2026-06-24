@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="CtrlPointTable.cpp" />
+    <ClCompile Include="hnDBSqlite.cpp" />
+    <ClCompile Include="hnDBSqliteRoadInfo.cpp" />
+    <ClCompile Include="hnDBTable.cpp" />
+    <ClCompile Include="hnDiseaseSetInfoTable.cpp" />
+    <ClCompile Include="hnMarkerInfoTable.cpp" />
+    <ClCompile Include="hnMilePileTable.cpp" />
+    <ClCompile Include="hnProjectSetInfoTable.cpp" />
+    <ClCompile Include="hnRoadDiseaseTable.cpp" />
+    <ClCompile Include="hnRoadTypeSetInfoTable.cpp" />
+    <ClCompile Include="hnSQLite.cpp" />
+    <ClCompile Include="hnDataTable.cpp" />
+    <ClCompile Include="hnMileTable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CtrlPointTable.h" />
+    <ClInclude Include="hnDataTable.h" />
+    <ClInclude Include="hndatatable_global.h" />
+    <ClInclude Include="hnDBDefine.h" />
+    <ClInclude Include="hnDBSqlite.h" />
+    <ClInclude Include="hnDBSqliteRoadInfo.h" />
+    <ClInclude Include="hnDBTable.h" />
+    <ClInclude Include="hnDiseaseSetInfoTable.h" />
+    <ClInclude Include="hnMarkerInfoTable.h" />
+    <ClInclude Include="hnMilePileTable.h" />
+    <ClInclude Include="hnProjectSetInfoTable.h" />
+    <ClInclude Include="hnRoadDiseaseTable.h" />
+    <ClInclude Include="hnRoadTypeSetInfoTable.h" />
+    <ClInclude Include="hnSQLite.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="targetver.h" />
+    <ClInclude Include="hnMileTable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+      <ParseFiles>true</ParseFiles>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+      <ParseFiles>true</ParseFiles>
+    </Filter>
+  </ItemGroup>
+</Project>

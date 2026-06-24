@@ -1,0 +1,451 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="View">
+      <UniqueIdentifier>{104f8e90-e4da-4777-8fa2-6b540f50aa83}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SceneNode">
+      <UniqueIdentifier>{d49a2497-ab39-4783-97f8-5a6f10ba1863}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commond">
+      <UniqueIdentifier>{fb0f5692-2b79-4cc2-a060-4e1ffc68dd79}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Animator">
+      <UniqueIdentifier>{d9243b72-0bbe-40be-8f08-63214ab12d2b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Dom">
+      <UniqueIdentifier>{8780391c-babf-4089-ba18-fb2a319b643c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="PanoSn">
+      <UniqueIdentifier>{4ab2332f-0a13-4443-be79-c3b4afcbd60a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raster">
+      <UniqueIdentifier>{4462282c-00db-4d83-be0d-ffc21707a5bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raster\include">
+      <UniqueIdentifier>{555f62ad-0140-4953-8772-a62df4149d5b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Raster\src">
+      <UniqueIdentifier>{838e6b30-6d77-48b5-96fe-c95b6ecf26dc}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+    <None Include="ClassDiagram1.cd" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hd3DView.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="hdQuickView.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="IObjectSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CFPSSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CScanSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CAxisSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CMeshPolySceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="hd3DCamera.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="hd3DToolRotCentreSelect.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="hdQuickCamera.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="hdCamera.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="CPlanarSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="ISceneView.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DCmdViewBack.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DCmdViewISOLeft.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DCmdViewISORight.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DCmdViewTop.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DViewLookForward.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DViewLookRight.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DViewLookUp.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="hd3DCmdViewRight.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="CIMeshSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CRoutePointSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CBackGroundSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CAnimatorFlyStraight.h">
+      <Filter>Animator</Filter>
+    </ClInclude>
+    <ClInclude Include="CScreenShotSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CCollisionRaySceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="hd3DSceneDefine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CColorLegendSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CAnimatorFlyCamera.h">
+      <Filter>Animator</Filter>
+    </ClInclude>
+    <ClInclude Include="CIPolylineSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CIPointSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CComPassSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CDEMSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="HdTinSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CBoxSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CAnimatorHighlightSn.h">
+      <Filter>Animator</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPolySelect3D.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPolySelectIn3DSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRadioLegendSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPointPock3D.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="Hd3DPointSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSeaDataSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CScanPartPointsSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="CDomSymSceneNode.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRasterBuffer.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRaterCache.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="OverViewDataManger.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="ReadRasterThread.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="CTriangleSceneNode.h">
+      <Filter>SceneNode</Filter>
+    </ClInclude>
+    <ClInclude Include="hdTileCamera.h">
+      <Filter>Commond</Filter>
+    </ClInclude>
+    <ClInclude Include="CPanoSceneNode.h">
+      <Filter>PanoSn</Filter>
+    </ClInclude>
+    <ClInclude Include="PanoTileAidHelper.h">
+      <Filter>PanoSn</Filter>
+    </ClInclude>
+    <ClInclude Include="PanoTileSphere.h">
+      <Filter>PanoSn</Filter>
+    </ClInclude>
+    <ClInclude Include="HdViewScrBuffer.h">
+      <Filter>View</Filter>
+    </ClInclude>
+    <ClInclude Include="HdGdalIO.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPyramid.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="OverViewInfo.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="ChdTfw.h">
+      <Filter>Dom</Filter>
+    </ClInclude>
+    <ClInclude Include="HdGeoDataset.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRasterDataset.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+    <ClInclude Include="HdDomSceneNode.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+    <ClInclude Include="HdDemSceneNode.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRasterRenderer.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+    <ClInclude Include="HdImage.h">
+      <Filter>Raster\include</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DScene.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DView.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="hdQuickView.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="CFPSSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CScanSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CAxisSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CMeshPolySceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DCamera.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DToolRotCentreSelect.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="hdQuickCamera.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="CPlanarSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="ISceneView.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DCmdViewBack.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DCmdViewISOLeft.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DCmdViewISORight.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DCmdViewTop.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DViewLookForward.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DViewLookRight.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DViewLookUp.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DCmdViewRight.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="CIMeshSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CRoutePointSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CBackGroundSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CAnimatorFlyStraight.cpp">
+      <Filter>Animator</Filter>
+    </ClCompile>
+    <ClCompile Include="CScreenShotSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CCollisionRaySceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CColorLegendSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CAnimatorFlyCamera.cpp">
+      <Filter>Animator</Filter>
+    </ClCompile>
+    <ClCompile Include="CIPolylineSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CIPointSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CComPassSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CDEMSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="HdTinSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CBoxSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CAnimatorHighlightSn.cpp">
+      <Filter>Animator</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPolySelect3D.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPolySelectIn3DSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRadioLegendSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPointPock3D.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="Hd3DPointSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSeaDataSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="CScanPartPointsSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="hd3DView_Dom.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="CDomSymSceneNode.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRasterBuffer.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRaterCache.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="OverViewDataManger.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="ReadRasterThread.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="CTriangleSceneNode.cpp">
+      <Filter>SceneNode</Filter>
+    </ClCompile>
+    <ClCompile Include="hdTileCamera.cpp">
+      <Filter>Commond</Filter>
+    </ClCompile>
+    <ClCompile Include="CPanoSceneNode.cpp">
+      <Filter>PanoSn</Filter>
+    </ClCompile>
+    <ClCompile Include="PanoTileAidHelper.cpp">
+      <Filter>PanoSn</Filter>
+    </ClCompile>
+    <ClCompile Include="PanoTileSphere.cpp">
+      <Filter>PanoSn</Filter>
+    </ClCompile>
+    <ClCompile Include="HdViewScrBuffer.cpp">
+      <Filter>View</Filter>
+    </ClCompile>
+    <ClCompile Include="HdGdalIO.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPyramid.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="OverViewInfo.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="ChdTfw.cpp">
+      <Filter>Dom</Filter>
+    </ClCompile>
+    <ClCompile Include="HdGeoDataset.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRasterDataset.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+    <ClCompile Include="HdDomSceneNode.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+    <ClCompile Include="HdDemSceneNode.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRasterRenderer.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+    <ClCompile Include="HdImage.cpp">
+      <Filter>Raster\src</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

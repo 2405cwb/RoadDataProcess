@@ -1,0 +1,13 @@
+#pragma once
+
+#include <QtCore/qglobal.h>
+
+#ifndef BUILD_STATIC
+# if defined(HNCONTINUOUSBROWSEPIX_LIB)
+#  define HNCONTINUOUSBROWSEPIX_EXPORT Q_DECL_EXPORT
+# else
+#  define HNCONTINUOUSBROWSEPIX_EXPORT Q_DECL_IMPORT
+# endif
+#else
+# define HNCONTINUOUSBROWSEPIX_EXPORT
+#endif

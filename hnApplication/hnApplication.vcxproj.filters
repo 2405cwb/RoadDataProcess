@@ -1,0 +1,316 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="Manager3D">
+      <UniqueIdentifier>{cf2444ba-4503-4827-91c7-50a5328f3604}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Manager2D">
+      <UniqueIdentifier>{a3f9ecfc-9402-458a-8463-f19514601606}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面">
+      <UniqueIdentifier>{d8c17aa3-c772-4b8a-8ad1-717bda8e38dd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+      <ParseFiles>true</ParseFiles>
+    </Filter>
+    <Filter Include="添加病害对话框">
+      <UniqueIdentifier>{05d6e24f-87e3-4aef-9361-c7857b2a3767}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hnDataManager">
+      <UniqueIdentifier>{25ad9213-feb4-4ccb-acc6-3b26afcf2cad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hnApplication">
+      <UniqueIdentifier>{01f43cff-d282-4f49-a825-fadd2a2907ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类">
+      <UniqueIdentifier>{2ffab021-f7af-40b1-b458-5a1cd952008d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\工作模式">
+      <UniqueIdentifier>{197be7ee-da13-41f0-a354-b3851768bf40}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\框选模式">
+      <UniqueIdentifier>{2483f722-bc8e-437f-ab85-d84866c338e8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\三维浏览模式">
+      <UniqueIdentifier>{b431dc36-343b-4cd1-99c1-9688eb0d307b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\二三维坐标通用接口">
+      <UniqueIdentifier>{f6b45b23-1694-4891-861f-9f0880c3f85d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\景观视图">
+      <UniqueIdentifier>{5f79ce09-0e3f-4415-9119-77fe7a623d35}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="景观添加病害对话框">
+      <UniqueIdentifier>{31f15736-068b-4bdd-8d2e-0f2529db8be7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\放大镜">
+      <UniqueIdentifier>{47127468-0e7a-4906-b61d-6f92f57d20e4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\绘制病害">
+      <UniqueIdentifier>{73a24381-82ce-4646-86d6-9fc311bb4ab7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\算法">
+      <UniqueIdentifier>{bccd036d-449d-442d-8c87-e8722fddc65d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\图像调整">
+      <UniqueIdentifier>{813aef12-c97a-4f5d-8015-11328d29ee48}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\3维视图">
+      <UniqueIdentifier>{d5edc6c4-12e8-4aaa-b459-bf3b7f8da021}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\2维视图">
+      <UniqueIdentifier>{e6c322c5-aa9c-48f2-b99e-17ebdca18020}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\深度计算">
+      <UniqueIdentifier>{879fbf1e-3d07-46fa-9cd0-5f8714c9ba49}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\合并病害">
+      <UniqueIdentifier>{aa848594-15c7-4d38-ad5f-65f96bbbc700}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示控制点信息对话框">
+      <UniqueIdentifier>{3107ac7d-67e5-424e-902a-62853f154a2f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\功能基类\工程类型">
+      <UniqueIdentifier>{bc713f05-f3a0-4d81-94e3-d1430b5a9ba3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\23维视图基类">
+      <UniqueIdentifier>{ff0fc1b9-9da8-439e-8ea1-74566a550f94}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="显示图片界面\图片点结构体">
+      <UniqueIdentifier>{40bb9dee-8351-44d8-a010-6985a9f89487}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="hnapplication_global.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hnSysSetting.h">
+      <Filter>Manager3D</Filter>
+    </ClInclude>
+    <ClInclude Include="hnApp.h">
+      <Filter>Manager2D</Filter>
+    </ClInclude>
+    <ClInclude Include="hnCommandDef.h">
+      <Filter>Manager2D</Filter>
+    </ClInclude>
+    <ClInclude Include="hnTool.h">
+      <Filter>Manager2D</Filter>
+    </ClInclude>
+    <ClInclude Include="hnCommand.h">
+      <Filter>Manager2D</Filter>
+    </ClInclude>
+    <ClInclude Include="hnDataManager.h">
+      <Filter>hnDataManager</Filter>
+    </ClInclude>
+    <ClInclude Include="hnApplication.h">
+      <Filter>hnApplication</Filter>
+    </ClInclude>
+    <ClInclude Include="hnWorkMode.h">
+      <Filter>显示图片界面\功能基类\工作模式</Filter>
+    </ClInclude>
+    <ClInclude Include="hnFrameMode.h">
+      <Filter>显示图片界面\功能基类\框选模式</Filter>
+    </ClInclude>
+    <ClInclude Include="hn3dImageMode.h">
+      <Filter>显示图片界面\功能基类\三维浏览模式</Filter>
+    </ClInclude>
+    <ClInclude Include="hnMagnify.h">
+      <Filter>显示图片界面\功能基类\放大镜</Filter>
+    </ClInclude>
+    <ClInclude Include="drawDiseases.h">
+      <Filter>显示图片界面\功能基类\绘制病害</Filter>
+    </ClInclude>
+    <ClInclude Include="rectAlgorithm.h">
+      <Filter>显示图片界面\功能基类\算法</Filter>
+    </ClInclude>
+    <ClInclude Include="hnAdjustImage.h">
+      <Filter>显示图片界面\功能基类\图像调整</Filter>
+    </ClInclude>
+    <ClInclude Include="depthCaculate.h">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </ClInclude>
+    <ClInclude Include="mergeDisease.h">
+      <Filter>显示图片界面\功能基类\合并病害</Filter>
+    </ClInclude>
+    <ClInclude Include="DepthDisease.h">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </ClInclude>
+    <ClInclude Include="projectType.h">
+      <Filter>显示图片界面\功能基类\工程类型</Filter>
+    </ClInclude>
+    <ClInclude Include="pixImagePoint.h">
+      <Filter>显示图片界面\图片点结构体</Filter>
+    </ClInclude>
+    <ClInclude Include="lineAlgorithm.h">
+      <Filter>显示图片界面\功能基类\算法</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="hnSysSetting.cpp">
+      <Filter>Manager3D</Filter>
+    </ClCompile>
+    <ClCompile Include="hnView.cpp">
+      <Filter>Manager2D</Filter>
+    </ClCompile>
+    <ClCompile Include="hnApp.cpp">
+      <Filter>Manager2D</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2DCameraView.cpp">
+      <Filter>Manager2D</Filter>
+    </ClCompile>
+    <ClCompile Include="hn3DCameraView.cpp">
+      <Filter>Manager2D</Filter>
+    </ClCompile>
+    <ClCompile Include="addDiseaseDialog.cpp">
+      <Filter>添加病害对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDataManager.cpp">
+      <Filter>hnDataManager</Filter>
+    </ClCompile>
+    <ClCompile Include="hnApplication.cpp">
+      <Filter>hnApplication</Filter>
+    </ClCompile>
+    <ClCompile Include="hnWorkMode.cpp">
+      <Filter>显示图片界面\功能基类\工作模式</Filter>
+    </ClCompile>
+    <ClCompile Include="hnFrameMode.cpp">
+      <Filter>显示图片界面\功能基类\框选模式</Filter>
+    </ClCompile>
+    <ClCompile Include="hn3dImageMode.cpp">
+      <Filter>显示图片界面\功能基类\三维浏览模式</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2d3dCoordinates.cpp">
+      <Filter>显示图片界面\二三维坐标通用接口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnStreetCameraView.cpp">
+      <Filter>显示图片界面\景观视图</Filter>
+    </ClCompile>
+    <ClCompile Include="hnAddStreetDiseaseDialog.cpp">
+      <Filter>景观添加病害对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnMagnify.cpp">
+      <Filter>显示图片界面\功能基类\放大镜</Filter>
+    </ClCompile>
+    <ClCompile Include="drawDiseases.cpp">
+      <Filter>显示图片界面\功能基类\绘制病害</Filter>
+    </ClCompile>
+    <ClCompile Include="rectAlgorithm.cpp">
+      <Filter>显示图片界面\功能基类\算法</Filter>
+    </ClCompile>
+    <ClCompile Include="hnAdjustImage.cpp">
+      <Filter>显示图片界面\功能基类\图像调整</Filter>
+    </ClCompile>
+    <ClCompile Include="depthCaculate.cpp">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </ClCompile>
+    <ClCompile Include="mergeDisease.cpp">
+      <Filter>显示图片界面\功能基类\合并病害</Filter>
+    </ClCompile>
+    <ClCompile Include="depthDialog.cpp">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </ClCompile>
+    <ClCompile Include="DepthDisease.cpp">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </ClCompile>
+    <ClCompile Include="ShowCtrlPointInfoDlg.cpp">
+      <Filter>显示控制点信息对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="projectType.cpp">
+      <Filter>显示图片界面\功能基类\工程类型</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2dPixWidget.cpp">
+      <Filter>显示图片界面\2维视图</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2dPixScrollWidget.cpp">
+      <Filter>显示图片界面\2维视图</Filter>
+    </ClCompile>
+    <ClCompile Include="hn3dPixWidget.cpp">
+      <Filter>显示图片界面\3维视图</Filter>
+    </ClCompile>
+    <ClCompile Include="hn3dPixScrollWidget.cpp">
+      <Filter>显示图片界面\3维视图</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2d3dPixBaseWidget.cpp">
+      <Filter>显示图片界面\23维视图基类</Filter>
+    </ClCompile>
+    <ClCompile Include="lineAlgorithm.cpp">
+      <Filter>显示图片界面\功能基类\算法</Filter>
+    </ClCompile>
+    <ClCompile Include="hnDiseaseService.cpp">
+      <Filter>hnDataManager</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="hnView.h">
+      <Filter>Manager2D</Filter>
+    </QtMoc>
+    <QtMoc Include="hn2DCameraView.h">
+      <Filter>Manager2D</Filter>
+    </QtMoc>
+    <QtMoc Include="hn3DCameraView.h">
+      <Filter>Manager2D</Filter>
+    </QtMoc>
+    <QtMoc Include="addDiseaseDialog.h">
+      <Filter>添加病害对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hn2d3dCoordinates.h">
+      <Filter>显示图片界面\二三维坐标通用接口</Filter>
+    </QtMoc>
+    <QtMoc Include="hnStreetCameraView.h">
+      <Filter>显示图片界面\景观视图</Filter>
+    </QtMoc>
+    <QtMoc Include="hnAddStreetDiseaseDialog.h">
+      <Filter>景观添加病害对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="depthDialog.h">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </QtMoc>
+    <QtMoc Include="ShowCtrlPointInfoDlg.h">
+      <Filter>显示控制点信息对话框</Filter>
+    </QtMoc>
+    <QtMoc Include="hn2dPixWidget.h">
+      <Filter>显示图片界面\2维视图</Filter>
+    </QtMoc>
+    <QtMoc Include="hn2dPixScrollWidget.h">
+      <Filter>显示图片界面\2维视图</Filter>
+    </QtMoc>
+    <QtMoc Include="hn3dPixWidget.h">
+      <Filter>显示图片界面\3维视图</Filter>
+    </QtMoc>
+    <QtMoc Include="hn3dPixScrollWidget.h">
+      <Filter>显示图片界面\3维视图</Filter>
+    </QtMoc>
+    <QtMoc Include="hn2d3dPixBaseWidget.h">
+      <Filter>显示图片界面\23维视图基类</Filter>
+    </QtMoc>
+    <QtMoc Include="hnDiseaseService.h">
+      <Filter>hnDataManager</Filter>
+    </QtMoc>
+  </ItemGroup>
+  <ItemGroup>
+    <QtUic Include="depthDialog.ui">
+      <Filter>显示图片界面\功能基类\深度计算</Filter>
+    </QtUic>
+    <QtUic Include="ShowCtrlPointInfoDlg.ui">
+      <Filter>显示控制点信息对话框</Filter>
+    </QtUic>
+  </ItemGroup>
+</Project>

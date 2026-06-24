@@ -1,0 +1,450 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="hdData">
+      <UniqueIdentifier>{2acf1569-79e5-4bef-a37a-d65bc99bbbbc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sceneData">
+      <UniqueIdentifier>{ab79ea50-7646-4f5b-8ed4-e9e260a4df25}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="hnData">
+      <UniqueIdentifier>{213b65f5-dcbd-464d-a375-74a82e12313a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+    <None Include="ClassDiagram1.cd" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdCommon.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HDEntity.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HDBaseStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DBoundingBox.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DObject.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DPoint.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DPolygon.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DPolyline.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DBoundingBox.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DNormalPoint.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DObject.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DPoint.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DPolyline.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDFacade.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDFace.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDObject.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDPanoMarker.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDPanoSymbol.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="hdConstDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="point_types.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdAppDTStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdParaDTStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdLandMarkTransform.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdkdtree.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="eigen.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdHdiStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdDBTypeDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="LtTriangulate.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="BursaWolfModel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdCtrlPoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdFileData.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdFitObject.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdGPSPoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\hdImgCtrlPoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdKeyboard.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdLabel.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdPicture.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdScanCtrlPoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSphere.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdLasScan.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSceneScan.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\hd3LSScanStruct.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSxPoint3D.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSxPolyline3D.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSxPolyline2D.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSxPoint2D.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdOrientPoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDRoutePoints.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDRoutePoint.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="hdTin.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CClassificationMap.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DRect.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="hdBillBoardDTStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdSceneStr.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HD3DCube.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HDMarkerFacade.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HD2DEllipse.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="hdSvStr.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdSceneIscan.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBoard.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPlnPathSetting.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdSvDBStructDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdDTEnumDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdBuildingExtractSetting.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdPlane.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSvLink.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSlopeMonitorStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HDCrossLine.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdFeaturePoint.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdOriImageByHdiStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdLock.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSceneModel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdLog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="point_types2.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdRandomGenerator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdLayerObject.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPointSet.h">
+      <Filter>hdData</Filter>
+    </ClInclude>
+    <ClInclude Include="hdMongoDBStructDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdMongoDBTableFieldNameDef.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdSceneType.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdGridObject.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSoftTypeConfig.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdStationInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSoftIDForSyConfig.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdUploadDataStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSvTileInfoBuffer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdGdalRegister.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdPointStyle.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="sceneData\HdHsTarget.h">
+      <Filter>sceneData</Filter>
+    </ClInclude>
+    <ClInclude Include="HdProcessCallback.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hnPoint3d.h">
+      <Filter>hnData</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DBoundingBox.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DPoint.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DPolygon.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DPolyline.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD3DBoundingBox.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD3DNormalPoint.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD3DPoint.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD3DPolyline.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDFacade.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDPanoMarker.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDPanoSymbol.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDEntity.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdCommon.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="LtPredicates.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="LtTriangulate.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdTin.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BursaWolfModel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="sceneData\HdLasScan.cpp">
+      <Filter>sceneData</Filter>
+    </ClCompile>
+    <ClCompile Include="sceneData\HdSceneScan.cpp">
+      <Filter>sceneData</Filter>
+    </ClCompile>
+    <ClCompile Include="sceneData\HdSxPolyline2D.cpp">
+      <Filter>sceneData</Filter>
+    </ClCompile>
+    <ClCompile Include="CClassificationMap.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DRect.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD3DCube.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDMarkerFacade.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HD2DEllipse.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="sceneData\HdSceneIscan.cpp">
+      <Filter>sceneData</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBoard.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPlnPathSetting.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdBuildingExtractSetting.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSvLink.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HDCrossLine.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSceneModel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdLog.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdRandomGenerator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdLayerObject.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPointSet.cpp">
+      <Filter>hdData</Filter>
+    </ClCompile>
+    <ClCompile Include="HdGridObject.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSoftTypeConfig.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSoftIDForSyConfig.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSvTileInfoBuffer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdGdalRegister.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hdCommon.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>

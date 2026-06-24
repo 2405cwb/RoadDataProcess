@@ -1,0 +1,246 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="API">
+      <UniqueIdentifier>{bc0787aa-8ab4-4827-9a9d-d3c023a12f0b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="vtk">
+      <UniqueIdentifier>{8f8362da-48d3-4f49-9754-e25e651cc630}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Filter">
+      <UniqueIdentifier>{1c797267-1e4f-44ea-9005-89b40d619cac}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdPointCloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="computeNormal.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectLinearTrans.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DistanceImg.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="marching_cube.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="mls_pointcloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FitSphereNoR.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdSysSetting.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FitCylinder.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FitPlane.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Filters.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PointCloudCache.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="point_cloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PointCloudAPI.h">
+      <Filter>API</Filter>
+    </ClInclude>
+    <ClInclude Include="HdModelPointCloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdTINPointCloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdQuadSourceIndex.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="vtk\vec3fv.h">
+      <Filter>vtk</Filter>
+    </ClInclude>
+    <ClInclude Include="vtk\vec3iv.h">
+      <Filter>vtk</Filter>
+    </ClInclude>
+    <ClInclude Include="vtk\VtkReader.h">
+      <Filter>vtk</Filter>
+    </ClInclude>
+    <ClInclude Include="vtk\VtkWriter.h">
+      <Filter>vtk</Filter>
+    </ClInclude>
+    <ClInclude Include="SeaPointCloud.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdPointCloudSelect.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSearchChessboard.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HdSearchSphere.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilter.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterHeight.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterManager.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterPosDist.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterPosHeight.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelectAll.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelectCircle.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelectInverse.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelection.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelectPoly.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdFilterSelectRect.h">
+      <Filter>Filter</Filter>
+    </ClInclude>
+    <ClInclude Include="hdPtCloudfilter_p.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="point_cloud.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="computeNormal.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectLinearTrans.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="marching_cube.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FitSphereNoR.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdSysSetting.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FitCylinder.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FitPlane.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudCache.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Filters.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudAPI.cpp">
+      <Filter>API</Filter>
+    </ClCompile>
+    <ClCompile Include="HdModelPointCloud.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdTINPointCloud.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdQuadSourceIndex.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="vtk\VtkReader.cpp">
+      <Filter>vtk</Filter>
+    </ClCompile>
+    <ClCompile Include="vtk\VtkWriter.cpp">
+      <Filter>vtk</Filter>
+    </ClCompile>
+    <ClCompile Include="SeaPointCloud.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdPointCloudSelect.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSearchChessboard.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="HdSearchSphere.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterHeight.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterManager.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterPosDist.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterPosHeight.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelectAll.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelectCircle.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelectInverse.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelection.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelectPoly.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+    <ClCompile Include="hdFilterSelectRect.cpp">
+      <Filter>Filter</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

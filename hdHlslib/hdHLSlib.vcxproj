@@ -1,0 +1,464 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <SccProjectName>SAK</SccProjectName>
+    <SccLocalPath>SAK</SccLocalPath>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccProvider>SAK</SccProvider>
+    <ProjectName>hdHLSlib</ProjectName>
+    <ProjectGuid>{08EFA512-E8E0-4E8D-855F-795044E08660}</ProjectGuid>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(VCTargetsPath)Microsoft.Cpp.UpgradeFromVC60.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>..\bin\$(Configuration)\</OutDir>
+    <IntDir>$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IntDir>$(Configuration)-x64\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>..\bin\$(Configuration)\</OutDir>
+    <IntDir>$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>..\bin\$(Configuration)-x64\</OutDir>
+    <IntDir>$(Configuration)-x64\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>Disabled</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <MinimalRebuild>true</MinimalRebuild>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <AdditionalIncludeDirectories>inc;src;..\hdCommon;..\hd3DEngine;..\hd3DEngine\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;HLS_EXPORTS;UNORDERED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\Debug\LASlib.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <OpenMPSupport>true</OpenMPSupport>
+    </ClCompile>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\Debug\LASlib.bsc</OutputFile>
+    </Bscmake>
+    <Lib>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>..\Debug\LASlib.lib</OutputFile>
+    </Lib>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>hdCore.lib;hdCommon.lib;hdGeoPosition.lib;hdLicense.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir);</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+    <PostBuildEvent>
+      <Command>copy *.h   ..\include\hdHLSlib
+copy inc\*.h   ..\include\hdHLSlib\inc
+copy inc\*.hpp   ..\include\hdHLSlib\inc</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>Disabled</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>inc;src;..\hdCommon;..\hd3DEngine;..\hd3DEngine\include;..\hdGeoPosition;..\hdLicense;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WIN64;_DEBUG;HLS_EXPORTS;UNORDERED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\Debug\LASlib.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <OpenMPSupport>true</OpenMPSupport>
+      <BrowseInformation>true</BrowseInformation>
+    </ClCompile>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\Debug\LASlib.bsc</OutputFile>
+      <PreserveSbr>true</PreserveSbr>
+    </Bscmake>
+    <Lib>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>..\Debug\LASlib.lib</OutputFile>
+    </Lib>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\openCV\lib\x64\Debug</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;hdCommon.lib;hdGeoPosition.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <AdditionalIncludeDirectories>inc;src;..\hdCommon;..\hd3DEngine;..\hd3DEngine\include;..\hdGeoPosition;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;HLS_EXPORTS;UNORDERED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\Release\LASlib.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <FloatingPointModel>Precise</FloatingPointModel>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <OpenMPSupport>false</OpenMPSupport>
+    </ClCompile>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\Release\LASlib.bsc</OutputFile>
+    </Bscmake>
+    <Lib>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>..\Release\LASlib.lib</OutputFile>
+    </Lib>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalDependencies>hdCore.lib;hdCommon.lib;hdGeoPosition.lib;hdLicense.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir);</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>Full</Optimization>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <AdditionalIncludeDirectories>inc;src;..\hdCommon;..\hd3DEngine;..\hd3DEngine\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WIN64;NDEBUG;_LIB;HLS_EXPORTS;UNORDERED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <PrecompiledHeaderOutputFile>.\Release\LASlib.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <OpenMPSupport>true</OpenMPSupport>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>.\Release\LASlib.bsc</OutputFile>
+    </Bscmake>
+    <Lib>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>..\Release\LASlib.lib</OutputFile>
+    </Lib>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalLibraryDirectories>$(OutDir);..\3rd\openCV\lib\x64\Release</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hdCore.lib;hdCommon.lib;hdGeoPosition.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="HdBlock.cpp" />
+    <ClCompile Include="HdBlock31.cpp" />
+    <ClCompile Include="HdBlockset.cpp" />
+    <ClCompile Include="HdBlockset31.cpp" />
+    <ClCompile Include="HdCoreData.cpp" />
+    <ClCompile Include="HdLevel.cpp" />
+    <ClCompile Include="HdLevel31.cpp" />
+    <ClCompile Include="HdParcel.cpp" />
+    <ClCompile Include="HdParcel31.cpp" />
+    <ClCompile Include="HdParcelBase.cpp" />
+    <ClCompile Include="HL1Reader.cpp" />
+    <ClCompile Include="HLS2Builder.cpp" />
+    <ClCompile Include="HLS2Reader.cpp" />
+    <ClCompile Include="HLSReadOpener.cpp" />
+    <ClCompile Include="HLZ31Writer.cpp" />
+    <ClCompile Include="HlzBufferBuilder.cpp" />
+    <ClCompile Include="HlzBuilder.cpp" />
+    <ClCompile Include="Hlz31Builder.cpp" />
+    <ClCompile Include="HlzCloudBuilder.cpp" />
+    <ClCompile Include="HlzMemCloudBuilder.cpp" />
+    <ClCompile Include="HLZWriter.cpp" />
+    <ClCompile Include="IHLSReader.cpp" />
+    <ClCompile Include="InclinometerFit.cpp" />
+    <ClCompile Include="HLSReader.cpp" />
+    <ClCompile Include="HL2Reader.cpp" />
+    <ClCompile Include="HLSWriter.cpp" />
+    <ClCompile Include="HL2Writer.cpp" />
+    <ClCompile Include="IRCReader.cpp" />
+    <ClCompile Include="PtEncoder.cpp" />
+    <ClCompile Include="RsaReader.cpp" />
+    <ClCompile Include="RsaWriter.cpp" />
+    <ClCompile Include="src\arithmeticdecoder.cpp" />
+    <ClCompile Include="src\arithmeticencoder.cpp" />
+    <ClCompile Include="src\arithmeticmodel.cpp" />
+    <ClCompile Include="src\arithmetic_codec.cpp" />
+    <ClCompile Include="src\fopen_compressed.cpp" />
+    <ClCompile Include="src\integercompressor.cpp" />
+    <ClCompile Include="src\lasfilter.cpp" />
+    <ClCompile Include="src\lasindex.cpp" />
+    <ClCompile Include="src\lasinterval.cpp" />
+    <ClCompile Include="src\lasquadtree.cpp" />
+    <ClCompile Include="src\lasreader.cpp" />
+    <ClCompile Include="src\lasreader_asc.cpp" />
+    <ClCompile Include="src\lasreader_bil.cpp" />
+    <ClCompile Include="src\lasreader_bin.cpp" />
+    <ClCompile Include="src\lasreader_las.cpp" />
+    <ClCompile Include="src\lasreader_qfit.cpp" />
+    <ClCompile Include="src\lasreader_shp.cpp" />
+    <ClCompile Include="src\lasreader_txt.cpp" />
+    <ClCompile Include="src\lasreadermerged.cpp" />
+    <ClCompile Include="src\lasreaditemcompressed_v1.cpp" />
+    <ClCompile Include="src\lasreaditemcompressed_v2.cpp" />
+    <ClCompile Include="src\lasreadpoint.cpp" />
+    <ClCompile Include="src\lasspatial.cpp" />
+    <ClCompile Include="src\lastransform.cpp" />
+    <ClCompile Include="src\lasunzipper.cpp" />
+    <ClCompile Include="src\lasutility.cpp" />
+    <ClCompile Include="src\laswaveform13reader.cpp" />
+    <ClCompile Include="src\laswaveform13writer.cpp" />
+    <ClCompile Include="src\laswriteitemcompressed_v1.cpp">
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\src_full\stl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\src_full\stl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="src\laswriteitemcompressed_v2.cpp" />
+    <ClCompile Include="src\laswritepoint.cpp" />
+    <ClCompile Include="src\laswriter.cpp" />
+    <ClCompile Include="src\laswriter_bin.cpp" />
+    <ClCompile Include="src\laswriter_las.cpp" />
+    <ClCompile Include="src\laswriter_qfit.cpp" />
+    <ClCompile Include="src\laswriter_txt.cpp" />
+    <ClCompile Include="src\laszip.cpp" />
+    <ClCompile Include="src\laszipper.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HdBlock.h" />
+    <ClInclude Include="HdBlock31.h" />
+    <ClInclude Include="HdBlockset.h" />
+    <ClInclude Include="HdBlockset31.h" />
+    <ClInclude Include="HdCoreData.h" />
+    <ClInclude Include="HdLevel.h" />
+    <ClInclude Include="HdLevel31.h" />
+    <ClInclude Include="HdParcel.h" />
+    <ClInclude Include="HdParcel31.h" />
+    <ClInclude Include="HdParcelBase.h" />
+    <ClInclude Include="HL1Reader.h" />
+    <ClInclude Include="HLS2Builder.h" />
+    <ClInclude Include="HLS2Reader.h" />
+    <ClInclude Include="HLSReadOpener.h" />
+    <ClInclude Include="HLZ31Writer.h" />
+    <ClInclude Include="HlzBufferBuilder.h" />
+    <ClInclude Include="HlzBuilder.h" />
+    <ClInclude Include="Hlz31Builder.h" />
+    <ClInclude Include="HlzBuilderDefs.h" />
+    <ClInclude Include="HlzCloudBuilder.h" />
+    <ClInclude Include="HlzDefs.h" />
+    <ClInclude Include="HlzDefs31.h" />
+    <ClInclude Include="HlzMemCloudBuilder.h" />
+    <ClInclude Include="HLZWriter.h" />
+    <ClInclude Include="IHLSReader.h" />
+    <ClInclude Include="InclinometerFit.h" />
+    <ClInclude Include="hdGPSTime.h" />
+    <ClInclude Include="HLSReader.h" />
+    <ClInclude Include="HL2Reader.h" />
+    <ClInclude Include="HLSWriter.h" />
+    <ClInclude Include="HL2Writer.h" />
+    <ClInclude Include="inc\arithmetic_codec.h" />
+    <ClInclude Include="inc\hl2Definition.h" />
+    <ClInclude Include="inc\hlsDefinition.h" />
+    <ClInclude Include="inc\mydefs.hpp" />
+    <ClInclude Include="IRCReader.h" />
+    <ClInclude Include="octree\array.h" />
+    <ClInclude Include="octree\array2d.h" />
+    <ClInclude Include="octree\numtraits.h" />
+    <ClInclude Include="octree\octree.h" />
+    <ClInclude Include="octree\point3d.h" />
+    <ClInclude Include="octree\shareddata.h" />
+    <ClInclude Include="octree\tinyvector.h" />
+    <ClInclude Include="PtEncoder.h" />
+    <ClInclude Include="RsaDefs.h" />
+    <ClInclude Include="RsaReader.h" />
+    <ClInclude Include="RsaWriter.h" />
+    <ClInclude Include="src\arithmeticdecoder.hpp" />
+    <ClInclude Include="src\arithmeticencoder.hpp" />
+    <ClInclude Include="src\arithmeticmodel.hpp" />
+    <ClInclude Include="inc\bytestreamin.hpp" />
+    <ClInclude Include="src\bytestreamin_file.hpp" />
+    <ClInclude Include="src\bytestreamin_istream.hpp" />
+    <ClInclude Include="src\bytestreamout.hpp" />
+    <ClInclude Include="src\bytestreamout_file.hpp" />
+    <ClInclude Include="src\bytestreamout_nil.hpp" />
+    <ClInclude Include="src\bytestreamout_ostream.hpp" />
+    <ClInclude Include="src\entropydecoder.hpp" />
+    <ClInclude Include="src\entropyencoder.hpp" />
+    <ClInclude Include="src\integercompressor.hpp" />
+    <ClInclude Include="inc\lasdefinitions.hpp" />
+    <ClInclude Include="inc\lasfilter.hpp" />
+    <ClInclude Include="inc\lasindex.hpp" />
+    <ClInclude Include="inc\lasinterval.hpp" />
+    <ClInclude Include="inc\lasquadtree.hpp" />
+    <ClInclude Include="inc\lasreader.hpp" />
+    <ClInclude Include="inc\lasreader_asc.hpp" />
+    <ClInclude Include="inc\lasreader_bil.hpp" />
+    <ClInclude Include="inc\lasreader_bin.hpp" />
+    <ClInclude Include="inc\lasreader_las.hpp" />
+    <ClInclude Include="inc\lasreader_qfit.hpp" />
+    <ClInclude Include="inc\lasreader_shp.hpp" />
+    <ClInclude Include="inc\lasreader_txt.hpp" />
+    <ClInclude Include="inc\lasreadermerged.hpp" />
+    <ClInclude Include="src\lasreaditem.hpp" />
+    <ClInclude Include="src\lasreaditemcompressed_v1.hpp" />
+    <ClInclude Include="src\lasreaditemcompressed_v2.hpp" />
+    <ClInclude Include="src\lasreaditemraw.hpp" />
+    <ClInclude Include="src\lasreadpoint.hpp" />
+    <ClInclude Include="inc\lasspatial.hpp" />
+    <ClInclude Include="inc\lastransform.hpp" />
+    <ClInclude Include="inc\lasunzipper.hpp" />
+    <ClInclude Include="inc\lasutility.hpp" />
+    <ClInclude Include="inc\laswaveform13reader.hpp" />
+    <ClInclude Include="inc\laswaveform13writer.hpp" />
+    <ClInclude Include="src\laswriteitem.hpp" />
+    <ClInclude Include="src\laswriteitemcompressed_v1.hpp" />
+    <ClInclude Include="src\laswriteitemcompressed_v2.hpp" />
+    <ClInclude Include="src\laswriteitemraw.hpp" />
+    <ClInclude Include="src\laswritepoint.hpp" />
+    <ClInclude Include="inc\laswriter.hpp" />
+    <ClInclude Include="inc\laswriter_bin.hpp" />
+    <ClInclude Include="inc\laswriter_las.hpp" />
+    <ClInclude Include="inc\laswriter_qfit.hpp" />
+    <ClInclude Include="inc\laswriter_txt.hpp" />
+    <ClInclude Include="inc\laszip.hpp" />
+    <ClInclude Include="src\laszip_common_v2.hpp" />
+    <ClInclude Include="inc\laszipper.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram1.cd" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

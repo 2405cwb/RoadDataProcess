@@ -1,0 +1,110 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="GeoProjection">
+      <UniqueIdentifier>{10390fea-4989-4b20-8dcd-955223460218}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GeoProjection\inc">
+      <UniqueIdentifier>{d65fe584-9c76-4525-81e3-536900f2d61b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GeoProjection\src">
+      <UniqueIdentifier>{433572fa-3ec5-4fb9-b0d7-3e7a7b7b93c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="API">
+      <UniqueIdentifier>{62d36f6b-fe03-4eb1-adb8-dee3ba0e741f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="MapCorrect">
+      <UniqueIdentifier>{bd2d52ac-b083-44e0-9eab-bf888669db50}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ReadMe.txt" />
+    <None Include="hdPositionTrandef.h">
+      <Filter>头文件</Filter>
+    </None>
+    <None Include="res\hdPositionTran.rc2">
+      <Filter>资源文件</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="PositionTranfrom.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="GeoProjection\src\emap_prjtrans_projection.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="GeoProjection\src\emap_prjtrans_transform.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="GeoProjection\src\emap_prjtran_cassinisoldner.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="GeoProjection\src\HdPJTranslator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="hdGeoPositionAPI.cpp">
+      <Filter>API</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="PositionTranfrom.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\inc\emap_gisdb_base.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\inc\IHdPJTranslator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\inc\IHdPJTranslatorBase.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\src\emap_prjtrans_api.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\src\emap_prjtrans_base.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\src\emap_prjtran_cassinisoldner.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeoProjection\src\HdPJTranslator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="hdGeoPositionAPI.h">
+      <Filter>API</Filter>
+    </ClInclude>
+    <ClInclude Include="hdLonLatParm.h">
+      <Filter>MapCorrect</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hdPositionTran.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>
