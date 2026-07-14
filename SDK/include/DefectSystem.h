@@ -1,14 +1,6 @@
 #pragma once
-#include <QString>
-#include <QPainterPath>
-#include <QVariantMap>
-#include "TunnelGlobal.h"
-struct DefectData {
-    QString uuid;
-    QString name;
-    DrawShape type;
-    QPainterPath shape; // 如果包含 path，记得 include <QPainterPath> 
-    int defectCode = 0;     // 💥 新增：业务病害代码
 
-    QVariantMap attributes; // 💥 核心扩展点：万能属性包
-};
+#include "TunnelGlobal.h"
+
+/* 这个头以前单独定义过 DefectData 现在统一转到 TunnelGlobal.h
+   文件本身保留 是为了旧代码 include 它时还能正常编译 */

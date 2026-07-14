@@ -11,6 +11,8 @@
 #include <QDebug>
 #include <algorithm>
 #include "../hnDiseaseService.h"
+#include "LittleFrameRenderPathBuilder.h"
+#include "hn2d3dCoordinates.h"
 using namespace hnApp;
 using namespace hnPro;
 
@@ -102,8 +104,12 @@ void hn3dPixWidget::load3DImagePictures()
 	//计算单张图片的自动化模式数组
 	this->m_singleImageLittleFrameRects = this->createSingleImageLittleFrameRect();
 
+	// 三维图当前默认 8 米一张，先集中放在成员变量里，后面如果有配置文件就只改赋值入口。
+	this->setImageDistanceMeters(m_3dImageDistanceMeters);
+
 	//加载图片
 	this->loadPix(pixNames);
+	this->loadSdkVerticalImageSequence(pixNames);
 
 	//设置底部帧数前后各加载的帧数
 	//为当前帧数的两倍
@@ -134,16 +140,22 @@ void hn3dPixWidget::load3DImagePictures()
 #endif
 }
 
-void hn3dPixWidget::setScrollBarValue(const int scrollBarValue)
-{
-	emit sig_scrollBarValueChanged(scrollBarValue);
-}
-
-
 void hn3dPixWidget::setMileVector(QVector<hnMile>& hnMiles)
 {
 	this->m_2dMileVector.clear();
 	this->m_2dMileVector = hnMiles;
+}
+
+void hn3dPixWidget::setImageDistanceMeters3d(double meters)
+{
+	// 外部配置没准备好时不要写进非法值，继续使用默认 8 米。
+	if (meters <= 0.0)
+	{
+		return;
+	}
+
+	m_3dImageDistanceMeters = meters;
+	this->setImageDistanceMeters(m_3dImageDistanceMeters);
 }
 
 
@@ -154,42 +166,65 @@ QString hn3dPixWidget::generateStatusInfo(const QPoint & eventPos)
 	QPoint bigImagePoint = this->screenPointToBigImagePoint(eventPos);
 	QString pixName;
 	QPoint singleImagePoint = this->screenToSingleImagePoint(eventPos, pixName);
+    const int imageExtentX = qMax(0, m_pixWidth);
+    const int imageExtentY = qMax(0, m_pixHeight);
+    int originalSingleX = qBound(0, singleImagePoint.x(), imageExtentX);
+    int originalSingleY = qBound(0, singleImagePoint.y(), imageExtentY);
+    if (m_isHMirrored)
+    {
+        originalSingleX = imageExtentX - originalSingleX;
+    }
+    if (m_isVMirrored)
+    {
+        originalSingleY = imageExtentY - originalSingleY;
+    }
+	const QPoint statusSingleImagePoint(originalSingleX, originalSingleY);
 	QFileInfo fileInfo(pixName);
 	pixName = fileInfo.fileName();
 
-	double currentPixButtomTrueMile;
-	double currentPixButtomEncoderMile;
-	hnMile currentPointMile = this->getHnMileFromPoint(bigImagePoint);
-	if (hnCommon::PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
-	{
-		currentPixButtomTrueMile = currentPointMile.dTrueMile;
-		currentPixButtomEncoderMile = currentPointMile.dEnclMile;
-	}
-	else
-	{
-		QString pixNameWithoutPath = this->pixName3dConvertWithoutPath(pixName);
-		const double buttomMile = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getMileByImage(pixNameWithoutPath);
-		currentPixButtomEncoderMile = buttomMile;
-		currentPixButtomTrueMile = this->encoderMileToTrueMile(currentPixButtomEncoderMile);
-	}
+    hnMile currentPointMile = this->getHnMileFromPoint(bigImagePoint);
+    const double trueMile = this->caculateTrueMile(bigImagePoint);
+    const double encoderMile = this->calculateEncoderMile(bigImagePoint);
+    double statusEncoderMile = encoderMile;
+    QString streetPixName;
+    if (hnDataManager::getDataManager()->getCurrentProject())
+    {
+        auto currentProject = hnDataManager::getDataManager()->getCurrentProject();
+        double streetEncoderMile = currentBottomEncoderMile();
+        if (hnCommon::PROJECT_23D_TYPE == currentProject->getProjectType())
+        {
+            const double diff2d3d = currentProject->get2d3dMileDiff();
+            statusEncoderMile += diff2d3d;
+            streetEncoderMile += diff2d3d;
+        }
+        const double streetTrueMile = currentProject->enclToTrueMile(streetEncoderMile);
+        streetPixName = currentStreetPictureNameForStatus(streetTrueMile);
+    }
 
+    double roadWidth = qMax(0.0, m_pixWidth * m_widthScale);
+    auto currentProjectForWidth = hnDataManager::getDataManager()->getCurrentProject();
+    if (currentProjectForWidth && currentProjectForWidth->get3DProject())
+    {
+        roadWidth = qMax(0.0, currentProjectForWidth->get3DProject()->getRoadWidth());
+    }
+    const double rawXMile = singleImagePoint.x() * m_widthScale;
+    const double xMile = roadWidth > 0.0 ? qBound(0.0, rawXMile, roadWidth) : qMax(0.0, rawXMile);
+    const QString mileText = QString::fromLocal8Bit("(X:%1,Y:%2)").arg(xMile, 0, 'f', 3).arg(statusEncoderMile, 0, 'f', 3);
 
-	statusInfo = QString::fromLocal8Bit("图片底部桩号：%1\t图片底部里程：%2\t桩号：%3\t里程:%4\t路面标准：%5\t"
-		"路面材质：%6\t路面等级：%7\t病害模式：%8\t屏幕坐标：%9\t拼接图片坐标：%10\t单张图片坐标：%11\t图片名称：%12\t")
-		.arg(currentPixButtomTrueMile, 0, 'f', 0)
-		.arg(currentPixButtomEncoderMile, 0, 'f', 0)
-		.arg(this->caculateTrueMile(bigImagePoint), 0, 'f', 3)
-		.arg(this->calculateEncoderMile(bigImagePoint), 0, 'f', 3)
-		.arg(HnProjectEnums::roadTypeEnumToQString(currentPointMile.roadStandard))
-		.arg(currentPointMile.roadType == 0 ? QString::fromLocal8Bit("沥青") :
-		(currentPointMile.roadType == 1 ? QString::fromLocal8Bit("水泥") : QString::fromLocal8Bit("砂石")))
-		.arg(currentPointMile.roadGradStr)
-		.arg(currentPointMile.drawType == 0 ? QString::fromLocal8Bit("人工模式") : QString::fromLocal8Bit("自动化模式"))
-		.arg(QString::number(eventPos.x()) + "," + QString::number(eventPos.y()))
-		.arg(QString::number(bigImagePoint.x()) + "," + QString::number(bigImagePoint.y()))
-		.arg(QString::number(singleImagePoint.x()) + "," + QString::number(singleImagePoint.y()))
-		.arg(pixName)
-		;
+    statusInfo = QString::fromLocal8Bit("桩号：%1	里程:%2	路面标准：%3	"
+        "路面材质：%4	路面等级：%5	病害模式：%6	拼接图片坐标：%7	单张图片坐标：%8	路面图片：%9	景观图片：%10	")
+        .arg(trueMile, 0, 'f', 3)
+        .arg(mileText)
+        .arg(HnProjectEnums::roadTypeEnumToQString(currentPointMile.roadStandard))
+        .arg(currentPointMile.roadType == 0 ? QString::fromLocal8Bit("沥青") :
+        (currentPointMile.roadType == 1 ? QString::fromLocal8Bit("水泥") : QString::fromLocal8Bit("砂石")))
+        .arg(currentPointMile.roadGradStr)
+        .arg(currentPointMile.drawType == 0 ? QString::fromLocal8Bit("人工模式") : QString::fromLocal8Bit("自动化模式"))
+        .arg(QString::number(bigImagePoint.x()) + "," + QString::number(bigImagePoint.y()))
+        .arg(QString::number(statusSingleImagePoint.x()) + "," + QString::number(statusSingleImagePoint.y()))
+        .arg(pixName)
+        .arg(streetPixName)
+        ;
 
 	return statusInfo;
 }
@@ -229,6 +264,7 @@ void hn3dPixWidget::drawSomeThingOnImage(QImage & image)
 	const qint64 totalMs = totalTimer.elapsed();
 	if (totalMs >= 60 || adjustMs >= 20 || dbMs >= 20 || tmpMs >= 20 || mileMs >= 20)
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][3DDrawOverlay]"
 			<< "totalMs=" << totalMs
 			<< "adjustMs=" << adjustMs
@@ -239,6 +275,7 @@ void hn3dPixWidget::drawSomeThingOnImage(QImage & image)
 			<< "currentFrameNum=" << m_currentWidgetFrameNum
 			<< "visiblePix=" << m_currentWidgetPixNames.size()
 			<< "imageSize=" << QString("%1x%2").arg(image.width()).arg(image.height());
+		#endif
 	}
 }
 void hn3dPixWidget::mousePressEvent(QMouseEvent * event)
@@ -248,6 +285,12 @@ void hn3dPixWidget::mousePressEvent(QMouseEvent * event)
 	{
 		return;
 	}
+	if (event->button() == Qt::LeftButton)
+	{
+		// 取消病害选择后，只有下一次左键按下才能重新开启小框绘制。
+		m_waitLittleFrameLeftPressAfterCancel = false;
+	}
+
 	// 使用右键进行删除自动化模式病害，所以这里右键取消话病害功能不使用
 #if 0
 	//右键取消画病害
@@ -678,7 +721,7 @@ void hn3dPixWidget::mouseMoveEvent(QMouseEvent * event)
 
 
 	//2025.11.3 新增最后一个左键点击点与鼠标位置之间的连线（虚线）
-	if (this->m_isDrawingDisease && this->addLineDiseType  && /*this->m_isAllowDrawDashLine &&*/ !m_tmpPaintLineDiseasePoints.empty())
+	if (this->m_isDrawingDisease && !m_waitLittleFrameLeftPressAfterCancel && this->addLineDiseType  && /*this->m_isAllowDrawDashLine &&*/ !m_tmpPaintLineDiseasePoints.empty())
 	{
 		QPoint pos = event->pos();
 		pixImagePoint endPoint;
@@ -697,7 +740,7 @@ void hn3dPixWidget::mouseMoveEvent(QMouseEvent * event)
 	}
 
 	//画临时病害
-	if (this->m_isDrawingDisease && !this->addLineDiseType)
+	if (this->m_isDrawingDisease && !m_waitLittleFrameLeftPressAfterCancel && !this->addLineDiseType)
 	{
 		//如果正在画临时病害，就不允许画图片
 		m_isAllowDrawPix = false;
@@ -756,21 +799,17 @@ void hn3dPixWidget::mouseMoveEvent(QMouseEvent * event)
 #endif
 
 
-	//如果正在放大图片，更新
-	if (m_isMagnifyPix)
-	{
-		//记录当前鼠标位置
-		m_magnifyBigImagePos = this->screenPointToBigImagePoint(event->pos());
-		this->update();
-	}
 
 	//更新原始比例窗口
 	QImage originalImage = this->getOriginalImage(event->pos(), m_tmpPixImageWithoutDisease, m_originalWidgetWidth, m_originalWidgetHeight);
 	sig_mousePosImageChanged(originalImage);
 
 	//更新状态栏信息
-	QString statusInfo = this->generateStatusInfo(event->pos());
-	emit signal_statusInfoChanged(statusInfo);
+	if (!m_sdkImageView)
+	{
+		QString statusInfo = this->generateStatusInfo(event->pos());
+		emit signal_statusInfoChanged(statusInfo);
+	}
 }
 
 //void hn3dPixWidget::wheelEvent(QWheelEvent * event)
@@ -834,7 +873,6 @@ void hn3dPixWidget::wheelEvent(QWheelEvent * event)
 
 void hn3dPixWidget::leaveEvent(QEvent * event)
 {
-	m_magnifyBigImagePos = QPoint(-100, -100);
 }
 
 void hn3dPixWidget::keyPressEvent(QKeyEvent * event)
@@ -855,15 +893,28 @@ void hn3dPixWidget::keyPressEvent(QKeyEvent * event)
 			m_seclectedDiseases.clear();
 		}
 	}
-	if (event->key() == Qt::Key_D)
+	if (event->key() == Qt::Key_R && this->m_frameMode == LITTLE_FRAME && this->m_workMode == ADD_MODE)
 	{
-		this->littleDrawRectType = !this->littleDrawRectType;
-
+		const bool enableRectMode = !this->littleDrawRectType;
+		resetSdkDiseaseDrawingState();
+		this->littleDrawRectType = enableRectMode;
+		this->addLineDiseType = false;
+		event->accept();
+		return;
 	}
 
 	// 按下 N键 时，结束左键连续点击添加线状病害
 	if (event->key() == Qt::Key_N && this->addLineDiseType)
 	{
+		if (hasSdkImageView())
+		{
+			if (this->m_isDrawingDisease)
+			{
+				finishSdkLineLittleFrameDisease();
+			}
+			event->accept();
+			return;
+		}
 		this->m_isEndAddPoint = true;
 		this->m_tempPoints.clear();
 //		this->m_isAllowDrawDashLine = false;
@@ -942,6 +993,410 @@ QVector<QPoint> hn3dPixWidget::createBrokenLinePoints(hnRoadDiseaseInfo & diseas
 	return result;
 }
 
+QVector<QRect> hn3dPixWidget::sdkDiseaseBigImageRects(const hnRoadDiseaseInfo& disease)
+{
+	QVector<QRect> rects;
+	if (disease.vec3dRect.empty())
+	{
+		return rects;
+	}
+
+	for (const hn3dRectI& rect3d : qAsConst(disease.vec3dRect))
+	{
+		rects.push_back(hn3dRectToBigImageQtRect(rect3d));
+	}
+	return rects;
+}
+QPainterPath hn3dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease)
+{
+	hnRoadDiseaseInfo renderDisease = disease;
+	if (renderDisease.vec3dRect.empty())
+	{
+		// Historical 2D-only diseases have no stored 3D geometry. Generate a
+		// temporary 3D path only while this disease is selected; never write it back.
+		if (sdkDiseaseKey(disease) != m_selectedSdkDiseaseKey || disease.vec2dRect.empty())
+		{
+			return QPainterPath();
+		}
+
+		auto project = hnDataManager::getDataManager()->getCurrentProject();
+		if (!project || !project->get3DProject())
+		{
+			return QPainterPath();
+		}
+
+		const hnProjectSetInfo projectSetInfo = project->getCurProSetInfo();
+		const int image2dHeight = qMax(1, projectSetInfo.picPixelY);
+		const int image3dWidth = project->get3DProject()->getImagePixelWidth();
+		const int image3dHeight = project->get3DProject()->getImagePixelHeight();
+		const double image3dHeightScale = project->get3DProject()->getImageHeightScale();
+		if (image3dWidth <= 0 || image3dHeight <= 0 || image3dHeightScale <= 0.0)
+		{
+			return QPainterPath();
+		}
+
+		auto map2dPointTo3d = [&project, &projectSetInfo, image2dHeight, image3dWidth, image3dHeight, image3dHeightScale]
+			(const hn2dPointWithMileI& source, hn3dPointWithMileI& target) -> bool
+		{
+			const int sourceX = qBound(0, source.x, qMax(0, projectSetInfo.picPixelX - 1));
+			const int sourceY = qBound(0, source.y, image2dHeight);
+			const double encoderMile2d = source.m_dmi + (image2dHeight - sourceY) * projectSetInfo.dRadioY;
+			const double encoderMile3d = qMax(0.0, encoderMile2d - project->get2d3dMileDiff());
+			const double bottomMile3d = qFloor(encoderMile3d / 8.0) * 8.0;
+			const double offsetIn3dImage = encoderMile3d - bottomMile3d;
+
+			hn2d3dCoordinates coordinates;
+			int x = coordinates.single2dXToSingle3dX(sourceX);
+			int y = qRound(image3dHeight - offsetIn3dImage / image3dHeightScale);
+			x = qBound(0, x, image3dWidth - 1);
+			y = qBound(0, y, image3dHeight - 1);
+			if (project->get3DProject()->getIsHMirrored()) x = image3dWidth - 1 - x;
+			if (project->get3DProject()->getIsVMirrored()) y = image3dHeight - 1 - y;
+
+			target.x = x;
+			target.y = y;
+			target.z = 0;
+			target.bottomEncoderMile = qRound(bottomMile3d);
+			return true;
+		};
+
+		for (const hn2dRectI& sourceRect : qAsConst(disease.vec2dRect))
+		{
+			hn3dRectI mappedRect;
+			if (map2dPointTo3d(sourceRect.p0, mappedRect.p0) &&
+				map2dPointTo3d(sourceRect.p1, mappedRect.p1) &&
+				map2dPointTo3d(sourceRect.p2, mappedRect.p2) &&
+				map2dPointTo3d(sourceRect.p3, mappedRect.p3))
+			{
+				renderDisease.vec3dRect.push_back(mappedRect);
+			}
+		}
+
+		if (renderDisease.vec3dRect.empty())
+		{
+			return QPainterPath();
+		}
+	}
+	QPainterPath cachedPath;
+	if (cachedSdkLittleFrameScenePath(renderDisease, cachedPath))
+	{
+		return cachedPath;
+	}
+
+	const bool isLittleFrame = renderDisease.nDrawType == 1;
+	auto imageNameForMile = [this](double bottomMile, QString& pixName)->bool
+	{
+		auto iter = m_encoderMileGrayPixNameMap.find(bottomMile);
+		if (iter == m_encoderMileGrayPixNameMap.end())
+		{
+			auto lower = m_encoderMileGrayPixNameMap.lowerBound(bottomMile);
+			auto best = lower;
+			if (lower != m_encoderMileGrayPixNameMap.begin())
+			{
+				auto prev = lower;
+				--prev;
+				if (best == m_encoderMileGrayPixNameMap.end() || qAbs(prev.key() - bottomMile) < qAbs(best.key() - bottomMile))
+				{
+					best = prev;
+				}
+			}
+			if (best == m_encoderMileGrayPixNameMap.end() || qAbs(best.key() - bottomMile) > qMax(0.5, m_3dImageDistanceMeters * 0.5))
+			{
+				return false;
+			}
+			iter = best;
+		}
+
+		pixName = iter.value();
+		if (m_3dImageMode == hn3dImageMode::Gray)
+		{
+			pixName = m_strGreyImaePath + "/GREY" + pixName;
+		}
+		else
+		{
+			pixName = m_strRGBImagePath + "/RGB" + pixName;
+		}
+		return true;
+	};
+
+	auto displayedPoint = [this](const hn3dPointWithMileI& point)->QPoint
+	{
+		int x = point.x;
+		int y = point.y;
+		if (m_isHMirrored)
+		{
+			x = m_pixWidth - 1 - point.x;
+		}
+		if (m_isVMirrored)
+		{
+			y = m_pixHeight - 1 - point.y;
+		}
+		return QPoint(qBound(0, x, qMax(0, m_pixWidth - 1)),
+			qBound(0, y, qMax(0, m_pixHeight - 1)));
+	};
+
+	auto pointToScene = [this, &imageNameForMile, &displayedPoint](const hn3dPointWithMileI& point, QPointF& scenePoint)->bool
+	{
+		QString pixName;
+		if (!imageNameForMile(point.bottomEncoderMile, pixName))
+		{
+			return false;
+		}
+		QString resolvedImageName;
+		if (!resolveSdkImageName(pixName, resolvedImageName))
+		{
+			return false;
+		}
+		const QPoint imagePoint = displayedPoint(point);
+		scenePoint = sdkPixPointToScenePoint(pixImagePoint{ resolvedImageName, imagePoint });
+		return true;
+	};
+
+	QPainterPath path;
+	QVector<LittleFrameRenderCell> littleFrameCells;
+	littleFrameCells.reserve(renderDisease.vec3dRect.size());
+	for (const hn3dRectI& rect : qAsConst(renderDisease.vec3dRect))
+	{
+		if (isLittleFrame)
+		{
+			const bool spansImages = rect.p0.bottomEncoderMile != rect.p1.bottomEncoderMile ||
+				rect.p0.bottomEncoderMile != rect.p2.bottomEncoderMile ||
+				rect.p0.bottomEncoderMile != rect.p3.bottomEncoderMile;
+			if (spansImages)
+			{
+				QPointF p0, p1, p2, p3;
+				if (pointToScene(rect.p0, p0) && pointToScene(rect.p1, p1) &&
+					pointToScene(rect.p2, p2) && pointToScene(rect.p3, p3))
+				{
+					const QRectF sceneRect = QRectF(p0, p0).united(QRectF(p1, p1))
+						.united(QRectF(p2, p2)).united(QRectF(p3, p3)).normalized();
+					if (sceneRect.isValid() && !sceneRect.isNull())
+					{
+						path.addRect(sceneRect);
+					}
+				}
+				continue;
+			}
+
+			QString imageName;
+			if (!imageNameForMile(rect.p0.bottomEncoderMile, imageName))
+			{
+				continue;
+			}
+			QString resolvedImageName;
+			if (resolveSdkImageName(imageName, resolvedImageName))
+			{
+				imageName = resolvedImageName;
+			}
+
+			const QPoint sourceP0 = displayedPoint(rect.p0);
+			const QPoint sourceP1 = displayedPoint(rect.p1);
+			const QPoint sourceP2 = displayedPoint(rect.p2);
+			const QPoint sourceP3 = displayedPoint(rect.p3);
+			QRect sourceRect(sourceP0, sourceP0);
+			sourceRect = sourceRect.united(QRect(sourceP1, sourceP1));
+			sourceRect = sourceRect.united(QRect(sourceP2, sourceP2));
+			sourceRect = sourceRect.united(QRect(sourceP3, sourceP3)).normalized();
+
+			// Map one stable anchor per cell. Scene item coordinates use image pixels,
+			// so deriving the remaining corner from local width/height prevents a y=0
+			// boundary corner from being resolved onto the adjacent image.
+			const QPointF sceneAnchor = sdkPixPointToScenePoint(
+				pixImagePoint{ imageName, sourceRect.topLeft() });
+			const QRectF sceneRect(sceneAnchor,
+				sceneAnchor + QPointF(sourceRect.right() - sourceRect.left(),
+					sourceRect.bottom() - sourceRect.top()));
+
+			LittleFrameRenderCell cell;
+			cell.imageName = imageName;
+			cell.sourceRect = sourceRect;
+			cell.sceneRect = sceneRect;
+			if (cell.isValid())
+			{
+				littleFrameCells.append(cell);
+			}
+		}
+		else
+		{
+			QPointF p0, p1, p2, p3;
+			if (!pointToScene(rect.p0, p0) || !pointToScene(rect.p1, p1) ||
+				!pointToScene(rect.p2, p2) || !pointToScene(rect.p3, p3))
+			{
+				continue;
+			}
+			path.moveTo(p0);
+			path.lineTo(p1);
+			path.lineTo(p2);
+			path.lineTo(p3);
+			path.closeSubpath();
+		}
+	}
+
+	if (!isLittleFrame)
+	{
+		return path;
+	}
+
+	const LittleFrameRenderResult renderResult = LittleFrameRenderPathBuilder::build(littleFrameCells);
+	QPainterPath littleFramePath = renderResult.path;
+	littleFramePath.addPath(path);
+	if (!littleFramePath.isEmpty())
+	{
+		const SdkLittleFrameRenderMode cacheMode = path.isEmpty() && renderResult.mode != LittleFrameRenderExactCells
+			? SdkLittleFrameRenderDenseRect
+			: SdkLittleFrameRenderSparseCells;
+		cacheSdkLittleFrameScenePath(renderDisease, littleFramePath, cacheMode);
+		return littleFramePath;
+	}
+
+	const QPainterPath fallbackPath = hn2d3dPixBaseWidget::sdkDiseaseScenePath(renderDisease);
+	if (!fallbackPath.isEmpty())
+	{
+		cacheSdkLittleFrameScenePath(renderDisease, fallbackPath, SdkLittleFrameRenderSparseCells);
+	}
+	return fallbackPath;
+}
+int hn3dPixWidget::sdkLittleFrameHitIndex(const hnRoadDiseaseInfo& disease, const pixImagePoint& point)
+{
+	if (disease.vec3dRect.empty() || point.pixName.isEmpty())
+	{
+		return -1;
+	}
+
+	QString hitImageName;
+	if (!resolveSdkImageName(point.pixName, hitImageName))
+	{
+		hitImageName = point.pixName;
+	}
+	const QPointF hitScenePoint = sdkPixPointToScenePoint(
+		pixImagePoint{ hitImageName, point.pixPoint });
+	for (int i = 0; i < disease.vec3dRect.size(); ++i)
+	{
+		QRectF cellSceneRect;
+		if (sdkLittleFrameCellSceneRect(disease, i, cellSceneRect) &&
+			cellSceneRect.adjusted(-2.0, -2.0, 2.0, 2.0).contains(hitScenePoint))
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+bool hn3dPixWidget::sdkLittleFrameCellSceneRect(const hnRoadDiseaseInfo& disease, int hitIndex, QRectF& sceneRect)
+{
+	if (hitIndex < 0 || hitIndex >= disease.vec3dRect.size())
+	{
+		return false;
+	}
+
+	auto imageNameForMile = [this](double bottomMile, QString& pixName)->bool
+	{
+		auto iter = m_encoderMileGrayPixNameMap.find(bottomMile);
+		if (iter == m_encoderMileGrayPixNameMap.end())
+		{
+			auto lower = m_encoderMileGrayPixNameMap.lowerBound(bottomMile);
+			auto best = lower;
+			if (lower != m_encoderMileGrayPixNameMap.begin())
+			{
+				auto prev = lower;
+				--prev;
+				if (best == m_encoderMileGrayPixNameMap.end() || qAbs(prev.key() - bottomMile) < qAbs(best.key() - bottomMile))
+				{
+					best = prev;
+				}
+			}
+			if (best == m_encoderMileGrayPixNameMap.end() || qAbs(best.key() - bottomMile) > qMax(0.5, m_3dImageDistanceMeters * 0.5))
+			{
+				return false;
+			}
+			iter = best;
+		}
+		pixName = iter.value();
+		pixName = (this->m_3dImageMode == hn3dImageMode::Gray)
+			? this->m_strGreyImaePath + "/GREY" + pixName
+			: this->m_strRGBImagePath + "/RGB" + pixName;
+		return true;
+	};
+
+	auto displayedPoint = [this](const hn3dPointWithMileI& point)->QPoint
+	{
+		int x = point.x;
+		int y = point.y;
+		if (m_isHMirrored)
+		{
+			x = m_pixWidth - 1 - point.x;
+		}
+		if (m_isVMirrored)
+		{
+			y = m_pixHeight - 1 - point.y;
+		}
+		return QPoint(qBound(0, x, qMax(0, m_pixWidth - 1)),
+			qBound(0, y, qMax(0, m_pixHeight - 1)));
+	};
+
+	const hn3dRectI& rect = disease.vec3dRect[hitIndex];
+	const bool spansImages = rect.p0.bottomEncoderMile != rect.p1.bottomEncoderMile ||
+		rect.p0.bottomEncoderMile != rect.p2.bottomEncoderMile ||
+		rect.p0.bottomEncoderMile != rect.p3.bottomEncoderMile;
+	if (spansImages)
+	{
+		auto pointToScene = [this, &imageNameForMile, &displayedPoint](
+			const hn3dPointWithMileI& point, QPointF& scenePoint)->bool
+		{
+			QString pointImageName;
+			if (!imageNameForMile(point.bottomEncoderMile, pointImageName))
+			{
+				return false;
+			}
+			QString resolvedPointImageName;
+			if (resolveSdkImageName(pointImageName, resolvedPointImageName))
+			{
+				pointImageName = resolvedPointImageName;
+			}
+			scenePoint = sdkPixPointToScenePoint(
+				pixImagePoint{ pointImageName, displayedPoint(point) });
+			return true;
+		};
+
+		QPointF p0, p1, p2, p3;
+		if (!pointToScene(rect.p0, p0) || !pointToScene(rect.p1, p1) ||
+			!pointToScene(rect.p2, p2) || !pointToScene(rect.p3, p3))
+		{
+			return false;
+		}
+		sceneRect = QRectF(p0, p0).united(QRectF(p1, p1))
+			.united(QRectF(p2, p2)).united(QRectF(p3, p3)).normalized();
+		return sceneRect.isValid() && !sceneRect.isNull();
+	}
+
+	QString imageName;
+	if (!imageNameForMile(rect.p0.bottomEncoderMile, imageName))
+	{
+		return false;
+	}
+	QString resolvedImageName;
+	if (resolveSdkImageName(imageName, resolvedImageName))
+	{
+		imageName = resolvedImageName;
+	}
+	const QPoint sourceP0 = displayedPoint(rect.p0);
+	const QPoint sourceP1 = displayedPoint(rect.p1);
+	const QPoint sourceP2 = displayedPoint(rect.p2);
+	const QPoint sourceP3 = displayedPoint(rect.p3);
+	QRect sourceRect(sourceP0, sourceP0);
+	sourceRect = sourceRect.united(QRect(sourceP1, sourceP1));
+	sourceRect = sourceRect.united(QRect(sourceP2, sourceP2));
+	sourceRect = sourceRect.united(QRect(sourceP3, sourceP3)).normalized();
+	const QPointF sceneAnchor = sdkPixPointToScenePoint(
+		pixImagePoint{ imageName, sourceRect.topLeft() });
+	sceneRect = QRectF(sceneAnchor,
+		sceneAnchor + QPointF(sourceRect.right() - sourceRect.left(),
+			sourceRect.bottom() - sourceRect.top())).normalized();
+	return sceneRect.isValid() && !sceneRect.isNull();
+}
+void hn3dPixWidget::updateSdkLittleFrameDiseaseAfterCellDelete(hnRoadDiseaseInfo& disease)
+{
+	updateLittleFrameDisease(disease);
+}
 void hn3dPixWidget::drawDatabaseLoadData(QImage & image)
 {
 	if (!m_isAllowDrawPix)
@@ -998,12 +1453,6 @@ void hn3dPixWidget::drawDatabaseLoadData(QImage & image)
 	//记录临时内容画板
 	m_tmpContectImage = image;
 
-	//如果要画放大镜内容
-	if (m_isMagnifyPix && m_magnifyBigImagePos.x() > 0)
-	{
-		image = this->drawMagnifyPixRectangle(m_magnifyBigImagePos,
-			m_tmpPixImageWithoutDisease, image);
-	}
 }
 
 void hn3dPixWidget::drawTmpData(QImage & image)
@@ -1235,12 +1684,14 @@ bool hn3dPixWidget::isTmpDiseaseRoadTypeValid(const int & frameType)
 	{
 		return false;
 	}
-	else
+
+	QString invalidReason;
+	if (!isTmpDiseaseRoadMarkRangeValid(frameType, &invalidReason))
 	{
-		return true;
+		return false;
 	}
 
-	return false;
+	return true;
 }
 
 void hn3dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& diseases, QImage &image)
@@ -1730,19 +2181,75 @@ QPoint hn3dPixWidget::ctrlPointToBigImagePoint(const hnKZDDataInfo & ctrlPoint)
 
 vector<hn3dRectI> hn3dPixWidget::generateLargeFrameHn3dRectVector(const QRect & rect)
 {
-	hn3dRectI hnRect;
+	std::vector<hn3dRectI> vec;
 
+	if (hasSdkImageView())
+	{
+		QVector<SdkSingleImageRect> sdkRects;
+		if (currentSdkBigFrameSingleRects(sdkRects))
+		{
+			auto toHnPoint = [this](const QString& pixName, const QPoint& point, hn3dPointWithMileI& out)->bool
+			{
+				if (!hnDataManager::getDataManager()->isOpenProject() ||
+					!hnDataManager::getDataManager()->getCurrentProject() ||
+					!hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+				{
+					return false;
+				}
+
+				QString pixFileName = QFileInfo(pixName).fileName();
+				if (this->m_3dImageMode == hn3dImageMode::Gray && pixFileName.startsWith(QStringLiteral("GREY")))
+				{
+					pixFileName = pixFileName.mid(4);
+				}
+				else if (this->m_3dImageMode != hn3dImageMode::Gray && pixFileName.startsWith(QStringLiteral("RGB")))
+				{
+					pixFileName = pixFileName.mid(3);
+				}
+
+				int x = qBound(0, point.x(), qMax(0, m_pixWidth - 1));
+				int y = qBound(0, point.y(), qMax(0, m_pixHeight - 1));
+				if (hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getIsHMirrored())
+				{
+					x = m_pixWidth - 1 - x;
+				}
+				if (hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getIsVMirrored())
+				{
+					y = m_pixHeight - 1 - y;
+				}
+
+				out.x = x;
+				out.y = y;
+				out.z = 0;
+				out.bottomEncoderMile = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getMileByImage(pixFileName);
+				return true;
+			};
+
+			for (const SdkSingleImageRect& sdkRect : qAsConst(sdkRects))
+			{
+				hn3dRectI hnRect;
+				const QRect singleRect = sdkRect.singleRect.normalized();
+				if (toHnPoint(sdkRect.pixName, singleRect.topLeft(), hnRect.p0) &&
+					toHnPoint(sdkRect.pixName, singleRect.topRight(), hnRect.p1) &&
+					toHnPoint(sdkRect.pixName, singleRect.bottomRight(), hnRect.p2) &&
+					toHnPoint(sdkRect.pixName, singleRect.bottomLeft(), hnRect.p3))
+				{
+					vec.push_back(hnRect);
+				}
+			}
+			return vec;
+		}
+	}
+
+	hn3dRectI hnRect;
 	hnRect.p0 = getHnPoint3dWithMileI(rect.topLeft());
 	hnRect.p1 = getHnPoint3dWithMileI(rect.topRight());
 	hnRect.p2 = getHnPoint3dWithMileI(rect.bottomRight());
 	hnRect.p3 = getHnPoint3dWithMileI(rect.bottomLeft());
 
-	//人工模式只有一个框
-	std::vector<hn3dRectI> vec;
 	vec.push_back(hnRect);
 	return vec;
 }
-
 hnCommon::hn3dPointWithMileI hn3dPixWidget::getHnPoint3dWithMileI(const QPoint & point)
 {
 	QString picName;
@@ -2178,30 +2685,129 @@ double hn3dPixWidget::trueMileToEncoderMile(double trueMile)
 
 
 
+
+double hn3dPixWidget::projectEncoderMileToSdkViewEncoderMile(double projectEncoderMile) const
+{
+	if (!hnDataManager::getDataManager()->isOpenProject() || !hnDataManager::getDataManager()->getCurrentProject())
+	{
+		return projectEncoderMile;
+	}
+	const double diff2d3d = hnDataManager::getDataManager()->getCurrentProject()->get2d3dMileDiff();
+	return projectEncoderMile - diff2d3d;
+}
 vector<hn2dRectI> hn3dPixWidget::generateLargeFrameHn2dRectVector(const QRect & rect)
 {
-	hn2dRectI hnRect;
+	std::vector<hn2dRectI> vec;
 
+	if (hasSdkImageView())
+	{
+		QVector<SdkSingleImageRect> sdkRects;
+		if (currentSdkBigFrameSingleRects(sdkRects))
+		{
+			auto toHnPoint = [this](const QString& pixName, const QPoint& point, hn2dPointWithMileI& out)->bool
+			{
+				auto dataManager = hnDataManager::getDataManager();
+				if (!dataManager || !dataManager->isOpenProject() ||
+					!dataManager->getCurrentProject() || !dataManager->getCurrentProject()->get3DProject() ||
+					!dataManager->getCurrentProject()->get2DProject())
+				{
+					return false;
+				}
+
+				QString projectImageName;
+				if (!resolveSdkImageName(pixName, projectImageName))
+				{
+					projectImageName = pixName;
+				}
+
+				QString pixFileName = pixName3dConvertWithoutPath(QFileInfo(projectImageName).fileName());
+				const double bottom3dMile = dataManager->getCurrentProject()->get3DProject()->getMileByImage(pixFileName);
+				const double heightScale3d = dataManager->getCurrentProject()->get3DProject()->getImageHeightScale();
+				if (heightScale3d <= 0.0)
+				{
+					return false;
+				}
+
+				const int y3d = qBound(0, point.y(), qMax(0, m_pixHeight));
+				const double point3dMile = bottom3dMile + (m_pixHeight - y3d) * heightScale3d;
+				const double target2dMile = point3dMile + dataManager->getCurrentProject()->get2d3dMileDiff();
+
+				double bottom2dMile = -1.0;
+				for (const hnMile& mile : qAsConst(m_2dMileVector))
+				{
+					if (mile.dEnclMile <= target2dMile)
+					{
+						bottom2dMile = mile.dEnclMile;
+					}
+					else
+					{
+						break;
+					}
+				}
+				if (bottom2dMile < 0.0)
+				{
+					return false;
+				}
+
+				const hnProjectSetInfo projectSetInfo = dataManager->getCurrentProject()->getCurProSetInfo();
+				if (projectSetInfo.dRadioY <= 0.0)
+				{
+					return false;
+				}
+
+				hn2d3dCoordinates coordinates;
+				int x = coordinates.single3dXToSingle2dX(qBound(0, point.x(), qMax(0, m_pixWidth - 1)));
+				int y = qRound(projectSetInfo.picPixelY - (target2dMile - bottom2dMile) / projectSetInfo.dRadioY);
+				x = qBound(0, x, qMax(0, projectSetInfo.picPixelX - 1));
+				y = qBound(0, y, qMax(0, projectSetInfo.picPixelY - 1));
+
+				if (dataManager->getCurrentProject()->get2DProject()->getIsHMirrored())
+				{
+					x = projectSetInfo.picPixelX - 1 - x;
+				}
+				if (dataManager->getCurrentProject()->get2DProject()->getIsVMirrored())
+				{
+					y = projectSetInfo.picPixelY - 1 - y;
+				}
+
+				out.x = x;
+				out.y = y;
+				out.m_dmi = bottom2dMile;
+				return true;
+			};
+
+			for (const SdkSingleImageRect& sdkRect : qAsConst(sdkRects))
+			{
+				hn2dRectI hnRect;
+				const QRect singleRect = sdkRect.singleRect.normalized();
+				if (toHnPoint(sdkRect.pixName, singleRect.topLeft(), hnRect.p0) &&
+					toHnPoint(sdkRect.pixName, singleRect.topRight(), hnRect.p1) &&
+					toHnPoint(sdkRect.pixName, singleRect.bottomRight(), hnRect.p2) &&
+					toHnPoint(sdkRect.pixName, singleRect.bottomLeft(), hnRect.p3))
+				{
+					vec.push_back(hnRect);
+				}
+			}
+			return vec;
+		}
+	}
+
+	hn2dRectI hnRect;
 	hnRect.p0 = getHnPoint2dWithMileI(rect.topLeft());
 	hnRect.p1 = getHnPoint2dWithMileI(rect.topRight());
 	hnRect.p2 = getHnPoint2dWithMileI(rect.bottomRight());
 	hnRect.p3 = getHnPoint2dWithMileI(rect.bottomLeft());
-	//如果四个点中有一个点无效，则返回空的数组
 	if (hnRect.p0.m_dmi == -1 ||
 		hnRect.p1.m_dmi == -1 ||
 		hnRect.p2.m_dmi == -1 ||
 		hnRect.p3.m_dmi == -1)
 	{
-		std::vector<hn2dRectI> vec;
 		return vec;
 	}
 
-	//人工模式只有一个框
-	std::vector<hn2dRectI> vec;
 	vec.push_back(hnRect);
 	return vec;
 }
-
 hnCommon::hn2dPointWithMileI hn3dPixWidget::getHnPoint2dWithMileI(const QPoint & point)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
@@ -2284,11 +2890,25 @@ hnCommon::hn2dPointWithMileI hn3dPixWidget::getHnPoint2dWithMileI(const QPoint &
 
 bool hn3dPixWidget::drawBigFrameProcess()
 {
-	QPoint bigImageStart = this->singleImagePointToBigImagePoint(m_diseaseStartPoint.pixPoint, m_diseaseStartPoint.pixName);
-	QPoint bigImageEnd = this->singleImagePointToBigImagePoint(m_diseaseEndPoint.pixPoint, m_diseaseEndPoint.pixName);
+	QRect diseaseRect;
+	if (hasSdkImageView())
+	{
+		QVector<SdkSingleImageRect> sdkRects;
+		if (!currentSdkBigFrameSingleRects(sdkRects))
+		{
+			resetSdkDiseaseDrawingState(true, false);
+			return false;
+		}
 
-	QRect diseaseRect(bigImageStart, bigImageEnd);
-	diseaseRect = diseaseRect.normalized();
+		// SDK commit uses the first single-image rect only as legacy dialog input; real geometry is stored from SDK selections.
+		diseaseRect = sdkRects.first().singleRect.normalized();
+	}
+	else
+	{
+		QPoint bigImageStart = this->singleImagePointToBigImagePoint(m_diseaseStartPoint.pixPoint, m_diseaseStartPoint.pixName);
+		QPoint bigImageEnd = this->singleImagePointToBigImagePoint(m_diseaseEndPoint.pixPoint, m_diseaseEndPoint.pixName);
+		diseaseRect = QRect(bigImageStart, bigImageEnd).normalized();
+	}
 
 	//边界自适应
 	if (PROJECT_23D_TYPE == m_projectType)
@@ -2308,7 +2928,7 @@ bool hn3dPixWidget::drawBigFrameProcess()
 
 	//获取第一个点的hnMile
 
-	hnMile mile = this->getHnMileFromPoint(bigImageStart);
+	hnMile mile = this->getHnMileFromPoint(diseaseRect.topLeft());
 
 
 	hnProjectSetInfo setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
@@ -2358,8 +2978,7 @@ bool hn3dPixWidget::drawBigFrameProcess()
 	}
 	else
 	{
-		this->m_isDrawingDisease = false;
-		this->m_isAllowDrawPix = false;
+		resetSdkDiseaseDrawingState(true, false);
 		return false;
 	}
 
@@ -2398,7 +3017,11 @@ bool hn3dPixWidget::drawBigFrameProcess()
 	}
 
 	//写入数据库
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+	if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo))
+	{
+		return false;
+	}
+	rememberLastSdkAddedDisease(diseaseInfo);
 	  
 	return true;
 }
@@ -2716,27 +3339,71 @@ QVector<double> hn3dPixWidget::grayImageNamesToEncoderMileVector()
 
 bool hn3dPixWidget::littleFrameProcess()
 {
-	if (this->littleDrawRectType)
+	QVector<QRect> diseaseRectsForStorage;
+	QElapsedTimer totalTimer;
+	QElapsedTimer stepTimer;
+	totalTimer.start();
+	stepTimer.start();
+	auto logLittleFramePerf = [&](const char* step)
 	{
-		this->commitCurrentLittleRectDrawSelection();
+		#ifdef _DEBUG
+		qDebug() << "HN_LITTLE_FRAME_PERF 3d"
+			<< step
+			<< "ms=" << stepTimer.restart()
+			<< "totalMs=" << totalTimer.elapsed()
+			<< "rects=" << diseaseRectsForStorage.size()
+			<< "selections=" << m_currentLittleFrameSingleSelections.size()
+			<< "sdk=" << hasSdkImageView();
+		#endif
+	};
 
-		QVector<QRect> finalizedRects;
-		this->appendCommittedLittleRectDrawSelection(finalizedRects);
-		if (!finalizedRects.isEmpty())
+	if (hasSdkImageView())
+	{
+		if (this->littleDrawRectType)
 		{
-			this->m_tmpLittleFrameDiseaseRects = finalizedRects;
+			this->commitCurrentLittleRectDrawSelection();
+		}
+		else if (m_currentLittleFrameSingleSelections.isEmpty() && !m_littleSingleImagePoints.isEmpty())
+		{
+			rebuildCurrentLittleFrameSingleSelectionsFromPoints(m_littleSingleImagePoints);
+		}
+
+		// 提交入库前才把 SDK 单图格子转成旧 QRect；SDK 预览和显示不依赖这个结果。
+		this->buildCurrentLittleFrameStorageRects(diseaseRectsForStorage);
+		logLittleFramePerf("buildCurrentLittleFrameStorageRects");
+		if (diseaseRectsForStorage.isEmpty())
+		{
+			resetLittleFrameDrawState();
+			return false;
 		}
 	}
-
-	if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
+	else
 	{
-		resetLittleFrameDrawState();
-		return false;
+		if (this->littleDrawRectType)
+		{
+			this->commitCurrentLittleRectDrawSelection();
+
+			QVector<QRect> finalizedRects;
+			this->appendCommittedLittleRectDrawSelection(finalizedRects);
+			if (!finalizedRects.isEmpty())
+			{
+				this->m_tmpLittleFrameDiseaseRects = finalizedRects;
+			}
+		}
+
+		if (this->m_tmpLittleFrameDiseaseRects.isEmpty())
+		{
+			resetLittleFrameDrawState();
+			return false;
+		}
+		diseaseRectsForStorage = this->m_tmpLittleFrameDiseaseRects;
+		logLittleFramePerf("collectLegacyLittleFrameRects");
 	}
 
 	//如果病害无效，则取消画病害
 	if (!this->isTmpDiseaseRoadTypeValid(1))
 	{
+		logLittleFramePerf("isTmpDiseaseRoadTypeValidFailed");
 		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
 			QString::fromLocal8Bit("所画病害中有不同的路面标准或者路面类型，病害无效，取消绘制"),
 			QString::fromLocal8Bit("确定"));
@@ -2744,6 +3411,7 @@ bool hn3dPixWidget::littleFrameProcess()
 
 		return false;
 	}
+	logLittleFramePerf("isTmpDiseaseRoadTypeValid");
 
 
 	//计算病害种类
@@ -2772,6 +3440,7 @@ bool hn3dPixWidget::littleFrameProcess()
 		diseaseNameAndKey.append(qMakePair(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName), QString(diseseSetInfo.nShortcutKey)));
 		diseaseTypeList.append(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName));
 	}
+	logLittleFramePerf("prepareDiseaseDialog");
 
 	//弹出添加病害窗口
 	addDiseaseDialog dialog(diseaseNameAndKey, false);
@@ -2783,11 +3452,18 @@ bool hn3dPixWidget::littleFrameProcess()
 	{
 		diseaseTypeName = dialog.getDiseaseTypeName();
 		diseaseMark = dialog.getDiseaseMarkInfo();
+		stepTimer.restart();
 	}
 	else
 	{
-		resetLittleFrameDrawState();
-
+		#ifdef _DEBUG
+		qDebug() << "HN_LITTLE_FRAME_PERF 3d dialogRejected"
+			<< "totalMs=" << totalTimer.elapsed()
+			<< "rects=" << diseaseRectsForStorage.size()
+			<< "selections=" << m_currentLittleFrameSingleSelections.size()
+			<< "sdk=" << hasSdkImageView();
+		#endif
+		resetSdkDiseaseDrawingState(true, false);
 		return false;
 	}
 
@@ -2802,10 +3478,12 @@ bool hn3dPixWidget::littleFrameProcess()
 			diseaseTableName = QString::fromLocal8Bit(diseseSetInfo.strDBTableName);
 		}
 	}
-	QVector<QRect>diseaseRects = this->m_tmpLittleFrameDiseaseRects;
+	QVector<QRect> diseaseRects = diseaseRectsForStorage;
+	logLittleFramePerf("selectDiseaseSetInfo");
 	//计算病害属性
 	hnCommon::hnRoadDiseaseInfo diseaseInfo; 
-	 diseaseInfo = this->caculateLittleFrameDiseaseAttribute(diseaseRects, selectDiseaseSetInfo, diseaseMark);
+	diseaseInfo = this->caculateLittleFrameDiseaseAttribute(diseaseRects, selectDiseaseSetInfo, diseaseMark);
+	logLittleFramePerf("caculateLittleFrameDiseaseAttribute");
 
 	// 自动化模式 检查沉陷类病害计算
 	if (!diseaseInfo.vec3dRect.empty() && true == m_isOPenDepthCaculate)
@@ -2818,6 +3496,7 @@ bool hn3dPixWidget::littleFrameProcess()
 			*this,
 			&drawDiseases::generateLargeFrameHn3dRectVector,
 			diseaseRects);
+		logLittleFramePerf("caculateLittleFrameDiseaseDepth");
 		if (false == isDrawDisease)
 		{
 			resetLittleFrameDrawState();
@@ -2829,21 +3508,31 @@ bool hn3dPixWidget::littleFrameProcess()
 	//计算病害id
 	diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
 		->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
+	logLittleFramePerf("getMaxID");
 	if (!this->isTmpDiseaseAreaValid(diseaseInfo))
 	{
+		logLittleFramePerf("isTmpDiseaseAreaValidFailed");
 		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
 			QString::fromLocal8Bit("所画病害面积与规范不符，病害无效，取消绘制"),
 			QString::fromLocal8Bit("确定"));
 		return false;
 	}
+	logLittleFramePerf("isTmpDiseaseAreaValid");
 
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo);
+	if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo))
+	{
+		logLittleFramePerf("addDiseaseFailed");
+		resetLittleFrameDrawState();
+		return false;
+	}
+	logLittleFramePerf("addDisease");
+	rememberLastSdkAddedDisease(diseaseInfo);
 	resetLittleFrameDrawState();
+	logLittleFramePerf("done");
 	 
 
 	return true;
 }
-
 
 void hn3dPixWidget::littleFrameEditDisease(const QPoint & mousePoint)
 {
@@ -2960,9 +3649,7 @@ void hn3dPixWidget::littleFrameRightButtonDragDelete(const QPoint & mousePoint)
 			disease.vec3dRect.erase(disease.vec3dRect.begin() + hitIndex);
 		}
 
-		disease.dArea = 0.01 * disease.vec2dRect.size();
-		disease.nRectCnt = disease.vec2dRect.size();
-		disease.n3dCnt = disease.vec3dRect.size();
+		recalculateLittleFrameDiseaseAfterCellDelete(disease);
 
 		this->updateLittleFrameDisease(disease);
 		return;
@@ -3239,21 +3926,37 @@ hnCommon::hnRoadDiseaseInfo hn3dPixWidget::caculateLittleFrameDiseaseAttribute(c
 		return hnRoadDiseaseInfo();
 	}
 	hnCommon::hnRoadDiseaseInfo disease;
+	QElapsedTimer attrTotalTimer;
+	QElapsedTimer attrStepTimer;
+	attrTotalTimer.start();
+	attrStepTimer.start();
 
 	hnCommon::hnProjectSetInfo projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
 	 
 	//病害面积
-	disease.dArea = 0.1 * 0.1 * this->m_tmpLittleFrameDiseaseRects.size();
+	disease.dArea = 0.1 * 0.1 * diseaseRects.size();
 
 	//计算3d的坐标信息
 	vector<hn3dRectI> disease3dPointVector = this->generateLittleFrameHn3dRectVector(diseaseRects);
 	disease.vec3dRect = disease3dPointVector;
+	#ifdef _DEBUG
+	qDebug() << "HN_LITTLE_FRAME_PERF 3d generateLittleFrameHn3dRectVector"
+		<< "rects=" << diseaseRects.size()
+		<< "vec3d=" << disease.vec3dRect.size()
+		<< "ms=" << attrStepTimer.restart();
+	#endif
 
 	if (hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
 	{
 		//计算2d的坐标信息
 		vector<hn2dRectI> disease2dPointVector = this->generateLittleFrameHn2dRectVector(diseaseRects);
 		disease.vec2dRect = disease2dPointVector;
+		#ifdef _DEBUG
+		qDebug() << "HN_LITTLE_FRAME_PERF 3d generateLittleFrameHn2dRectVector"
+			<< "rects=" << diseaseRects.size()
+			<< "vec2d=" << disease.vec2dRect.size()
+			<< "ms=" << attrStepTimer.restart();
+		#endif
 	}
 	if (PROJECT_TYPE::PROJECT_23D_TYPE == hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
 	{
@@ -3309,34 +4012,190 @@ hnCommon::hnRoadDiseaseInfo hn3dPixWidget::caculateLittleFrameDiseaseAttribute(c
 	strcpy(disease.strDiseaseTableName, diseaseSetInfo.strDBTableName);
 	strcpy(disease.strDisName, diseaseSetInfo.strDiseaseTypeName);
 	hnApp::hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
+	#ifdef _DEBUG
+	qDebug() << "HN_LITTLE_FRAME_PERF 3d caculateLittleFrameDiseaseAttributeTotal"
+		<< "rects=" << diseaseRects.size()
+		<< "vec2d=" << disease.vec2dRect.size()
+		<< "vec3d=" << disease.vec3dRect.size()
+		<< "area=" << disease.dArea
+		<< "length=" << disease.dLength
+		<< "width=" << disease.dWidth
+		<< "totalMs=" << attrTotalTimer.elapsed();
+	#endif
 	return disease;
 }
 
 vector<hn2dRectI> hn3dPixWidget::generateLittleFrameHn2dRectVector(const QVector<QRect>& rects)
 {
 	std::vector<hn2dRectI> dstVec;
-	hn2dRectI hnRect;
-	hn2d3dCoordinates tool;
 
+	if (hasSdkImageView() && !m_currentLittleFrameSingleSelections.isEmpty())
+	{
+		auto to2dPoint = [this](const pixImagePoint& sdkPoint, hn2dPointWithMileI& out)->bool
+		{
+			auto dataManager = hnDataManager::getDataManager();
+			if (!dataManager || !dataManager->isOpenProject() ||
+				!dataManager->getCurrentProject() || !dataManager->getCurrentProject()->get3DProject() ||
+				!dataManager->getCurrentProject()->get2DProject())
+			{
+				return false;
+			}
+
+			QString projectImageName;
+			if (!resolveSdkImageName(sdkPoint.pixName, projectImageName))
+			{
+				return false;
+			}
+
+			QString pixFileName = pixName3dConvertWithoutPath(QFileInfo(projectImageName).fileName());
+			const double bottom3dMile = dataManager->getCurrentProject()->get3DProject()->getMileByImage(pixFileName);
+			const double heightScale3d = dataManager->getCurrentProject()->get3DProject()->getImageHeightScale();
+			if (heightScale3d <= 0.0)
+			{
+				return false;
+			}
+
+			const int y3d = qBound(0, sdkPoint.pixPoint.y(), qMax(0, m_pixHeight));
+			const double point3dMile = bottom3dMile + (m_pixHeight - y3d) * heightScale3d;
+			const double target2dMile = point3dMile + dataManager->getCurrentProject()->get2d3dMileDiff();
+
+			double bottom2dMile = -1.0;
+			for (const hnMile& mile : qAsConst(m_2dMileVector))
+			{
+				if (mile.dEnclMile <= target2dMile)
+				{
+					bottom2dMile = mile.dEnclMile;
+				}
+				else
+				{
+					break;
+				}
+			}
+			if (bottom2dMile < 0.0)
+			{
+				return false;
+			}
+
+			const hnProjectSetInfo projectSetInfo = dataManager->getCurrentProject()->getCurProSetInfo();
+			if (projectSetInfo.dRadioY <= 0.0)
+			{
+				return false;
+			}
+
+			hn2d3dCoordinates coordinates;
+			int x = coordinates.single3dXToSingle2dX(qBound(0, sdkPoint.pixPoint.x(), qMax(0, m_pixWidth - 1)));
+			int y = qRound(projectSetInfo.picPixelY - (target2dMile - bottom2dMile) / projectSetInfo.dRadioY);
+			x = qBound(0, x, qMax(0, projectSetInfo.picPixelX - 1));
+			y = qBound(0, y, qMax(0, projectSetInfo.picPixelY - 1));
+
+			if (dataManager->getCurrentProject()->get2DProject()->getIsHMirrored())
+			{
+				x = projectSetInfo.picPixelX - 1 - x;
+			}
+			if (dataManager->getCurrentProject()->get2DProject()->getIsVMirrored())
+			{
+				y = projectSetInfo.picPixelY - 1 - y;
+			}
+
+			out.x = x;
+			out.y = y;
+			out.m_dmi = bottom2dMile;
+			return true;
+		};
+
+		for (const LittleFrameSingleRectSelection& selection : qAsConst(m_currentLittleFrameSingleSelections))
+		{
+			const QRect singleRect = selection.singleRect.normalized();
+			hn2dRectI hnRect;
+			pixImagePoint p0{ selection.pixName, singleRect.topLeft() };
+			pixImagePoint p1{ selection.pixName, singleRect.topRight() };
+			pixImagePoint p2{ selection.pixName, singleRect.bottomRight() };
+			pixImagePoint p3{ selection.pixName, singleRect.bottomLeft() };
+			if (to2dPoint(p0, hnRect.p0) && to2dPoint(p1, hnRect.p1) &&
+				to2dPoint(p2, hnRect.p2) && to2dPoint(p3, hnRect.p3))
+			{
+				dstVec.push_back(hnRect);
+			}
+		}
+
+		if (!dstVec.empty())
+		{
+			return dstVec;
+		}
+	}
+
+	hn2d3dCoordinates tool;
 	for (const QRect &rect : qAsConst(rects))
 	{
-		//用每个自动化模式的中心点来映射
-		hn2dPointWithMileI p;
-		std::vector<hn2dRectI> tmpVec;
-
-		p = getHnPoint2dWithMileI(rect.center());
-		tmpVec = tool.get2dLittleRects(p);
+		hn2dPointWithMileI p = getHnPoint2dWithMileI(rect.center());
+		std::vector<hn2dRectI> tmpVec = tool.get2dLittleRects(p);
 		dstVec.insert(dstVec.end(), tmpVec.begin(), tmpVec.end());
 	}
 
 	return dstVec;
 }
-
 vector<hn3dRectI> hn3dPixWidget::generateLittleFrameHn3dRectVector(const QVector<QRect>& rects)
 {
 	std::vector<hn3dRectI> dstVec;
-	hn3dRectI hnRect;
+	if (hasSdkImageView() && !m_currentLittleFrameSingleSelections.isEmpty())
+	{
+		auto toHnPoint = [this](const pixImagePoint& sdkPoint, hn3dPointWithMileI& out)->bool
+		{
+			if (!hnDataManager::getDataManager()->isOpenProject() ||
+				!hnDataManager::getDataManager()->getCurrentProject() ||
+				!hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+			{
+				return false;
+			}
 
+			QString pixFileName = QFileInfo(sdkPoint.pixName).fileName();
+			if (this->m_3dImageMode == hn3dImageMode::Gray && pixFileName.startsWith(QStringLiteral("GREY")))
+			{
+				pixFileName = pixFileName.mid(4);
+			}
+			else if (this->m_3dImageMode != hn3dImageMode::Gray && pixFileName.startsWith(QStringLiteral("RGB")))
+			{
+				pixFileName = pixFileName.mid(3);
+			}
+
+			int x = qBound(0, sdkPoint.pixPoint.x(), qMax(0, m_pixWidth - 1));
+			int y = qBound(0, sdkPoint.pixPoint.y(), qMax(0, m_pixHeight - 1));
+			if (hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getIsHMirrored())
+			{
+				x = m_pixWidth - 1 - x;
+			}
+			if (hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getIsVMirrored())
+			{
+				y = m_pixHeight - 1 - y;
+			}
+			out.x = x;
+			out.y = y;
+			out.z = 0;
+			out.bottomEncoderMile = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getMileByImage(pixFileName);
+			return true;
+		};
+
+		for (const LittleFrameSingleRectSelection& selection : qAsConst(m_currentLittleFrameSingleSelections))
+		{
+			const QRect singleRect = selection.singleRect.normalized();
+			hn3dRectI hnRect;
+			pixImagePoint p0{ selection.pixName, singleRect.topLeft() };
+			pixImagePoint p1{ selection.pixName, singleRect.topRight() };
+			pixImagePoint p2{ selection.pixName, singleRect.bottomRight() };
+			pixImagePoint p3{ selection.pixName, singleRect.bottomLeft() };
+			if (toHnPoint(p0, hnRect.p0) && toHnPoint(p1, hnRect.p1) &&
+				toHnPoint(p2, hnRect.p2) && toHnPoint(p3, hnRect.p3))
+			{
+				dstVec.push_back(hnRect);
+			}
+		}
+		if (!dstVec.empty())
+		{
+			return dstVec;
+		}
+	}
+
+	hn3dRectI hnRect;
 	for (const QRect &rect : qAsConst(rects))
 	{
 		hnRect.p0 = this->getHnPoint3dWithMileI(rect.topLeft());
@@ -3348,9 +4207,6 @@ vector<hn3dRectI> hn3dPixWidget::generateLittleFrameHn3dRectVector(const QVector
 
 	return dstVec;
 }
-
-
-
 double hn3dPixWidget::caculateLittleFrameMiddleMile(const QVector<QRect>& rects)
 {
 	double mile;
@@ -3986,10 +4842,128 @@ void hn3dPixWidget::selectDisease(const QPoint & mousePoint)
 	}
 }
 
+bool hn3dPixWidget::sdkCommitBigFrameDisease()
+{
+	return drawBigFrameProcess();
+}
+
+bool hn3dPixWidget::sdkCommitLittleFrameDisease()
+{
+	return littleFrameProcess();
+}
+
+QVector<QRect> hn3dPixWidget::sdkCreateLittleFrameRects(const QVector<pixImagePoint>& pixImagePoints)
+{
+	// Deprecated: SDK drawing now uses GridSelectionTool directly; keep this only for legacy paths.
+	return createLittleFrameRects(pixImagePoints);
+}
+
+QString hn3dPixWidget::sdkStatusInfoFromWidgetPoint(const QPoint& widgetPoint)
+{
+	return generateStatusInfo(widgetPoint);
+}
+QString hn3dPixWidget::sdkStatusInfoFromContext(const hn2d3dPixBaseWidget::SdkStatusContext& context)
+{
+	if (!context.valid || !hnApp::hnDataManager::getDataManager()->isOpenProject())
+	{
+		return QString();
+	}
+
+	auto currentProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!currentProject || !currentProject->get3DProject())
+	{
+		return QString();
+	}
+
+	hnCommon::hnProjectSetInfo projectSetInfo = currentProject->getCurProSetInfo();
+	QString pixName = QFileInfo(context.imageName).fileName();
+	QString pixNameWithoutPath = this->pixName3dConvertWithoutPath(pixName);
+	const double pixBottomMile = currentProject->get3DProject()->getMileByImage(pixNameWithoutPath);
+
+	hnMile currentPointMile;
+	auto exactIter = m_encoderMileHnMileMap.constFind(pixBottomMile);
+	if (exactIter != m_encoderMileHnMileMap.constEnd())
+	{
+		currentPointMile = exactIter.value();
+	}
+	else
+	{
+		auto lowerIter = m_encoderMileHnMileMap.lowerBound(pixBottomMile);
+		if (lowerIter != m_encoderMileHnMileMap.end())
+		{
+			currentPointMile = lowerIter.value();
+		}
+		else if (!m_encoderMileHnMileMap.isEmpty())
+		{
+			auto lastIter = m_encoderMileHnMileMap.constEnd();
+			--lastIter;
+			currentPointMile = lastIter.value();
+		}
+	}
+
+	double currentPixButtomEncoderMile = pixBottomMile;
+	double currentPixButtomTrueMile = this->encoderMileToTrueMile(currentPixButtomEncoderMile);
+	if (hnCommon::PROJECT_23D_TYPE == currentProject->getProjectType() && currentPointMile.dEnclMile > 0.0)
+	{
+		currentPixButtomEncoderMile = currentPointMile.dEnclMile;
+		currentPixButtomTrueMile = currentPointMile.dTrueMile;
+	}
+
+	const double routeYInImage = context.routeImagePoint.y() - (context.imageIndex - 1) * m_pixHeight;
+	const double localY = qBound(0.0, m_pixHeight - routeYInImage, m_pixHeight * 1.0);
+	const double encoderMile = currentPixButtomEncoderMile + (m_pixHeight - localY) * m_heightScale;
+	double trueEncoderMile = encoderMile;
+	if (hnCommon::PROJECT_23D_TYPE == currentProject->getProjectType())
+	{
+		trueEncoderMile += currentProject->get2d3dMileDiff();
+	}
+	const double trueMile = currentProject->enclToTrueMile(trueEncoderMile);
+
+    const double roadWidth = qMax(0.0, currentProject->get3DProject()->getRoadWidth());
+    const double rawXMile = context.routeImagePoint.x() * m_widthScale;
+    const double xMile = roadWidth > 0.0 ? qBound(0.0, rawXMile, roadWidth) : qMax(0.0, rawXMile);
+    const QString mileText = QString::fromLocal8Bit("(X:%1,Y:%2)").arg(xMile, 0, 'f', 3).arg(trueEncoderMile, 0, 'f', 3);
+
+    QString roadStandard = HnProjectEnums::roadTypeEnumToQString(currentPointMile.roadStandard);
+    const QString projectRoadStandard = QString::fromLocal8Bit(projectSetInfo.strRoadStandard);
+    if (roadStandard.isEmpty() && !projectRoadStandard.isEmpty())
+    {
+        roadStandard = projectRoadStandard;
+    }
+    const int roadType = currentPointMile.roadType;
+    const QString roadGrad = currentPointMile.roadGradStr.isEmpty()
+        ? QString::fromLocal8Bit(projectSetInfo.strRoadLevel)
+        : currentPointMile.roadGradStr;
+    const int drawType = currentPointMile.drawType;
+
+    double streetEncoderMile = currentBottomEncoderMile();
+    if (hnCommon::PROJECT_23D_TYPE == currentProject->getProjectType())
+    {
+        streetEncoderMile += currentProject->get2d3dMileDiff();
+    }
+    const double streetTrueMile = currentProject->enclToTrueMile(streetEncoderMile);
+    const QString streetPixName = currentStreetPictureNameForStatus(streetTrueMile);
+
+    return QString::fromLocal8Bit("桩号：%1	里程:%2	路面标准：%3	"
+        "路面材质：%4	路面等级：%5	病害模式：%6	拼接图片坐标：%7	单张图片坐标：%8	路面图片：%9	景观图片：%10	")
+        .arg(trueMile, 0, 'f', 3)
+        .arg(mileText)
+        .arg(roadStandard)
+        .arg(roadType == 0 ? QString::fromLocal8Bit("沥青") :
+        (roadType == 1 ? QString::fromLocal8Bit("水泥") : QString::fromLocal8Bit("砂石")))
+        .arg(roadGrad)
+        .arg(drawType == 0 ? QString::fromLocal8Bit("人工模式") : QString::fromLocal8Bit("自动化模式"))
+        .arg(QString::number(context.routeImagePoint.x()) + "," + QString::number(context.routeImagePoint.y()))
+        .arg(QString::number(context.singleImagePoint.x()) + "," + QString::number(context.singleImagePoint.y()))
+        .arg(pixName)
+        .arg(streetPixName);
+}
+
 void hn3dPixWidget::slotDiseaseChanged()
 {
 	this->m_currentWidgetDiseases.clear();
-	this->update();
+	// 数据库病害增删改统一刷新 SDK scene；非 SDK 路径在基类中退化为普通 update()。
+	this->refreshSdkDiseaseLayer();
 }
 
 bool hn3dPixWidget::diseasePointToWidgetPointAfterBrowse(

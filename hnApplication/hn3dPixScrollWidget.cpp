@@ -21,12 +21,9 @@ void hn3dPixScrollWidget::load3dImage()
 
 void hn3dPixScrollWidget::laodPicRetainScrollBarValue()
 {
-	//获取当前进度条的值
-	int currentScrollBarValue = this->getCurrentScrollBarValue();
-	//加载新图片
+	const double currentEncoderMile = this->m_p3dImageViewWidget->currentBottomEncoderMile();
 	this->m_p3dImageViewWidget->load3DImagePictures();
-	//设置当前进度条的值
-	this->setCurrentScrollBarValue(currentScrollBarValue);
+	this->m_p3dImageViewWidget->scrollBottomToEncoderMile(currentEncoderMile);
 }
 
 hn3dPixWidget * hn3dPixScrollWidget::getPixWidget()
@@ -39,57 +36,10 @@ hn3dPixWidget * hn3dPixScrollWidget::getPixWidget()
 void hn3dPixScrollWidget::initConnect()
 {
 	connect(this, &hnContinuouslyBrowsePixWidget::signal_moveMouse, m_browsePixWidget, &hnBrowsePixWidget::slot_moveMouse);
-	//connect(this->m_scrollbar, &CustomScrollBar::valueChanged, this, &hn3dPixScrollWidget::slot_BlockValueChanged);
 }
 
 void hn3dPixScrollWidget::keyPressEvent(QKeyEvent *event)
 {
-
-	auto function = [this]() {
-		while (this->m_autoPlay)
-		{
-			std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-			this->m_scrollbar->setValue(m_scrollbar->value() - 1);			// 滚动条从下向上滚动
-			std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-		}
-	};
-
-	// 按空格键修改滚动条的值
-	if (event->key() == Qt::Key_Space)
-	{
-		// 这里使用定时器也要使用其他线程
-		if (this->m_autoPlay == false)
-		{
-			this->m_autoPlay = !this->m_autoPlay;
-			std::thread scrollEvent(function);
-			scrollEvent.detach();
-		}
-		else
-		{
-			this->m_autoPlay = !this->m_autoPlay;;			// 停止标志，修改滚动条的线程会自动退出
-		}
-	}
-
-	if (event->key() == Qt::Key_Up || event->key() == Qt::Key_W)
-	{
-		const bool up = true;
-		const int step = getBrowStep(true);
-		emit signal_moveMouse(up, false);
-		this->m_scrollbar->setValue(m_scrollbar->value() - step);  
-		event->accept();
-		return; 
-	}
-	else if (event->key() == Qt::Key_Down || event->key() == Qt::Key_S)
-	{
-		const bool up = false;
-
-		const int step = getBrowStep(true);
-		emit signal_moveMouse(up, false);
-		this->m_scrollbar->setValue(m_scrollbar->value() + step); 
-		event->accept();
-		return;
-
-	}
 	QWidget::keyPressEvent(event);
 }
 
@@ -116,31 +66,7 @@ void hn3dPixScrollWidget::mousePressEvent(QMouseEvent *event)
 
 void hn3dPixScrollWidget::slot_BlockValueChanged(int value)
 {
-	
-	if (!hnDataManager::getDataManager()->isOpenProject())
-	{
-		return;
-	}
-	
-	int processValue = value;
-	int dmiIndex = this->m_scrollbar->maximum() - processValue;
-	//将传进的index转成里程
-	auto projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	double roadLenth =8/2;
-	if (roadLenth == 0)
-	{
-		return;
-	}
-	double curDmi = roadLenth * dmiIndex;
-
-	//将传进的index比转成桩号
-	double curMile = hnDataManager::getDataManager()->getCurrentProject()->enclToTrueMile(curDmi);
-
-	//赋值给文本框
-	//this->dmiBlock->setText(QString::number((int)curDmi));
-	//this->mileBlock->setText(QString::number((int)curMile));
-
-	 
+	Q_UNUSED(value);
 }
 
 void hn3dPixScrollWidget::slot_JumpToUserMile()
@@ -168,10 +94,6 @@ void hn3dPixScrollWidget::slot_JumpToUserMile()
 	////纯三维
 	//const int roadHeight = 8;
  //
-	//int maxValue =  this->m_scrollbar->maximum();
-	//int jumpToIndex = maxValue - (int)((encoderMile + diff2d3d)/4);
-	//this->m_scrollbar->setValue(jumpToIndex); 
-
 	//this->slot_updateDmiLable((int)(encoderMile+ diff2d3d));
 }
 

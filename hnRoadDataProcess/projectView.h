@@ -34,6 +34,7 @@ private:
 	signals:
 	   //跳转桩号
 	void signal_jumpToMile(double value);
+	void signal_jumpToMark(int markId, double trueMile, double encoderMile);
 	
 	//更新所有视图
 	void signal_updateAllWidget();
@@ -41,6 +42,7 @@ public slots:
 
 //更新工程信息界面 更新打标界面  更新较桩界面
 void slot_updateProjectSetting(hnCommon::hnProjectSetInfo setting, QVector<hnCommon::hnMarkInfo> marks, QVector<hnCommon::hnMilePile> pile);
+void clearProjectInfo();
 
 //用户双击界面条目发生跳转
 void slot_doubleClickTableVidgetItem(QTableWidgetItem * item);

@@ -11,8 +11,11 @@ logMgr::logMgr(QObject *parent)
 
 logMgr *logMgr::instance()
 {
-    static logMgr l;
-    return &l;
+    // The Qt message handler can be entered by background Qt/Chromium threads
+    // during process shutdown. Keep this tiny process-lifetime singleton alive
+    // until the OS tears down the process to avoid static-destruction races.
+    static logMgr* l = new logMgr;
+    return l;
 }
 //1.判断日志文件大小  2.设置日志格式  3.判断日志输出方向输出日志
 void logMgr::writeLog(QString msg)

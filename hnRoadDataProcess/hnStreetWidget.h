@@ -26,6 +26,8 @@ public:
 
 	int getStreetShowModel() { return m_showModelIndex; }
 
+    QString currentStreetImagePath() const;
+
 protected:
 
 	virtual void resizeEvent(QResizeEvent *);

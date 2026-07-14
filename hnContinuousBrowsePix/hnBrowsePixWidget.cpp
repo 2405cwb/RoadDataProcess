@@ -52,12 +52,6 @@ void hnBrowsePixWidget::loadPix(const QString & pixDirName)
 
 	//获取分辨率
 	this->getPixResoluion(pixDirName);
-
-	int scrollBarMaxValue = this->m_pixNameMap.size() * 2;
-	emit sig_scrollBarMaxValueChanged(scrollBarMaxValue);
-
-	emit sig_scrollBarValueChanged(scrollBarMaxValue);
-
 	qDebug().noquote() << "[HN_PERF][BrowseLoadPixDir]"
 		<< "elapsedMs=" << timer.elapsed()
 		<< "pixCount=" << m_pixNameMap.size()
@@ -88,17 +82,11 @@ void hnBrowsePixWidget::loadPix(const QStringList & pixNames)
 	}
 	m_lastPreloadBottomFrameIdx = -1;
 	this->m_pixNameMap = imgloader.loadImageNamesToMap(pixNames,this->m_reversePixNameMap);
-
-	int scrollBarMaxValue = this->m_pixNameMap.size() * 2;
-	emit sig_scrollBarMaxValueChanged(scrollBarMaxValue);
-
-	emit sig_scrollBarValueChanged(scrollBarMaxValue);
-
-	qDebug().noquote() << "[HN_PERF][BrowseLoadPixList]"
-		<< "elapsedMs=" << timer.elapsed()
-		<< "pixCount=" << m_pixNameMap.size()
-		<< "first=" << (pixNames.isEmpty() ? QString() : pixNames.first())
-		<< "last=" << (pixNames.isEmpty() ? QString() : pixNames.last());
+	//qDebug().noquote() << "[HN_PERF][BrowseLoadPixList]"
+	//	<< "elapsedMs=" << timer.elapsed()
+	//	<< "pixCount=" << m_pixNameMap.size()
+	//	<< "first=" << (pixNames.isEmpty() ? QString() : pixNames.first())
+	//	<< "last=" << (pixNames.isEmpty() ? QString() : pixNames.last());
 
 	//加载工程后进行的操作，供子类重载
 	this->afterLoadPictures();
@@ -124,14 +112,6 @@ bool hnBrowsePixWidget::reloadPix(const std::vector<QString>& vecImageName)
 		this->m_pixNameMap.insert(idx + 1, imageAbsolutelyPath);
 		this->m_reversePixNameMap.insert(imageAbsolutelyPath, idx + 1);
 	}
-
-	//发送信号  照片数量变了
-	int scrollBarMaxValue = this->m_pixNameMap.size() * 2;
-	emit sig_scrollBarMaxValueChanged(scrollBarMaxValue);
-
-	//发送信号  设置滚动条为最大值
-	emit sig_scrollBarValueChanged(scrollBarMaxValue);
-
 	this->update();
 	
 	return true;
@@ -244,7 +224,8 @@ QPoint hnBrowsePixWidget::singleImagePointToBigImagePoint(const QPoint & imagePo
 
 	//y值做计算  从底部往上面算
 	//int y = (frameIdx * 1.0 - this->m_buttomFrameIdx) * m_pixHeight + imagePoint.y();
-	int y = this->m_tmpPixImageWithoutDisease.height() - difference - (m_pixHeight - imagePoint.y());
+	const int imageHeight = currentPaintImageSize().height();
+	int y = imageHeight - difference - (m_pixHeight - imagePoint.y());
 	//设置y值
 	dstPoint.setY(y);
 
@@ -301,7 +282,7 @@ QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelIm
 	{
 		//当前帧与底部帧的差值
 		double difference = (frameIdx*1.0 - m_buttomFrameIdx)*m_pixHeight;
-		int h = this->m_tmpPixImageWithoutDisease.height();
+		int h = currentPaintImageSize().height();
 		int y = (h - difference) - labelImagePoint.y();
 
 		y = m_pixHeight - y;
@@ -315,7 +296,7 @@ QPoint hnBrowsePixWidget::bigImagePointToSingleImagePoint(const QPoint & labelIm
 	{
 		//TODO cwb 这个地方有问题导致 半幅二维绘制后三维不显示
 		//弄不清楚就在纸上画一画，算一算他是怎么动的
-		int h = this->m_tmpPixImageWithoutDisease.height();
+		int h = currentPaintImageSize().height();
 		int y = (frameIdx + 1 - m_buttomFrameIdx)*this->m_pixHeight - (h- labelImagePoint.y());
 	 
 		dstPoint.setX(labelImagePoint.x());
@@ -486,8 +467,11 @@ void hnBrowsePixWidget::init()
 
 	//是否允许画图片
 	this->m_isAllowDrawPix = true;
-
-	 
+	m_skipLegacyImagePaint = false;
+	// Connections to the 1:1 preview can be established after the first resize.
+	// Keep a safe crop size until the main window pushes the actual dock size.
+	m_originalWidgetWidth = 320;
+	m_originalWidgetHeight = 240;
 
 	//是否允许联动
 	m_isAllowLinked = true;
@@ -792,43 +776,41 @@ void hnBrowsePixWidget::drawPicture(QImage &image)
 
 }
 
-void hnBrowsePixWidget::slot_updateCurrentScrollBar(const int scrollBarValue)
+void hnBrowsePixWidget::slot_moveMouse(bool up,bool is2D)
 {
 
-	//设置加载图片的张数为当前帧数的两倍
-	this->setLoadFrameNum(m_currentWidgetFrameNum * 2);
-
-	QDateTime currentDataTime = QDateTime::currentDateTime();
-
-	qint64 intervalTimeMS = m_lastTime.msecsTo(currentDataTime);
-
-	m_lastTime = currentDataTime;
-
-	//倒转滚动条的值
-	int tmpScrollBarValue = (this->m_pixNameMap.size() * 2) - scrollBarValue;
-
-	//if (qAbs(tmpScrollBarValue - m_currentScrollBarValue) < 5 && qAbs(intervalTimeMS) > 70)
-	//{
-	//	this->update();
-	//}
-	////否则，延时进行更新，延时500ms
-	//else
-	//{
-	//	QTimer::singleShot(500, [=]() {
-	//		this->update();
-	//	});
-	//}
-	//m_currentScrollBarValue = tmpScrollBarValue;
-	m_currentScrollBarValue = tmpScrollBarValue;
-	this->update();
-	//
 }
 
-void hnBrowsePixWidget::slot_moveMouse(bool up,bool is2D)
-{ 
-	
+void hnBrowsePixWidget::syncBrowseStateFromBottomFrame(qreal bottomFrameIdx)
+{
+	if (m_pixNameMap.isEmpty())
+	{
+		return;
+	}
 
+	bottomFrameIdx = qBound<qreal>(1.0, bottomFrameIdx, m_pixNameMap.size());
+	m_buttomFrameIdx = bottomFrameIdx;
+	m_currentScrollBarValue = qMax(0, qRound(bottomFrameIdx * 2.0 - 2.0));
+	m_beginEncoderMile = (m_buttomFrameIdx - 1.0) * m_heightScale * m_pixHeight;
+
+	const QSize imageSize = currentPaintImageSize();
+	m_currentWidgetFrameNum = qMax(1, qCeil(imageSize.height() * 1.0 / qMax(1, m_pixHeight)) + 1);
+	m_endEncoderMile = m_beginEncoderMile + m_currentWidgetFrameNum * m_heightScale * m_pixHeight;
 }
+
+void hnBrowsePixWidget::setSkipLegacyImagePaint(bool skip)
+{
+	m_skipLegacyImagePaint = skip;
+	if (skip)
+	{
+		m_isAllowDrawPix = false;
+		m_tmpPixImageWithoutDisease = QImage();
+		m_tmpContectImage = QImage();
+	}
+}
+
+//
+
 
 void hnBrowsePixWidget::setLoadFrameNum(const int num)
 {
@@ -1299,6 +1281,13 @@ void hnBrowsePixWidget::drawAllPixOnLabel(QImage &labelImage, const int framePix
 
 void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 {
+	Q_UNUSED(event);
+	// SDK 模式下图像、正式病害、临时病害都由 TiledGraphicsView/scene 绘制，旧 paintEvent 不再生成黑底或 overlay。
+	if (m_skipLegacyImagePaint)
+	{
+		return;
+	}
+
 	//异常处理，图片数组为空就推出
 	if (m_pixNameMap.isEmpty())
 	{
@@ -1329,7 +1318,7 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 	}
 
 	//允许画图片，就画上去
-	if (this->m_isAllowDrawPix)
+	if (this->m_isAllowDrawPix && !m_skipLegacyImagePaint)
 	{
 		//画图片 传image 进去  这个是固定的，把几张分开的图片画到image上
 		this->drawPicture(image);
@@ -1352,7 +1341,7 @@ void hnBrowsePixWidget::paintEvent(QPaintEvent * event)
 
 void hnBrowsePixWidget::resizeEvent(QResizeEvent* event)
 {
-	m_isAllowDrawPix = true;
+	m_isAllowDrawPix = !m_skipLegacyImagePaint;
 	m_tmpContectImage = QImage();
 	m_tmpPixImageWithoutDisease = QImage();
 	QWidget::resizeEvent(event);
@@ -1365,8 +1354,11 @@ void hnBrowsePixWidget::delayReupdate()
 
 	QTimer::singleShot(delayTime,this,[this]()
 	{
-		m_isAllowDrawPix = true;
-		this->update();
+		if (!m_skipLegacyImagePaint)
+		{
+			m_isAllowDrawPix = true;
+			this->update();
+		}
 	});
 }
 

@@ -280,6 +280,11 @@ bool hnCalRoadGeometry::calRoadGeometeryNew(vector<hnRoadGeoParam>& vecGeoParam,
 	}
 }
 
+bool sortbyZ(hnPoint3d begPt, hnPoint3d endPt)
+{
+	return begPt.z < endPt.z;
+}
+
 // 根据输入的时间计算出相应位置横坡、纵坡以及曲率半径
 bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam, double dDist, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle)/* = NULL*/)
 {
@@ -370,8 +375,85 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 			{
 				fProgress = 0.9;
 			}
-			pProgress(fProgress, "转换三维点云，计算横坡", false);
+			pProgress(fProgress, "转换三维点云，计算纵坡，横坡", false);
 		}
+
+		// 纵坡点云数据0.1米取一帧数据
+		int nSlopecnt = dDist / 0.1;
+		QVector<hnPoint3d> vecSlopePts;
+		hnPoint3d ptSlope;
+		for (int j = 0; j < nSlopecnt; j++)
+		{
+			sumFrame = (vecGeoParam[i].dMileage + j *0.1) / 0.002;
+			mainFrame = sumFrame / 40;
+			subRrame = sumFrame - (mainFrame * 40);
+
+			// 获取点云
+			camReader->getSubFramePoints(mainFrame, subRrame, 0, pionts, return_pt_count);
+
+			vecPt.resize(return_pt_count);
+
+			int nValitCnt = 0;
+
+			for (int k = 0; k < return_pt_count; k++)
+			{
+				if (pionts[k].x > 0.01 || pionts[k].x < -0.01)
+				{
+					continue;
+				}
+
+				// 转换三维点云
+				vecPt[nValitCnt].x = pionts[k].x;
+				vecPt[nValitCnt].y = pionts[k].y;
+				vecPt[nValitCnt].z = pionts[k].z;
+				pt2D23D(vecPt[nValitCnt], pionts[k].timeSecond, 0.0, 0.0, curPosInfo);
+
+				nValitCnt++;
+			}
+
+			if (nValitCnt == 0)
+			{
+				vecGeoParam[i].dVAngle = 0.0;
+				continue;
+			}
+
+			vecPt.resize(nValitCnt);
+
+			// 排序
+			sort(vecPt.begin(), vecPt.end(), sortbyZ);
+
+			nValitCnt = 0;
+			ptSlope.z = 0.0;
+			for (int k = vecPt.size()*0.05; k < vecPt.size() * 0.95; k++)
+			{
+				ptSlope.z += vecPt[k].z;
+				nValitCnt++;
+			}
+
+			ptSlope.z = ptSlope.z / nValitCnt;
+			
+			ptSlope.x = j * 0.1;
+
+			vecSlopePts.push_back(ptSlope);
+		}
+
+		double	k = 0.0;
+		double b = 0.0;
+		double crossSlopePercent = 0.0;
+
+		// 计算纵坡
+		if (vecSlopePts.size() > 0)
+		{
+			//滤波
+			QVector<hnPoint3d> newPoints11 = filterCloudByScore(vecSlopePts);
+			//拟合直线
+			calculateLaneCrossSlop(newPoints11, 0.02, 500, k, b, crossSlopePercent);
+
+			vecGeoParam[i].dVAngle = k;
+		}
+
+
+        // 计算横坡
 		sumFrame = vecGeoParam[i].dMileage / 0.002;
 		mainFrame = sumFrame / 40;
 		subRrame = sumFrame - (mainFrame * 40);
@@ -415,7 +497,7 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 				midIndex = j;
 			}
 
-			vecPt[j].y = 0.0;
+			//vecPt[j].y = 0.0;
 		}
 
 		//计算高程 中点附近 左右取50个点  取中位数
@@ -447,12 +529,28 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 
 		int pointSize = vecPt.size();
 		
+		k = 0.0;
+		b = 0.0;
+		crossSlopePercent = 0.0;
+
 		// 计算横坡 --滤波+拟合获取横坡 
-		double	k = 0.0;
-		double b = 0.0;
-		double crossSlopePercent = 0.0;
+		QVector<hnPoint3d> newPoints0 = filterCloudByScore(QVector<hnPoint3d>::fromStdVector(vecPt));
+		for (size_t i = 0; i < newPoints0.size(); i++)
+		{
+			if (i==0 )
+			{
+				newPoints0[i].x = 0;
+			}
+			else
+			{
+				double value = (vecPt[i - 1].x - vecPt[i].x) * (vecPt[i - 1].x - vecPt[i].x) + (vecPt[i - 1].y - vecPt[i].y) * (vecPt[i - 1].y - vecPt[i].y);
+				newPoints0[i].x = std::sqrt(value)+newPoints0[i-1].x;
+			}
+			newPoints0[i].y = 0;
+		}
+
 		//滤波
-		QVector<hnPoint3d> newPoints = 	filterCloudByScore(QVector<hnPoint3d>::fromStdVector(vecPt));
+		QVector<hnPoint3d> newPoints = 	filterCloudByScore(newPoints0);
 		//拟合直线
 		
 		calculateLaneCrossSlop(newPoints, 0.02, 500,k,b,crossSlopePercent);
@@ -488,22 +586,22 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 				pProgress(fProgress, "计算纵坡", false);
 			}
 		}
-		//取五十个点的平均值
-		// 计算纵坡
-		if (i == vecGeoParam.size() - 1)
-		{
-			vecGeoParam[i].dVAngle = vecGeoParam[i - 1].dVAngle;
-		}
-		else
-		{
-			double dx = vecGeoParam[i + 1].pt.x - vecGeoParam[i].pt.x;
-			double dy = vecGeoParam[i + 1].pt.y - vecGeoParam[i].pt.y;
-			double dist = std::sqrt(dx*dx + dy*dy);
-			//double dist = dy;
-			double slope = (vecGeoParam[i + 1].pt.z - vecGeoParam[i].pt.z) / dist;
-			vecGeoParam[i].dVAngle = slope;
-			//vecGeoParam[i].dVAngle = (vecGeoParam[i + 1].pt.z - vecGeoParam[i].pt.z) / (vecGeoParam[i + 1].pt.y - vecGeoParam[i].pt.y);
-		}
+		////取五十个点的平均值
+		//// 计算纵坡
+		//if (i == vecGeoParam.size() - 1)
+		//{
+		//	vecGeoParam[i].dVAngle = vecGeoParam[i - 1].dVAngle;
+		//}
+		//else
+		//{
+		//	double dx = vecGeoParam[i + 1].pt.x - vecGeoParam[i].pt.x;
+		//	double dy = vecGeoParam[i + 1].pt.y - vecGeoParam[i].pt.y;
+		//	double dist = std::sqrt(dx*dx + dy*dy);
+		//	//double dist = dy;
+		//	double slope = (vecGeoParam[i + 1].pt.z - vecGeoParam[i].pt.z) / dist;
+		//	vecGeoParam[i].dVAngle = slope;
+		//	//vecGeoParam[i].dVAngle = (vecGeoParam[i + 1].pt.z - vecGeoParam[i].pt.z) / (vecGeoParam[i + 1].pt.y - vecGeoParam[i].pt.y);
+		//}
 
 	}
 
@@ -557,6 +655,11 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 	return true;
 }
 
+bool hnCalRoadGeometry::calSlope(hnRoadGeoParam& vecGeoParam, double& dSlope)
+{
+	// 
+	return true;
+}
 
 //1.读POS得到经纬度// 加载POS数据至内存
 bool hnCalRoadGeometry::loadPosData(const char* strPosPath, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle))

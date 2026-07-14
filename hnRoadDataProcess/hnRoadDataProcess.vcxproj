@@ -155,7 +155,6 @@
     <ClCompile Include="hnDxfCaculateDialog.cpp" />
     <ClCompile Include="hnDxfInfoPreprocess.cpp" />
     <ClCompile Include="hnImportAidcDiseases.cpp" />
-    <ClCompile Include="hnMagnifySettingDlg.cpp" />
     <ClCompile Include="hnMergeLittleFrameThresholdDlg.cpp" />
     <ClCompile Include="hnMileAdjustDlg.cpp" />
     <ClCompile Include="hnOriginalScalePixShowWidget.cpp" />
@@ -256,7 +255,6 @@
     <QtMoc Include="hnOutputExcelDialog.h" />
     <QtMoc Include="hnStreetWidget.h" />
     <QtMoc Include="hnMileAdjustDlg.h" />
-    <QtMoc Include="hnMagnifySettingDlg.h" />
     <QtMoc Include="hnImportAidcDiseases.h" />
     <QtMoc Include="hnOriginalScalePixShowWidget.h" />
     <QtMoc Include="adjustImageWidget.h" />
@@ -264,6 +262,8 @@
     <QtMoc Include="hnDxfInfoPreprocess.h" />
     <QtMoc Include="hnDiseaseSumAreaCaculate.h" />
     <ClInclude Include="hnOutExcelMile.h" />
+    <ClInclude Include="DrPciCalculator.h" />
+    <ClInclude Include="hnReportProjectInfo.h" />
     <ClInclude Include="hnOutExcelMileManage.h" />
     <QtMoc Include="hnXlsxInterface.h" />
   </ItemGroup>

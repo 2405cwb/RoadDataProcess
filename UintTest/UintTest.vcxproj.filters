@@ -50,6 +50,15 @@
     <ClCompile Include="..\hnRoadDataProcess\VMirror2dRectI.cpp">
       <Filter>test_hnRoadDataProcess\Source</Filter>
     </ClCompile>
+    <ClCompile Include="test_LittleFrameRenderPathBuilder.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="test_DrPciCalculator.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnApplication\LittleFrameRenderPathBuilder.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="test_mergeAidcDiseases.h">
@@ -72,6 +81,12 @@
     </QtMoc>
     <QtMoc Include="..\hnRoadDataProcess\VMirror2dRectI.h">
       <Filter>test_hnRoadDataProcess\Source</Filter>
+    </QtMoc>
+    <QtMoc Include="test_LittleFrameRenderPathBuilder.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="test_DrPciCalculator.h">
+      <Filter>test_hnRoadDataProcess</Filter>
     </QtMoc>
   </ItemGroup>
 </Project>

@@ -42,6 +42,7 @@ public:
 public slots:
 	// 更新所有病害
 	void updateAllDiseases();
+	void clearDiseases();
 public:
 
 	// 添加一个病害
@@ -82,12 +83,12 @@ private:
 
 	bool selectDiseaseByKey(const DiseaseSelectionKey&key);
 signals:
-	void signal_road2dFrameIdxChanged(int frameNum);
+	void signal_road2dFrameIdxChanged(double encoderMile);
 
 	//设置病害进入被选中模式
-	void signal_setDiseaseIsChecked(int id);
+	void signal_setDiseaseIsChecked(const hnRoadDiseaseInfo& disease);
 signals:
-	void signal_road3dFrameIdxChanged(int frameNum);
+	void signal_road3dFrameIdxChanged(double encoderMile);
 signals:
 	void signal_streetFrameIdxChanged(int frameNum);
 
@@ -128,10 +129,10 @@ private slots:
 	
 private:
 	//路面病害跳转
-	void road2dDiseaseJump(const double encoderMile,const int diseaseID);
+	void road2dDiseaseJump(const double encoderMile, const hnRoadDiseaseInfo& disease);
 
 	//三维点云视图跳转
-	void road3dDiseaseJump(const double encoderMile, const int diseaseID);
+	void road3dDiseaseJump(const double encoderMile, const hnRoadDiseaseInfo& disease);
 
 	//景观图片跳转
 	void streetJump(const double encoderMile);

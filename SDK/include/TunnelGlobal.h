@@ -1,90 +1,130 @@
 #ifndef TUNNEL_GLOBAL_H
 #define TUNNEL_GLOBAL_H
 
+#include <QBrush>
+#include <QPainterPath>
 #include <QPen>
 #include <QString>
-#include <QPainterPath>
+#include <QtGlobal>
 #include <QVariantMap>
 
-// 绘图模式枚举
-enum ViewMode {
-    Mode_Browse,    // 浏览模式 (默认)：支持拖拽、滚轮缩放
-    Mode_Draw   ,    // 绘图模式：支持点击画图 (光标变十字)
-	Mode_ExportBox //新增  1680*1680定焦截图模式 
+/* 视图模式 老项目继续用这些名字 */ enum ViewMode {
+    Mode_Browse,
+    Mode_Draw,
+    Mode_ExportBox
 };
 
-// 🟢 布局方向枚举 
-enum class LayoutOrientation {
-    Vertical,   // 纵向 (里程对应 Y)
-    Horizontal  // 横向 (里程对应 X)
+/* 图片序列拼接方向 先覆盖常见正向和反向 */ enum class LayoutOrientation {
+    Vertical,
+    Horizontal,
+    VerticalReverse,
+    HorizontalReverse
 };
 
-enum DrawShape {
-    Shape_Point,   // 点 (渗漏点等)
-    Shape_Line,    // 线 (裂缝等)
-    Shape_Polygon  // 面 (剥落、掉块等)
+struct PackRouteOptions {
+    LayoutOrientation orientation = LayoutOrientation::Vertical;
+    int scrollSpeed = 50;
+    int virtualTileSize = 0;
+    bool hMirrored = false;
+    bool vMirrored = false;
+    bool verifyOnOpen = false;
 };
 
-enum ElementType {
-	Type_Cp3,	   // 里程桩
-	Type_Chain,    // 长短链
-	Type_Disease,  // 病害
-	Type_Ring,     // 环片
-	Type_Section,   // 断面
-	Type_Platform,   // 站台
-	Type_AUTORING,	// 自动识别环片，点击起始，终止位置	
+struct PackRouteFrameInfo {
+    QString imageName;
+    quint64 globalIndex = 0;
+    quint64 sourceIndex = 0;
+    quint64 timeValue = 0;
+    int width = 0;
+    int height = 0;
 };
 
-struct DbImageInfo {
-	QString dbFilePath;   // 数据库文件的绝对路径
-	QString originalName; // 原始图片名称
-	int width;            // 大图总宽
-	int height;           // 大图总高
-	int tileSize;         // 切片尺寸 (2048) 
+/* 判断当前布局是不是纵向 */ inline bool isVerticalLayout(LayoutOrientation orientation)
+{
+    return orientation == LayoutOrientation::Vertical
+        || orientation == LayoutOrientation::VerticalReverse;
+}
+
+/* 判断当前布局是不是反向 */ inline bool isReverseLayout(LayoutOrientation orientation)
+{
+    return orientation == LayoutOrientation::VerticalReverse
+        || orientation == LayoutOrientation::HorizontalReverse;
+}
+
+/* SDK 核心只认基础几何 业务名称放到外层解释 */ enum DrawShape {
+    Shape_Point,
+    Shape_Line,
+    Shape_Polygon
 };
 
-// 🟢 业务病害类型配置结构体
-struct DefectTypeConfig {
-    DefectTypeConfig()
-        : defaultShape(Shape_Line), defectCode(0) {}
+/* 旧业务元素类型 先保留兼容 新项目建议用 category 或 attributes */ enum ElementType {
+    Type_Cp3,
+    Type_Chain,
+    Type_Disease,
+    Type_Ring,
+    Type_Section,
+    Type_Platform,
+    Type_AUTORING,
+    Type_CustomOverlay
+};
 
-    DefectTypeConfig(int code, const QString& name, const DrawShape shape,
-        const QPen& defectPen, const QBrush& defectBrush)
-        : defaultShape(shape), defectCode(code), typeName(name),
-          pen(defectPen), brush(defectBrush) {}
+/* 一段图片的基础信息 dbFilePath 现在也可以放普通图片路径 */ struct DbImageInfo {
+    QString dbFilePath;
+    QString originalName;
+    int width = 0;
+    int height = 0;
+    int tileSize = 2048;
+};
 
-    DefectTypeConfig(int code, const QString& name, const DrawShape shape,
-        const QPen& defectPen, const QBrush& defectBrush, const QString&)
-        : defaultShape(shape), defectCode(code), typeName(name),
-          pen(defectPen), brush(defectBrush) {}
+/* 标注类型配置 只描述形状和样式 不绑定具体行业 */ struct AnnotationTypeConfig {
+    /* 没传配置时 默认按黄色线处理 */ AnnotationTypeConfig()
+        : defaultShape(Shape_Line), typeCode(0), defectCode(0) {}
 
-    DefectTypeConfig(int code, const QString& name,
-        const QPen& defectPen, const QBrush& defectBrush)
-        : defaultShape(Shape_Line), defectCode(code), typeName(name),
-          pen(defectPen), brush(defectBrush) {}
+    /* 常用构造 业务编码 名称 默认形状 样式 */ AnnotationTypeConfig(int code, const QString& name, const DrawShape shape,
+        const QPen& annotationPen, const QBrush& annotationBrush)
+        : defaultShape(shape), typeCode(code), defectCode(code), typeName(name),
+          pen(annotationPen), brush(annotationBrush) {}
+
+    /* 兼容旧调用 多出来的 remark 放进 attributes */ AnnotationTypeConfig(int code, const QString& name, const DrawShape shape,
+        const QPen& annotationPen, const QBrush& annotationBrush, const QString& remark)
+        : defaultShape(shape), typeCode(code), defectCode(code), typeName(name),
+          pen(annotationPen), brush(annotationBrush) {
+        attributes.insert("remark", remark);
+    }
+
+    /* 兼容旧调用 没传形状时默认线 */ AnnotationTypeConfig(int code, const QString& name,
+        const QPen& annotationPen, const QBrush& annotationBrush)
+        : defaultShape(Shape_Line), typeCode(code), defectCode(code), typeName(name),
+          pen(annotationPen), brush(annotationBrush) {}
 
     DrawShape defaultShape;
-    int defectCode;          // 业务代码 (例如：101代表纵向裂缝, 301代表掉块)
-    QString typeName;        // 名称 
-    // DrawShape defaultShape;  // 该病害对应的默认几何类型 (画线还是画面)
-    QPen pen;                // 外框样式 (控制颜色、粗细、实线/虚线)
-    QBrush brush;            // 填充样式 (控制填充颜色和透明度)
-    //QString mark;            //病害说明
+    int typeCode;
+    int defectCode;
+    QString typeKey;
+    QString typeName;
+    QPen pen;
+    QBrush brush;
+    QVariantMap attributes;
 };
 
-struct DefectData {
-	int uuid;
-	QString name;
-	DrawShape type;
-	QPainterPath shape; // 如果包含 path，记得 include <QPainterPath> 
-	int defectCode = 0;     // 💥 新增：业务病害代码
+/* 老名字保留 新代码可以用 AnnotationTypeConfig */ using DefectTypeConfig = AnnotationTypeConfig;
 
-	QVariantMap attributes; // 💥 核心扩展点：万能属性包
+/* 一条标注的纯数据 业务字段统一放 attributes */ struct AnnotationData {
+    int uuid = 0;
+    QString name;
+    DrawShape type = Shape_Line;
+    QPainterPath shape;
+    int typeCode = 0;
+    int defectCode = 0;
+    QString category;
+    QVariantMap attributes;
 };
 
-enum ExportQuality {
-	Export_Thumbnail, // 极速导出缩略图 (速度快，适合概览)
-	Export_HighRes    // 纯血无损高清拼接导出 (读取 1:1 硬盘切片，适合报告)
+/* 老名字保留 新代码可以用 AnnotationData */ using DefectData = AnnotationData;
+
+/* 导出质量 缩略图快 高清图准 */ enum ExportQuality {
+    Export_Thumbnail,
+    Export_HighRes
 };
 
-#endif // TUNNEL_TYPES_H
+#endif // TUNNEL_GLOBAL_H

@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <QMenu>
 #include <QResizeEvent>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QTableWidget>
 projectView::projectView(QWidget *parent)
 	: QWidget(parent)
 {
@@ -57,6 +60,25 @@ projectView::~projectView()
 
 }
 
+void projectView::clearProjectInfo()
+{
+	for (QLineEdit* lineEdit : findChildren<QLineEdit*>())
+	{
+		lineEdit->clear();
+	}
+	for (QTableWidget* tableWidget : findChildren<QTableWidget*>())
+	{
+		tableWidget->clearContents();
+		tableWidget->setRowCount(0);
+	}
+	for (QComboBox* comboBox : findChildren<QComboBox*>())
+	{
+		if (comboBox->count() > 0)
+		{
+			comboBox->setCurrentIndex(0);
+		}
+	}
+}
 void projectView::slot_updateProjectSetting(hnCommon::hnProjectSetInfo setting, QVector<hnCommon::hnMarkInfo> marks, QVector<hnCommon::hnMilePile> pile)
 {
 #pragma region 加载工程信息
@@ -154,7 +176,7 @@ void projectView::slot_updateProjectSetting(hnCommon::hnProjectSetInfo setting, 
 
 void projectView::slot_doubleClickTableVidgetItem(QTableWidgetItem * item)
 {
-	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	if (!item)
 	{
 		return;
 	}
@@ -169,9 +191,18 @@ void projectView::slot_doubleClickTableVidgetItem(QTableWidgetItem * item)
 		QString firstColumnValue = firstItem->text();
 		mile = firstColumnValue.toDouble();
 	}
+
+	if (item->tableWidget() == ui.markTableWidget)
+	{
+		const int markId = firstItem ? firstItem->data(Qt::UserRole).toInt() : -1;
+		const double trueMile = firstItem ? firstItem->data(Qt::UserRole + 1).toDouble() : mile;
+		const double encoderMile = firstItem ? firstItem->data(Qt::UserRole + 2).toDouble() : -1.0;
+		emit signal_jumpToMark(markId, trueMile, encoderMile);
+		return;
+	}
+
 	emit signal_jumpToMile(mile);
 }
-
 void projectView::slot_MarkComboxIndexChanged(int index)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
@@ -316,6 +347,7 @@ void projectView::slot_addMarkClicked()
 	double curMile = ui.lineEdit_16->text().toDouble();
 	double dmi = hnApp::hnDataManager::getDataManager()->getCurrentProject()->trueMileToEncl(curMile);
 	currentMarkInfo.dTrueMile = curMile;
+	currentMarkInfo.dEnclMile = dmi;
 	currentMarkInfo.nType = markType;
 	currentMarkInfo.dGpsTimer = -1;
 	std::string s1 = text.toLocal8Bit().toStdString();
@@ -323,12 +355,11 @@ void projectView::slot_addMarkClicked()
 	QApplication::setOverrideCursor(Qt::WaitCursor);
 	if (std::find(marks.begin(), marks.end(), currentMarkInfo) == marks.end())
 	{
-
-
-		marks.push_back(currentMarkInfo);
+		bool needUpdateAll = hnApp::hnDataManager::getDataManager()->getCurrentProject()->addMark(currentMarkInfo);
+		marks = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector();
 		updateMarkFrom(marks, isUp);
 
-		if (hnApp::hnDataManager::getDataManager()->getCurrentProject()->addMark(currentMarkInfo))
+		if (needUpdateAll)
 		{
 			emit signal_updateAllWidget(); 
 		}
@@ -538,6 +569,8 @@ void projectView::updateMarkFrom( QVector<hnCommon::hnMarkInfo>& marks,bool isUp
 			QTableWidgetItem* item0 = new QTableWidgetItem(row[0]);
 			item0->setFlags(item0->flags() & ~Qt::ItemIsEditable);
 			item0->setData(Qt::UserRole, mark.nID);
+			item0->setData(Qt::UserRole + 1, mark.dTrueMile);
+			item0->setData(Qt::UserRole + 2, mark.dEnclMile);
 			QTableWidgetItem* item1 = new QTableWidgetItem(row[1]);
 			item1->setFlags(item0->flags() & ~Qt::ItemIsEditable);
 			QTableWidgetItem* item2 = new QTableWidgetItem(row[2]);

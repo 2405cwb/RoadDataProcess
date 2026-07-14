@@ -1,25 +1,34 @@
-#pragma once 
-// 存储抽象接口
+#pragma once
+
 #include "TunnelGlobal.h"
+#include <QList>
+
 class IDefectStorage {
 public:
-    virtual ~IDefectStorage() = default;
-
-    // --- 批量操作 (用于初始化加载) ---
-    virtual QList<DefectData> loadAll(const QString& uri) = 0;
-    virtual bool saveAll(const QList<DefectData>& defects, const QString& uri) = 0;
-
-    // --- 🟢 增量操作 (用于日常自动保存) ---
-    // 默认返回 true，如果具体的存储类不打算实现增量（比如极端简单的格式），就降级处理
-    virtual bool addOne(const DefectData& defect, const QString& uri) { return true; }
-    virtual bool deleteOne(const QString& uuid, const QString& uri) { return true; }
-    virtual bool updateOne(const DefectData& defect, const QString& uri) { return true; }
-
-    // ==========================================
-    // 🟢  按里程区间加载 
-    // ==========================================
-    virtual QList<DefectData> loadByRange(const QString& uri, double startMile, double endMile) {
-         
+    /* 存储接口由外部实现 所以析构必须 virtual */ virtual ~IDefectStorage() = default;
+    /* 全量读取当前连接里的标注 */ virtual QList<DefectData> loadAll(const QString& uri) = 0;
+    /* 全量保存当前标注 */ virtual bool saveAll(const QList<DefectData>& defects, const QString& uri) = 0;
+    /* 增量新增一条 默认成功 简单存储可以不实现 */ virtual bool addOne(const DefectData& defect, const QString& uri) {
+        Q_UNUSED(defect);
+        Q_UNUSED(uri);
+        return true;
+    }
+    /* 增量删除一条 默认成功 简单存储可以不实现 */ virtual bool deleteOne(const QString& uuid, const QString& uri) {
+        Q_UNUSED(uuid);
+        Q_UNUSED(uri);
+        return true;
+    }
+    /* 增量更新一条 默认成功 简单存储可以不实现 */ virtual bool updateOne(const DefectData& defect, const QString& uri) {
+        Q_UNUSED(defect);
+        Q_UNUSED(uri);
+        return true;
+    }
+    /* 按线性范围加载 参数名先兼容旧 mile 叫法 */ virtual QList<DefectData> loadByRange(const QString& uri, double startMile, double endMile) {
+        Q_UNUSED(uri);
+        Q_UNUSED(startMile);
+        Q_UNUSED(endMile);
         return QList<DefectData>();
     }
 };
+
+/* 新代码可以用 IAnnotationStorage 老代码继续用 IDefectStorage */ using IAnnotationStorage = IDefectStorage;

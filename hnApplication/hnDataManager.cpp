@@ -8,6 +8,7 @@
 #include <QDebug>
 #include "..\hnConfigService\HnXRSettings.h"
 #include <sstream>
+#include <cmath>
 #include "..\hnProject\hn3DProject.h"
 #include <QSettings>
 //using namespace hnDataTable; 
@@ -386,7 +387,7 @@ namespace hnApp
 			dbSqlitInfo.m_roadTypeSetTable.readData(vecRoadTypeSetInfo);
 			dbSqlitInfo.m_diseaseSetTable.readData(vecRoadDiseaseInfo);
 
-			if (vecRoadDiseaseInfo.size() <= 0 || vecRoadDiseaseInfo.size() <= 0)
+			if (vecRoadTypeSetInfo.size() <= 0 || vecRoadDiseaseInfo.size() <= 0)
 			{
 				continue;
 			}
@@ -400,6 +401,37 @@ namespace hnApp
 			listValue = vecDBName[i].split(".");
 			strDBPath = listValue[0];
 			HnProjectEnums::StandardParmTypeEnum type = HnProjectEnums::roadTypeQStringToEnum(strDBPath);
+
+			// The same standard/level/surface must use identical PCI coefficients in
+			// manual and automatic modes. A mismatch makes selection order-dependent.
+			for (int first = 0; first < vecRoadTypeSetInfo.size(); ++first)
+			{
+				const hnRoadTypeSetInfo& current = vecRoadTypeSetInfo[first];
+				if ((type == HnProjectEnums::DegreeRoad2018 || type == HnProjectEnums::RuralRoadlowLevel) &&
+					(!std::isfinite(current.dPCI_a0) || !std::isfinite(current.dPCI_a1) ||
+					current.dPCI_a0 <= 0.0 || current.dPCI_a1 <= 0.0))
+				{
+					qCritical() << "Invalid PCI coefficients in" << vecDBName[i]
+						<< current.nRoadLevel << current.nRSurfaceType << current.nDrawType;
+					return false;
+				}
+				for (int second = first + 1; second < vecRoadTypeSetInfo.size(); ++second)
+				{
+					const hnRoadTypeSetInfo& candidate = vecRoadTypeSetInfo[second];
+					if (strcmp(current.nRoadLevel, candidate.nRoadLevel) != 0 ||
+						current.nRSurfaceType != candidate.nRSurfaceType)
+					{
+						continue;
+					}
+					if (std::fabs(current.dPCI_a0 - candidate.dPCI_a0) > 1e-6 ||
+						std::fabs(current.dPCI_a1 - candidate.dPCI_a1) > 1e-6)
+					{
+						qCritical() << "Inconsistent PCI coefficients in" << vecDBName[i]
+							<< current.nRoadLevel << current.nRSurfaceType;
+						return false;
+					}
+				}
+			}
 			m_vecRoadStandard.push_back(type);
 			
 			m_mapDiseaseSetInfo[type] = vecRoadDiseaseInfo;
@@ -561,63 +593,64 @@ namespace hnApp
 
 	}
 
-	bool hnDataManager::getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard, QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, hnRoadTypeSetInfo& roadTypeSetInfo)
+	bool hnDataManager::getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard,
+		QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, hnRoadTypeSetInfo& roadTypeSetInfo)
 	{
-
-		if (!m_mapDiseaseSetInfo.count(strRoadStandard))
+		ROAD_WORK_TYPE drawType = ROAD_WORK_LARGE_RECT;
+		if (m_pCurProject)
 		{
-			return false;
+			drawType = m_pCurProject->getBaseDrawType();
 		}
-		vector<hnRoadTypeSetInfo> allRoadTypeSetinfo = 	m_mapRoadTypeSetInfo.at(strRoadStandard);
-		// 获取道路设置参数
-		for (int i = 0; i <allRoadTypeSetinfo.size(); i++)
-		{
-			if (strRoadLevel != QString::fromLocal8Bit(allRoadTypeSetinfo[i].nRoadLevel) )
-			{
-				continue;
-			}
-
-			if (nRoadSurfaceType != allRoadTypeSetinfo[i].nRSurfaceType)
-			{
-				continue;
-			}
-
-			roadTypeSetInfo = allRoadTypeSetinfo[i];
-			return true;
-		}
-
-		return false;
+		return getRoadTypeSetInfo(strRoadStandard, strRoadLevel, nRoadSurfaceType,
+			drawType, roadTypeSetInfo);
 	}
 
-	bool hnDataManager::getRoadTypeSetInfo(const hnProjectSetInfo& settingInfo, hnRoadTypeSetInfo& roadTypeSetInfo)
-	{    
-		hnCommon::ROAD_WORK_TYPE drawType = (hnCommon::ROAD_WORK_TYPE) settingInfo.nDrawType;
-		auto strRoadStandard = HnProjectEnums::roadTypeQStringToEnum(settingInfo.strRoadStandard);
-		QString strRoadLevel = QString::fromLocal8Bit(settingInfo.strRoadLevel) ;
-		auto  nRoadSurfaceType = settingInfo.nRSurfaceType;
-		if (!m_mapDiseaseSetInfo.count(strRoadStandard))
+	bool hnDataManager::getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard,
+		QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, ROAD_WORK_TYPE nDrawType,
+		hnRoadTypeSetInfo& roadTypeSetInfo)
+	{
+		auto mapIt = m_mapRoadTypeSetInfo.find(strRoadStandard);
+		if (mapIt == m_mapRoadTypeSetInfo.end())
 		{
 			return false;
 		}
-		vector<hnRoadTypeSetInfo> allRoadTypeSetinfo = m_mapRoadTypeSetInfo.at(strRoadStandard);
-		// 获取道路设置参数
-		for (int i = 0; i < allRoadTypeSetinfo.size(); i++)
+		// Design-mode road-type parameters share the manual-mode coefficients.
+		const int requestedDrawType = nDrawType == DESIGN ? ROAD_WORK_LARGE_RECT : nDrawType;
+		const vector<hnRoadTypeSetInfo>& settings = mapIt->second;
+		const hnRoadTypeSetInfo* compatibleFallback = NULL;
+		for (int i = 0; i < settings.size(); ++i)
 		{
-			if (strRoadLevel != QString::fromLocal8Bit(allRoadTypeSetinfo[i].nRoadLevel))
+			if (strRoadLevel != QString::fromLocal8Bit(settings[i].nRoadLevel) ||
+				nRoadSurfaceType != settings[i].nRSurfaceType)
 			{
 				continue;
 			}
-
-			if (nRoadSurfaceType != allRoadTypeSetinfo[i].nRSurfaceType)
+			if (!compatibleFallback)
 			{
-				continue;
+				compatibleFallback = &settings[i];
 			}
-
-			roadTypeSetInfo = allRoadTypeSetinfo[i];
+			if (requestedDrawType == settings[i].nDrawType)
+			{
+				roadTypeSetInfo = settings[i];
+				return true;
+			}
+		}
+		// Some standards store one shared parameter row for both work modes.
+		// initRoadStandardInfo() has already verified that duplicate rows agree.
+		if (compatibleFallback)
+		{
+			roadTypeSetInfo = *compatibleFallback;
 			return true;
 		}
-
 		return false;
+	}
+	bool hnDataManager::getRoadTypeSetInfo(const hnProjectSetInfo& settingInfo, hnRoadTypeSetInfo& roadTypeSetInfo)
+	{
+		const ROAD_WORK_TYPE drawType = static_cast<ROAD_WORK_TYPE>(settingInfo.nDrawType);
+		const HnProjectEnums::StandardParmTypeEnum standard =
+			HnProjectEnums::roadTypeQStringToEnum(settingInfo.strRoadStandard);
+		return getRoadTypeSetInfo(standard, QString::fromLocal8Bit(settingInfo.strRoadLevel),
+			static_cast<ROAD_SURFACE_TYPE>(settingInfo.nRSurfaceType), drawType, roadTypeSetInfo);
 	}
 
 	// 根据指定道路类型的病害表集合信息
@@ -1989,7 +2022,9 @@ namespace hnApp
 		} 
 		else if (drawType == 1)
 		{
-			//自动化模式
+			// 自动化小框：面积按小方格数量计算；计算长宽默认沿用最大外接矩形真实长宽。
+			calcwidth = realwidth;
+			calcheight = realheight;
 			dis.dArea = dis.vec2dRect.size() * 0.1*0.1;
 		} 
 		else

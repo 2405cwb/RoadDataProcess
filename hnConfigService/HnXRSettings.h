@@ -195,6 +195,5 @@ public:
 
 	   QString diseaseMarkTxt;
 
-	   bool wheelScrollOneImage;
 };
  

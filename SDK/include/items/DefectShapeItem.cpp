@@ -130,7 +130,7 @@ void DefectShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* o
 		// 设置感应区间
 		QPainterPathStroker stroker;
 		stroker.setWidth(50);
-		path() = stroker.createStroke(path());
+		/* path() 返回临时值 不能直接赋值 要改图形本体就走 setPath */ setPath(stroker.createStroke(path()));
 	}
 
     painter->drawPath(path());

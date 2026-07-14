@@ -75,8 +75,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;include;src;release;opencv480\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>-Zc:strictStrings -Zc:throwingNew -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;include;src;release;opencv480\include;..\DiskStressDemo\code\PackSdk;..\DiskStressDemo\code\PackSdk\qt;$(QTDIR)\include\QtSql;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 -Zc:strictStrings -Zc:throwingNew -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
       <DebugInformationFormat>None</DebugInformationFormat>
@@ -99,9 +99,12 @@
     <Lib>
       <OutputFile>$(OutDir)\TunnelViewerSDK.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\Program Files (x86)\Visual Leak Detector\lib\Win64;%(AdditionalLibraryDirectories);opencv480\bin</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opencv_world480.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);opencv480\bin;..\DiskStressDemo\bin\Release-x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world480.lib;PackSdk.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Lib>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)..\DiskStressDemo\bin\Release-x64\PackSdk.dll" "$(OutDir)PackSdk.dll"</Command>
+    </PostBuildEvent>
     <Midl>
       <DefaultCharType>Unsigned</DefaultCharType>
       <EnableErrorChecks>None</EnableErrorChecks>
@@ -121,8 +124,8 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;include;src;debug;opencv480\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>-Zc:strictStrings -Zc:throwingNew -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;include;src;debug;opencv480\include;..\DiskStressDemo\code\PackSdk;..\DiskStressDemo\code\PackSdk\qt;$(QTDIR)\include\QtSql;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 -Zc:strictStrings -Zc:throwingNew -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -143,9 +146,12 @@
     <Lib>
       <OutputFile>$(OutDir)\TunnelViewerSDK.lib</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);opencv480\bin</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opencv_world480d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);opencv480\bin;..\DiskStressDemo\bin\Debug-x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world480d.lib;PackSdk.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Lib>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)..\DiskStressDemo\bin\Debug-x64\PackSdk.dll" "$(OutDir)PackSdk.dll"</Command>
+    </PostBuildEvent>
     <Midl>
       <DefaultCharType>Unsigned</DefaultCharType>
       <EnableErrorChecks>None</EnableErrorChecks>
@@ -166,6 +172,7 @@
   <ItemGroup>
     <ClCompile Include="include\items\DefectShapeItem.cpp" />
     <ClCompile Include="src\AsyncImageLoader.cpp" />
+    <ClCompile Include="src\GridSelectionTool.cpp" />
     <ClCompile Include="src\TiledGraphicsView.cpp" />
     <ClCompile Include="src\TunnelSectionItem.cpp" />
     <ClCompile Include="src\TunnelViewerController.cpp" />
@@ -175,9 +182,13 @@
     <ClInclude Include="include\AbstractTileSource.h" />
     <QtMoc Include="include\DefectManager.h" />
     <ClInclude Include="include\IDefectStorage.h" />
+    <ClInclude Include="include\PackImageTileSource.h" />
+    <ClInclude Include="include\WholeImageSourceFactory.h" />
+    <ClInclude Include="include\WholeImageTileSource.h" />
     <QtMoc Include="include\items\DefectShapeItem.h" />
     <ClInclude Include="include\tools\AbstractTool.h" />
     <ClInclude Include="include\tools\DefectDrawTool.h" />
+    <ClInclude Include="include\tools\GridSelectionTool.h" />
     <ClInclude Include="include\TunnelGlobal.h" />
     <QtMoc Include="src\TunnelViewerController.h" />
     <QtMoc Include="src\AsyncImageLoader.h" />

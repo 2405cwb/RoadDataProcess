@@ -144,6 +144,8 @@ public:
 	// 根据输入的时间以及采样间距计算出相应位置横坡、纵坡以及曲率半径
 	bool calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam, double dDist, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle) = NULL);
 
+	bool calSlope(hnRoadGeoParam& vecGeoParam, double& dSlope);
+
 private:
 	//1.读POS得到经纬度// 加载POS数据至内存
 	bool loadPosData(const char* strPosPath, bool(*pProgress)(float fVal, const char* qstrName, bool bCancle) = NULL);

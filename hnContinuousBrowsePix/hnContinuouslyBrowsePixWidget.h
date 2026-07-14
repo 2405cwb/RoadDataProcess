@@ -23,9 +23,9 @@
 
 
 #include <QWidget>
-#include <QScrollBar>
 #include <QDebug>
 #include <QLabel>
+#include <QLineEdit>
 #include <QFile>
 #include <QDir>
 #include <QHBoxLayout>
@@ -37,7 +37,6 @@
 #include <QResizeEvent>
 #include <QRectF>
 #include "hnBrowsePixWidget.h"
-#include "CustomScrollBar.h"
 #include <QPushButton>
 #include "..\hnConfigService\HnXRSettings.h"
 #include <QCheckBox>
@@ -58,16 +57,6 @@ public:
 protected:
 	//设置浏览图片的视图 依赖注入
 	void setBrowsePixWidget(hnBrowsePixWidget *browsePixWidget,bool showToolBar);
-	
-	//获取当前滚动条的值
-	int getCurrentScrollBarValue();
-
-public:
-	//设置当前滚动条的值
-	void setCurrentScrollBarValue(const int value);
-
-	//获取滚动条的最大值
-	int getMaxScrollBarValue();
 
 public:
 	//加载图片
@@ -91,23 +80,15 @@ private:
 	//信号槽初始化
 	void initSigSlot();
 
-	//添加滚轮滚动方式选项
-	void addWheelScrollStepOption(QHBoxLayout* toolBarLayout);
 
 //信号
 signals:
 	//信号：发送等比例显示窗口image
 	void sig_mousePosImageChanged(QImage image);
 
-signals:
-	void signal_scrollValueChanged(int value);
-
 //槽函数
 public slots:
-	void slot_setScrollBarMaxValue(int maxValue);
 
-	//槽函数  根据显示窗口底部帧序号，对应设置滚动条的值 这里帧序号从0开始
-	void slot_updateScrollBarValue(int buttomFrameIdx);
 	void slot_setSelectedDiseaseId(int id);
 
 	void slot_updateBrowser();
@@ -144,7 +125,6 @@ signals:
 	void signal_enterWidget();
 	void signal_moveMouse(bool up,bool is2D);
 signals:
-	void signal_scrollBarLeftouseRelease();
 #pragma endregion
 protected:
 	//记录桩号变化的文本框
@@ -171,7 +151,6 @@ protected:
 	//是否显示高精度定位
 	QCheckBox * showGpsBtn;
 
-	QCheckBox* wheelOneImageChechBox = nullptr;
 
 	//开启矩形框
 	QPushButton * diseaseRectShowBtn;
@@ -187,9 +166,6 @@ private:
 public:
 	//显示图片的label
 	hnBrowsePixWidget *m_browsePixWidget;
-	//滚动条
-	CustomScrollBar *m_scrollbar;
-
 	// 自动滚动标志
 	bool m_autoPlay;
 

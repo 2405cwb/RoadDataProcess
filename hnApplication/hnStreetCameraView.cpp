@@ -67,6 +67,9 @@ namespace hnApp
 
 		//添加病害模式
 		m_workMode = WorkMode::ADD_MODE;
+		m_originalWidgetWidth = 320;
+		m_originalWidgetHeight = 240;
+		m_pictureInterval = 1.0;
 		connect(hnApp::hnDataManager::getDataManager()->getDiseaseService(),
 			SIGNAL(diseaseChanged()), this, SLOT(slotStreetDiseaseChanged()));
 	}
@@ -448,20 +451,13 @@ namespace hnApp
 		update();
 #endif
 
-		if (m_listImage.size() > m_nCurImageDmi)
+		// m_nCurImageDmi is a travelled distance, not a list index. Use the
+		// already loaded clean image so all frames and rotations share paint coordinates.
+		if (!m_sourceImageWithoutDisease.isNull())
 		{
-			QString pixName;
-			pixName = m_listImage.at(m_nCurImageDmi);
-			QImage image(pixName);
-			if (true == image.isNull())
-			{
-				return;
-			}
-
-			//更新原始比例窗口
-			QImage originalImage = this->getOriginalImage(event->pos(), image, m_originalWidgetWidth, m_originalWidgetHeight);
-
-			sig_mousePosImageChanged(originalImage);
+			QImage originalImage = this->getOriginalImage(event->pos(),
+				m_sourceImageWithoutDisease, m_originalWidgetWidth, m_originalWidgetHeight);
+			emit sig_mousePosImageChanged(originalImage);
 		}
 
 	}
@@ -644,12 +640,13 @@ namespace hnApp
 			transform.rotate(90);
 			transform.translate(-imageTemp.width() / 2.0, -imageTemp.height() / 2.0);//移回原点 
 			QImage rotatedImage = imageTemp.transformed(transform, Qt::SmoothTransformation);
-			//*m_LoadPic = QPixmap::fromImage(rotatedImage.scaled(QSize(rotatedImage.width(), rotatedImage.height()), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-			*m_LoadPic = QPixmap::fromImage(rotatedImage);
+			m_sourceImageWithoutDisease = rotatedImage;
+			*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
 		}
 		else
 		{
-			*m_LoadPic = QPixmap::fromImage(imageTemp.scaled(QSize(imageTemp.width(), imageTemp.height()), Qt::KeepAspectRatio));
+			m_sourceImageWithoutDisease = imageTemp;
+			*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
 		} 
 		//图片大小设置
 		if (m_bFirstLoadImage)
@@ -687,7 +684,7 @@ namespace hnApp
 	{
 
 		//行驶距离/图片间隔
-		int curIdx = nImageIndex / m_pictureInterval;
+		int curIdx = qRound(nImageIndex / m_pictureInterval);
 		if (curIdx < 0 || curIdx >= m_listImage.size())
 		{
 			return false;
@@ -707,10 +704,23 @@ namespace hnApp
 	}
 
 	//清空信息
+    QString hnStreetCameraView::currentImagePath() const
+    {
+        if (m_listImage.isEmpty() || m_pictureInterval <= 0.0)
+        {
+            return QString();
+        }
+
+        int curIdx = qRound(m_nCurImageDmi / m_pictureInterval);
+        curIdx = qBound(0, curIdx, m_listImage.size() - 1);
+        return m_listImage.value(curIdx);
+    }
+
 	void hnStreetCameraView::clear()
 	{
 
 		//清空图片
+		m_sourceImageWithoutDisease = QImage();
 		if (m_LoadPic)
 		{
 			delete m_LoadPic;

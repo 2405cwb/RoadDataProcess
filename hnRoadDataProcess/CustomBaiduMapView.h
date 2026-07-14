@@ -47,8 +47,13 @@ signals:
 	void onClearClicked();
 	void onAddMarkClicked();
 	void onShowStartClicked();
+	void clearMapData();
 	 
-	void captureScreenshot(); 
+	void captureScreenshot();
+
+public:
+	void shutdownWebEngine();
+
 private:
 	 
 	void setupUI();
@@ -59,7 +64,7 @@ private:
 
 	//µØÍ¼¿Ø¼þ
 	QWebEngineView * m_webView;
-	QWebChannel * m_webChannel;
+	QWebChannel * m_webChannel = nullptr;
 	QLineEdit * m_coordEdit; 
 	QLineEdit * m_tagEdit;
 	    

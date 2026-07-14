@@ -1,8 +1,12 @@
 ﻿#include "AsyncImageLoader.h"
+#include "PackImageTileSource.h"
+#include "PackReaderQt.h"
 #include <QtConcurrent>
 #include <QThread>
 #include <QMetaObject>
 #include <QApplication>
+#include <QDebug>
+#include <QDir>
 #include <QImageReader>
 #include <QTimer>
 #include <QPointer>
@@ -10,9 +14,102 @@
 #include <QSqlQuery>
 #include <QHash>
 #include <QList>
+#include <QFileInfo>
+#include <QSharedPointer>
+
+#include <stdexcept>
 
 namespace {
 	const int kMaxSqlConnectionsPerThread = 32;
+
+	struct PackReaderSlot {
+		QSharedPointer<PackReaderQt> reader;
+		QMutex mutex;
+	};
+
+	QSharedPointer<PackReaderSlot> packReaderSlotForRoot(const QString& packRoot)
+	{
+		static QMutex cacheMutex;
+		static QHash<QString, QSharedPointer<PackReaderSlot> > cache;
+
+		const QString root = QFileInfo(packRoot).absoluteFilePath();
+		QMutexLocker locker(&cacheMutex);
+		if (!cache.contains(root)) {
+			QSharedPointer<PackReaderSlot> slot(new PackReaderSlot);
+			slot->reader.reset(new PackReaderQt(root));
+			cache.insert(root, slot);
+		}
+		return cache.value(root);
+	}
+
+	bool isTileDatabasePath(const QString& path)
+	{
+		return QFileInfo(path).suffix().compare("db", Qt::CaseInsensitive) == 0;
+	}
+
+	QImage loadImageFromPackUri(const QString& uri, const QSize& targetSize)
+	{
+		QString packRoot;
+		quint64 globalIndex = 0;
+		if (!PackImageTileSource::parsePackFrameUri(uri, &packRoot, &globalIndex)) {
+			return QImage();
+		}
+		if (!QFileInfo(QDir(packRoot).filePath("PackIndex.idx")).exists()) {
+			qWarning() << "Pack v2 index not found:" << packRoot;
+			return QImage();
+		}
+
+		try {
+			QSharedPointer<PackReaderSlot> slot = packReaderSlotForRoot(packRoot);
+			QByteArray jpegBytes;
+			{
+				QMutexLocker readerLocker(&slot->mutex);
+				jpegBytes = slot->reader->readJpeg(globalIndex);
+			}
+
+			QImage img;
+			img.loadFromData(jpegBytes, "JPG");
+			if (!img.isNull() && targetSize.isValid()) {
+				img = img.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+			}
+			return img;
+		}
+		catch (const std::exception& ex) {
+			qWarning() << "Pack image read failed:" << uri << QString::fromLocal8Bit(ex.what());
+			return QImage();
+		}
+	}
+
+	QImage loadImageFromFile(const QString& path, const QSize& targetSize)
+	{
+		QImageReader reader(path);
+		reader.setAutoTransform(true);
+		if (targetSize.isValid()) {
+			const QSize srcSize = reader.size();
+			if (srcSize.isValid()) {
+				reader.setScaledSize(srcSize.scaled(targetSize, Qt::KeepAspectRatio));
+			}
+		}
+		return reader.read();
+	}
+
+	void applyBrightness(QImage& img, int br)
+	{
+		if (br == 0 || img.isNull()) return;
+		if (img.format() != QImage::Format_RGB888) {
+			img = img.convertToFormat(QImage::Format_RGB888);
+		}
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+		int totalBytes = img.sizeInBytes();
+#else
+		int totalBytes = img.byteCount();
+#endif
+		uchar* bits = img.bits();
+		for (int i = 0; i < totalBytes; ++i) {
+			int val = bits[i] + br;
+			bits[i] = (val < 0) ? 0 : (val > 255 ? 255 : val);
+		}
+	}
 
 	QSqlDatabase databaseForCurrentThread(const QString& dbPath, const QString& prefix)
 	{
@@ -61,12 +158,14 @@ namespace {
 	}
 }
 
+// 单例入口，所有图层共享缓存和线程池。
 AsyncImageLoader* AsyncImageLoader::instance()
 {
 	static AsyncImageLoader inst;
 	return &inst;
 }
 
+// 初始化两套缓存：高清图一套，缩略图一套，避免互相挤掉。
 AsyncImageLoader::AsyncImageLoader()
 {
 	// 高清图缓存：100 MB = 100 * 1024 KB
@@ -79,6 +178,7 @@ AsyncImageLoader::AsyncImageLoader()
 	QPointer<QObject> guard(this);
 }
 
+// 保存亮度偏移值，后续新加载的图会按这个值处理。
 void AsyncImageLoader::setBrightness(int value)
 {
 	m_brightness = value;
@@ -87,11 +187,13 @@ void AsyncImageLoader::setBrightness(int value)
 	// m_cache.clear();
 }
 
+// 返回当前亮度设置，主要给外部状态栏或调试用。
 int AsyncImageLoader::brightness() const
 {
 	return m_brightness;
 }
 
+// 只查缓存，不做磁盘读取；绘制函数里调用它不会拖慢界面。
 QPixmap AsyncImageLoader::getSyncThumbnail(const QString& pathUri)
 {
 	int br = m_brightness;
@@ -105,6 +207,7 @@ QPixmap AsyncImageLoader::getSyncThumbnail(const QString& pathUri)
 	return QPixmap(); // 没找到就返回空
 }
 
+// 异步加载缩略图；数据库读 thumbnail 表，普通图片直接按目标尺寸读。
 void AsyncImageLoader::requestThumbnail(const QString& pathUri, const QSize& targetSize /*= QSize()*/)
 {
 	// 获取主线程当前亮度设置
@@ -127,48 +230,36 @@ void AsyncImageLoader::requestThumbnail(const QString& pathUri, const QSize& tar
 
 	// 2. 丢入专属的缩略图后台线程池
 	// 核心修正 2：必须捕获当前亮度 br
-	QtConcurrent::run(&m_thumbThreadPool, [this, pathUri, key, br]() {
+	QtConcurrent::run(&m_thumbThreadPool, [this, pathUri, targetSize, key, br]() {
 		QImage img;
 
-		QSqlDatabase db = databaseForCurrentThread(pathUri, "ThumbConn");
+		if (PackImageTileSource::parsePackFrameUri(pathUri, nullptr, nullptr)) {
+			img = loadImageFromPackUri(pathUri, targetSize.isValid() ? targetSize : QSize(2048, 2048));
+		}
+		else if (isTileDatabasePath(pathUri)) {
+			QSqlDatabase db = databaseForCurrentThread(pathUri, "ThumbConn");
 
-		// --- B. 极速查询缩略图 ---
-		if (db.isOpen()) {
-			QSqlQuery query(db);
-			if (query.exec("SELECT data FROM thumbnail LIMIT 1") && query.next()) {
-				QByteArray thumbData = query.value(0).toByteArray();
-				if (thumbData.size() > 0) {
-					img = QImage::fromData(thumbData); // 依靠魔数嗅探解码
+			// 数据库切片源走 thumbnail 表，这是老项目最快的路径。
+			if (db.isOpen()) {
+				QSqlQuery query(db);
+				if (query.exec("SELECT data FROM thumbnail LIMIT 1") && query.next()) {
+					QByteArray thumbData = query.value(0).toByteArray();
+					if (thumbData.size() > 0) {
+						img = QImage::fromData(thumbData);
+					}
 				}
 			}
 		}
+		else {
+			// 整图源没有 thumbnail 表，直接从图片文件读一张缩略图。
+			img = loadImageFromFile(pathUri, targetSize.isValid() ? targetSize : QSize(2048, 2048));
+		}
 
-		// --- C. 兜底机制 ---
 		if (img.isNull()) {
 			img = QImage(2048, 2048, QImage::Format_RGB888);
 			img.fill(QColor(60, 60, 60)); // 灰底
-		}
-
-		if (br != 0) {
-			// 1. 格式标准化：JPG 解码出来往往是 RGB32，必须转为 RGB888，才能按 byte 处理亮度
-			if (img.format() != QImage::Format_RGB888) {
-				img = img.convertToFormat(QImage::Format_RGB888);
-			}
-
-			// 2. 遍历并钳制修改每个像素
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-			int totalBytes = img.sizeInBytes();
-#else
-			int totalBytes = img.byteCount();
-#endif
-			uchar* bits = img.bits();
-			for (int i = 0; i < totalBytes; ++i) {
-				int val = bits[i] + br;
-
-				// 钳制在 0~255 之间，防止颜色溢出
-				bits[i] = (val < 0) ? 0 : (val > 255 ? 255 : val);
-			}
-		}
+		} 
+		applyBrightness(img, br);
 
 		// --- D. 移交主线程组装并缓存 ---
 		// 这里需要将 img 捕获进去，因为 Lambda 结束后 img 就析构了
@@ -189,7 +280,8 @@ void AsyncImageLoader::requestThumbnail(const QString& pathUri, const QSize& tar
 		});
 }
 
-void AsyncImageLoader::requestImage(const QString& pathUri)
+// 异步加载高清图；老切片请求和整图请求都从这里进。
+void AsyncImageLoader::requestImage(const QString& pathUri, bool useSharedCache /*= true*/)
 {
 	const QString safePathUri = QString::fromLocal8Bit(pathUri.toLocal8Bit().constData());
 
@@ -203,15 +295,15 @@ void AsyncImageLoader::requestImage(const QString& pathUri)
 	threadLocalUri.toUpper(); // 触发无意义的写操作，强制其在内存中生成独立副本
 	threadLocalUri.toLower(); // 还原
 
-	// 获取当前亮度设置
-	int br = 0;
+	// 获取当前亮度设置，切片和整图都走同一套亮度逻辑。
+	int br = m_brightness;
 
 	// 生成带亮度的唯一 Key
 	QString key = QString("%1_br_%2").arg(pathUri).arg(br);
 
 	{
 		QMutexLocker locker(&m_mutex);
-		if (m_cache.contains(key)) {
+		if (useSharedCache && m_cache.contains(key)) {
 			QPixmap result = *m_cache.object(key);
 
 			QTimer::singleShot(0, this, [this, pathUri, result]() {
@@ -221,12 +313,16 @@ void AsyncImageLoader::requestImage(const QString& pathUri)
 		}
 	}
 
-	QtConcurrent::run([this, threadLocalUri, br, key]() {
+	QtConcurrent::run([this, threadLocalUri, br, key, useSharedCache]() {
 		QImage img;
 
 		// A. 解析 URI，判断是数据库直读还是本地文件读取
-		QStringList parts = threadLocalUri.split("|");
-		if (parts.size() == 3) {
+		if (PackImageTileSource::parsePackFrameUri(threadLocalUri, nullptr, nullptr)) {
+			img = loadImageFromPackUri(threadLocalUri, QSize());
+		}
+		else {
+			QStringList parts = threadLocalUri.split("|");
+			if (parts.size() == 3) {
 			// 这是从 TunnelSectionItem 传来的数据库切片请求
 			QString dbPath = parts[0];
 			int col = parts[1].toInt();
@@ -251,9 +347,10 @@ void AsyncImageLoader::requestImage(const QString& pathUri)
 				}
 			}
 		}
-		else {
-			// 向下兼容：普通的本地图片文件加载
-			img = QImage(threadLocalUri);
+			else {
+				// 向下兼容：普通的本地图片文件加载，整图模式就走这里。
+				img = loadImageFromFile(threadLocalUri, QSize());
+			}
 		}
 
 		// B. 数据损坏或空图的防闪退兜底处理
@@ -267,19 +364,8 @@ void AsyncImageLoader::requestImage(const QString& pathUri)
 			img = img.convertToFormat(QImage::Format_RGB888);
 		}
 
-		// D. 亮度调节计算，CPU 密集型操作
-		if (br != 0) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-			int totalBytes = img.sizeInBytes();
-#else
-			int totalBytes = img.byteCount();
-#endif
-			uchar* bits = img.bits();
-			for (int i = 0; i < totalBytes; ++i) {
-				int val = bits[i] + br;
-				bits[i] = (val < 0) ? 0 : (val > 255 ? 255 : val);
-			}
-		}
+		// D. 亮度调节计算，CPU 密集型操作。
+		applyBrightness(img, br);
 
 		// E. 移交主线程组装为 QPixmap，并通知渲染更新
 		QObject* safeLoader = AsyncImageLoader::instance();
@@ -289,7 +375,7 @@ void AsyncImageLoader::requestImage(const QString& pathUri)
 
 				{
 					QMutexLocker locker(&AsyncImageLoader::instance()->m_mutex);
-					if (!AsyncImageLoader::instance()->m_cache.contains(key)) {
+					if (useSharedCache && !AsyncImageLoader::instance()->m_cache.contains(key)) {
 						int cost = (int)(pix.width() * pix.height() * 4 / 1024);
 						AsyncImageLoader::instance()->m_cache.insert(key, new QPixmap(pix), cost);
 					}

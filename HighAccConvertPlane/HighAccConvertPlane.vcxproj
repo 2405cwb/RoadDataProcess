@@ -70,20 +70,20 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
       <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);</AdditionalLibraryDirectories>
-      <AdditionalDependencies>hnDataTable.lib;hnQtCommon.lib;hnProject.lib;hnPositionProj.lib;Qt5Core.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>hnDataTable.lib;hnQtCommon.lib;hnProject.lib;hnPositionProj.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
       <PreprocessorDefinitions>HIGHACCCONVERTPLANE_LIB;$(Qt_DEFINES_);$(Qt_DEFINES_);%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>../hnQtCommon/;../3rd/SQLite/include;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(Qt_INCLUDEPATH_);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(QTDIR)\include;$(QTDIR)\include\QtCore;../hnQtCommon/;../3rd/SQLite/include;$(Qt_INCLUDEPATH_);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
-      <AdditionalDependencies>hnDataTable.lib;hnQtCommon.lib;hnProject.lib;hnPositionProj.lib;Qt5Cored.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>hnDataTable.lib;hnQtCommon.lib;hnProject.lib;hnPositionProj.lib;$(Qt_LIBS_);%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>../hnQtCommon/;../3rd/SQLite/include;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(Qt_INCLUDEPATH_);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(QTDIR)\include;$(QTDIR)\include\QtCore;../hnQtCommon/;../3rd/SQLite/include;$(Qt_INCLUDEPATH_);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>HIGHACCCONVERTPLANE_LIB;$(Qt_DEFINES_);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>

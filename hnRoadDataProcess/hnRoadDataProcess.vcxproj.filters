@@ -51,9 +51,6 @@
     <Filter Include="对话框\校桩窗口">
       <UniqueIdentifier>{21defc37-eece-45ee-81d2-73efe659e599}</UniqueIdentifier>
     </Filter>
-    <Filter Include="对话框\放大镜参数设置">
-      <UniqueIdentifier>{57880d45-b62b-46d6-8898-2f9852390af0}</UniqueIdentifier>
-    </Filter>
     <Filter Include="导入自动识别病害">
       <UniqueIdentifier>{e48cd845-b395-44e9-b3d8-65f0ca639cde}</UniqueIdentifier>
     </Filter>
@@ -162,9 +159,6 @@
     </ClCompile>
     <ClCompile Include="hnMileAdjustDlg.cpp">
       <Filter>对话框\校桩窗口</Filter>
-    </ClCompile>
-    <ClCompile Include="hnMagnifySettingDlg.cpp">
-      <Filter>对话框\放大镜参数设置</Filter>
     </ClCompile>
     <ClCompile Include="hnImportAidcDiseases.cpp">
       <Filter>导入自动识别病害</Filter>
@@ -300,9 +294,6 @@
     <QtMoc Include="hnMileAdjustDlg.h">
       <Filter>对话框\校桩窗口</Filter>
     </QtMoc>
-    <QtMoc Include="hnMagnifySettingDlg.h">
-      <Filter>对话框\放大镜参数设置</Filter>
-    </QtMoc>
     <QtMoc Include="hnImportAidcDiseases.h">
       <Filter>导入自动识别病害</Filter>
     </QtMoc>
@@ -422,6 +413,9 @@
       <Filter>对话框\出表选择窗口</Filter>
     </ClInclude>
     <ClInclude Include="hnOutExcelMileManage.h">
+      <Filter>对话框\出表选择窗口</Filter>
+    </ClInclude>
+    <ClInclude Include="hnReportProjectInfo.h">
       <Filter>对话框\出表选择窗口</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">

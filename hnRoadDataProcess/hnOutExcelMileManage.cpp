@@ -1,4 +1,5 @@
 #include "hnOutExcelMileManage.h"
+#include "hnReportProjectInfo.h"
 #include <algorithm>
 #include "..\hnQtCommon\MyCommonMethods.h"
 #include <stdexcept>
@@ -158,6 +159,14 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 hnOutExcelMileManage::~hnOutExcelMileManage()
 {
 
+}
+void hnOutExcelMileManage::reportExcelError(const QString& message)
+{
+	const QString normalizedMessage = message.trimmed();
+	if (!normalizedMessage.isEmpty() && !m_xrSetting->ExcelErrorMessageList.contains(normalizedMessage))
+	{
+		m_xrSetting->ExcelErrorMessageList.append(normalizedMessage);
+	}
 }
 
 
@@ -321,7 +330,11 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 	
 	for (hnOutExcelMile& excelMile : miles)
 	{
-		excelMile.StartCalculate(false); 
+		if (!excelMile.StartCalculate(false))
+		{
+			ok = false;
+			continue;
+		}
 		if (m_project->get2DProject()->_IsIRIMTD && m_equipMentList.IRI)
 		{
 			excelMile.calculateRQIScore(hasLeftIRI, hasRightIRI);
@@ -352,7 +365,10 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 			}
 
 
-			excelMile.calculateDrScore(m_project->getCurProSetInfo().dRoadWidth, diss);
+			if (!excelMile.calculateDrScore(hnReportProjectInfo::roadWidth(m_project), diss))
+			{
+				ok = false;
+			}
 		}
 		if (m_equipMentList.STREET) //涉及到景观的
 		{
@@ -520,7 +536,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -538,7 +554,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 		{
 			QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
 			string mes = message.toLocal8Bit();
-			QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+			reportExcelError(message);
 			//throw std::runtime_error(mes.c_str());
 		}
 		catch (const std::exception& e)
@@ -560,7 +576,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 				{
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 					//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
@@ -578,7 +594,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -772,7 +788,7 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 			tempdis.dArea = tempdis.dRealLen * tempdis.dReaWidth;
 			tempdis.nDrawType = m_project->getCurProSetInfo().nDrawType;
 			tempdis.nRSurfaceType = 0;
-			tempdis.dRoadWidth = m_project->getCurProSetInfo().dRoadWidth;
+			tempdis.dRoadWidth = hnReportProjectInfo::roadWidth(m_project);
 			tempdis.diseaseWeight = 1;
 			strcpy(tempdis.strDiseaseTableName, "DisCZ");
 			if (m_project->getBaseStandard() == HnProjectEnums::CityRoad )
@@ -901,6 +917,7 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 	while (m_direction * (m_eMile - curmile) > 0)
 	{
 		hnOutExcelMile excelMile(m_project, m_standard);
+		excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
 		if (m_direction > 0)
 		{
 			
@@ -1050,6 +1067,7 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 	 for (int i = 0 ; i < result.size()-1;i+=2)
 	 {
 		hnOutExcelMile excelMile(m_project, m_standard);
+		excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
 		MileAndDmi sMile_Dmi = result[i];
 		MileAndDmi eMile_Dmi = result[i + 1];
 		 ////计算得到此时里程对应的真实桩号
@@ -1070,6 +1088,7 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 	 if (len %2 != 0)
 	 {
 		 hnOutExcelMile excelMile(m_project, m_standard);
+		 excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
 		 MileAndDmi sMile_Dmi = result[len-2];
 		 MileAndDmi eMile_Dmi = result[len-1];
 		 ////计算得到此时里程对应的真实桩号
@@ -1413,7 +1432,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【平整度】计算到一半退出了软件\n请【清除结果——平整度】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message,QString::fromLocal8Bit("确定"));
+				reportExcelError(message);
 			//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -1443,7 +1462,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		{
 
 		     QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧平整度数据!\r\n请检查数据完整性，并重新计算IRM！");
-			 QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message, QString::fromLocal8Bit("确定")); 
+			 reportExcelError(message);
 			string mes = message.toLocal8Bit();
 
 		//	throw std::runtime_error(mes.c_str());
@@ -1469,7 +1488,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 				{
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【平整度】计算到一半退出了软件\n请【清除结果——平整度】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 					//throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
@@ -1499,7 +1518,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧平整度数据!\r\n请检查数据完整性，并重新计算IRM！");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 			//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -1982,7 +2001,7 @@ bool hnOutExcelMileManage::writeJHXXValue(double BaseLen)
 	{
 		QString message = m_project->get2DProName() + QStringLiteral("\r\n是否未计算几何线性!");
 		string mes = message.toLocal8Bit();
-		QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+		reportExcelError(message);
 		return false;
 	} 
 
@@ -2216,7 +2235,7 @@ bool hnOutExcelMileManage::writeRutValue()
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -2234,7 +2253,7 @@ bool hnOutExcelMileManage::writeRutValue()
 		{
 			QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
 			string mes = message.toLocal8Bit();
-			QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+			reportExcelError(message);
 			//throw std::runtime_error(mes.c_str());
 		}
 		catch (const std::exception& e)
@@ -2256,7 +2275,7 @@ bool hnOutExcelMileManage::writeRutValue()
 				{
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 				//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
@@ -2274,7 +2293,7 @@ bool hnOutExcelMileManage::writeRutValue()
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -2464,7 +2483,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 			//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -2497,7 +2516,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 				{
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【右侧构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 				//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
@@ -2533,7 +2552,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 					{
 						QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【中间构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 						string mes = message.toLocal8Bit();
-						QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+						reportExcelError(message);
 					//	throw std::runtime_error(mes.c_str());
 					}
 					catch (const std::exception& e)
@@ -2819,7 +2838,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
-				QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+				reportExcelError(message);
 			//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
@@ -2862,7 +2881,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 				{
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【右侧磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 				//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
@@ -2909,7 +2928,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 					{
 						QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【中间磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 						string mes = message.toLocal8Bit();
-					QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+					reportExcelError(message);
 					//	throw std::runtime_error(mes.c_str());
 					}
 					catch (const std::exception& e)
@@ -3178,7 +3197,7 @@ bool hnOutExcelMileManage::writeGpsStrValue()
 	{
 		QString message = m_project->get2DProName() + QStringLiteral("\r\n是否未进行GPS桩号匹配或执行失败!");
 		string mes = message.toLocal8Bit();
-		QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), message);
+		reportExcelError(message);
 		return false;
 	}
 
@@ -3205,6 +3224,7 @@ void hnOutExcelMileManage::initMarkMehtodExcelMile(hnOutExcelMile& newMile, cons
 	newMile.RoadSurface = mile.RoadSurface;
 	newMile.setUnitStr(mile.getUnitStr());
 	newMile.RoadGrad = mile.RoadGrad;
+	newMile.setSurveyWidth(mile.getSurveyWidth());
 
 }
 

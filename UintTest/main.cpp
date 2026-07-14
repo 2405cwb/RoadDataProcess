@@ -1,7 +1,11 @@
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDebug>
+#include <QtCore/QVector>
 #include "test_isMergeableDisease.h"
 #include "test_mergeTwoDiseases.h"
 #include "test_VMirror2dRectI.h"
+#include "test_LittleFrameRenderPathBuilder.h"
+#include "test_DrPciCalculator.h"
 #include <QtTest/QTest>
 
 int main(int argc, char *argv[])
@@ -19,13 +23,19 @@ int main(int argc, char *argv[])
 	test_VMirror2dRectI obj_test_VMirror2dRectI;
 	testObjects.push_back(&obj_test_VMirror2dRectI);
 
+	test_LittleFrameRenderPathBuilder obj_test_LittleFrameRenderPathBuilder;
+	testObjects.push_back(&obj_test_LittleFrameRenderPathBuilder);
 
+	test_DrPciCalculator obj_test_DrPciCalculator;
+	testObjects.push_back(&obj_test_DrPciCalculator);
+
+	int status = 0;
 	for (auto object : qAsConst(testObjects))
 	{
-		QTest::qExec(object, argc, argv);
+		status |= QTest::qExec(object, argc, argv);
 
 		qDebug() << "";
 	}
 
-	return a.exec();
+	return status;
 }

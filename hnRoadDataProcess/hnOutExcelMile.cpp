@@ -1,5 +1,6 @@
 #pragma  once
 #include "hnOutExcelMile.h"
+#include "DrPciCalculator.h"
 #include "../hnApplication/hnDataManager.h"
 #include "../hnCommon/hnTypeDefs.h"
 #include "../hnQtCommon/MyCommonMethods.h"
@@ -8,6 +9,7 @@ hnOutExcelMile::hnOutExcelMile(hnPro::hnProject * project, HnProjectEnums::Stand
 	
 	PCIExcelStr ="";
 	DRScore = 0;
+	SurveyWidth = 0;
 	SpeedVal = 0;
 	LeftIriValue = 0;
 	RightIriValue = 0;
@@ -75,6 +77,7 @@ hnOutExcelMile::hnOutExcelMile() :m_project(nullptr)
 	RoadGrad = -1;
 	RoadDegreestr = "";
 	DRScore = 0;
+	SurveyWidth = 0;
 	SpeedVal = 0;
 	PBIScoreStr = ""; 
 	CenterMtdValue = 0;
@@ -206,12 +209,17 @@ QString hnOutExcelMile::getIriExcelStr()
 
  double hnOutExcelMile::getDRScore()
  { 
-	 return   DRScore;
+	 return DRScore;
+ }
+
+ double hnOutExcelMile::getDRExcelScore()
+ {
+	 return MyCommonMethods::rountToNDecimalPlaces(DRScore, m_xrSetting->sheetRoundingOffNum_Dr);
  }
 
  void hnOutExcelMile::setDrScore(double value)
  { 
-	 DRScore = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum_Dr);
+	 DRScore = value;
  }
 
  QString hnOutExcelMile::getPCIExcelStr()
@@ -872,234 +880,224 @@ QString hnOutExcelMile::getPqiEvaluateStr(int rowCnt, QString pqiIndex)
  
 
 
-  bool hnOutExcelMile::StartCalculate(bool onlyInitSetInfo /*= false */)
-  {
-	  if (!m_project)
-	  {
-		  return false;
-	  } 
-	 
-	  //获取规范计算参数 
-	  hnApp::hnDataManager::getDataManager()->getRoadTypeSetInfo(Type, RoadDegreestr, RoadSurface, m_roadTypeSetInfo);
-
-	  return true;
-  }
-
-bool hnOutExcelMile::calculateDrScore(double width,QVector<hnCommon::hnRoadDiseaseInfo>& diss)
+void hnOutExcelMile::reportCalculationError(const QString& message)
 {
-	
-	double sDmi = 0;
-	double eDmi = 0;
-	sDmi = StartDmi;
-	eDmi = EndDmi;
-
-	for (auto dis : diss)
+	QString projectName = m_project ? m_project->get2DProName() : QStringLiteral("未知工程");
+	QString fullMessage = projectName + QStringLiteral("\r\n") + message.trimmed();
+	if (m_xrSetting && !fullMessage.trimmed().isEmpty() &&
+		!m_xrSetting->ExcelErrorMessageList.contains(fullMessage))
 	{
-
-
-		 if ((dis.dDmiStart<sDmi&&dis.dDmiEnd<= sDmi)||
-			 (dis.dDmiStart>=eDmi&&dis.dDmiEnd>eDmi))
-		 {
-			 continue;
-		 }
-		 else
-		 {
-			 m_roadDisVec.push_back(dis);
-		 }
+		m_xrSetting->ExcelErrorMessageList.append(fullMessage);
 	}
-	//m_project->getDB()->m_diseaseTable.readRoadDiseaseData(m_currentMileVec, m_roadDisVec, line, m_project->getRoadSpace());
-	//m_project->getDB()->m_diseaseTable.readStreetData(m_currentMileVec, m_streetDisVec, Direction, m_project->getRoadSpace());
-	double roadArea = width * this->getRoadLength();
-	
-	//计算Dr
-	double sumArea = 0;
-	for (int i = 0 ; i <m_roadDisVec.size();++i)
+}
+
+bool hnOutExcelMile::StartCalculate(bool onlyInitSetInfo /*= false */)
+{
+	Q_UNUSED(onlyInitSetInfo);
+	if (!m_project)
 	{
-		hnCommon::hnRoadDiseaseInfo & dis = m_roadDisVec[i];
-		  
-		double length = dis.dDmiEnd - dis.dDmiStart;
-		//病害部分在区间内
-		if (dis.dDmiStart<=sDmi&&dis.dDmiEnd<=eDmi)
-		{
-		
-			sumArea += (dis.dArea *dis.diseaseWeight*((dis.dDmiEnd - sDmi) / length));
-			dis.dArea = (dis.dArea *dis.diseaseWeight*((dis.dDmiEnd - sDmi) / length));
-		}
-		 
-		else	if (dis.dDmiStart >= sDmi&&dis.dDmiEnd >= eDmi)
-		{ 
-			sumArea += (dis.dArea *dis.diseaseWeight*((eDmi-dis.dDmiStart) / length));
-			dis.dArea = (dis.dArea *dis.diseaseWeight*((eDmi - dis.dDmiStart) / length));
-		}
-		//病害完全在区间内
-		else if (dis.dDmiStart>=sDmi&&dis.dDmiEnd<=eDmi)
-		{
-			sumArea += dis.dArea *dis.diseaseWeight;
-			dis.dArea = dis.dArea *dis.diseaseWeight;
-		}
-	    //病害整个在区间呢
-		else	if (dis.dDmiStart<=sDmi&&dis.dDmiEnd>=eDmi)
-		{
-			sumArea += (dis.dArea *dis.diseaseWeight*((eDmi-sDmi) / length));
-			dis.dArea = (dis.dArea *dis.diseaseWeight*((eDmi - sDmi) / length));
-		}
-	}
-	if (sumArea != 0)
-	{
-		int a = 0;
-	}
-	double value = (100 * sumArea / roadArea);
-	setDrScore(value);
-	switch (Type)
-	{
-	case HnProjectEnums::None:
-		break;
-	case HnProjectEnums::DegreeRoad2018:
-		PCIExcelStr = QStringLiteral("=100-%2*POWER(%1,%3)").arg(QString::number(getDRScore())).arg(QString::number(m_roadTypeSetInfo.dPCI_a0))
-			.arg(QString::number(m_roadTypeSetInfo.dPCI_a1));
-		break;
-	case HnProjectEnums::CityRoad:
-	{
-		//需要当前区间的道路类型
-		QVector<hnDiseaseSetInfo> diseaseSetInfos = hnApp::hnDataManager::getDataManager()->
-			getProjectRoadDiseaseNames(m_project, Type, RoadSurface);
-		int len = diseaseSetInfos.size();
-		
-		QMap<hnDiseaseSetInfo, double> diseaseSum;
-		for (int disTempIndex = 0; disTempIndex < diseaseSetInfos.size(); ++disTempIndex)
-		{
-			diseaseSum.insert(diseaseSetInfos.at(disTempIndex), 0);
-		}
-		for (auto it = diseaseSum.begin();it!=diseaseSum.end();++it)
-		{
-			
-			for (int disIndex = 0; disIndex < m_roadDisVec.size(); ++disIndex)
-			{
-				if (strcmp(it.key().strDBTableName, m_roadDisVec.at(disIndex).strDiseaseTableName) == 0)
-				{
-					it.value() += m_roadDisVec.at(disIndex).dArea;
-				}
-			}
-		}
-		QVector< hn_RoadDiseaseType> roadDiseaseType;
-		for (auto it = diseaseSum.begin(); it != diseaseSum.end(); ++it)
-		{
-			hn_RoadDiseaseType curType;
-			curType.type = it.key();
-			QString dismidu = QString::fromLocal8Bit(curType.type.strSHMD);
-		
-			QString disscore = QString::fromLocal8Bit(curType.type.strDXKF);
-			QStringList disSplit = dismidu.split(' ');
-			QStringList dissSplit = disscore.split(' ');
-			QVector<double> disTmep;
-			for (QString temp : disSplit)
-			{
-				disTmep.push_back(temp.toDouble()*0.01);
-			}
-			curType._MiduScore.push_back(disTmep);
-			QVector<double> disTmep1;
-			for (QString temp : dissSplit)
-			{
-				disTmep1.push_back(temp.toDouble());
-			}
-			curType._MiduScore.push_back(disTmep1);
-
-			curType.d_sumArea = it.value();
-			roadDiseaseType.push_back(curType);
-		}
-
-		QVector< double> totalareatmp;
-		totalareatmp.resize(len);
-		double uij = 0, wij = 0; 
-		QVector<double> DPa  { 0, 0, 0, 0, 0 };
-		for (int i = 0 ;  i<len ; ++i)
-		{
-			totalareatmp[i] =roadDiseaseType[i].d_sumArea / roadArea;
-		   totalareatmp[i] = ChaZhi(roadDiseaseType[i]._MiduScore, totalareatmp[i]);
-		}
-		// 类别内的扣分和
-		for (int i = 0; i < len; i++)
-		{
-			DPa[roadDiseaseType[i].type.fEffectType] += totalareatmp[i];
-		}
-		QVector < QVector<double>> _WeightParm{ { 3.0,-5.5,3.5,0 },{ 3.0,-5.5,3.5,0 } };
-		// 每种病害的uij，得到每种的权重曲线的扣分
-		for (int i = 0; i < len; i++)
-		{
-			if (DPa[roadDiseaseType[i].type.fEffectType] > 0)
-			{
-				uij = totalareatmp[i] / DPa[roadDiseaseType[i].type.fEffectType];
-			}
-			else
-			{
-				uij = 0;
-			}
-			/*
-			<水泥路面权函数曲线 Wi="3.0 -5.5 3.5"> 
-			<沥青路面权函数曲线 Wi="3.0 -5.5 3.5">  
-			*/
-			
-
-			wij = _WeightParm[RoadSurface][0];
-			for (int k = 1; k < _WeightParm[RoadSurface].size(); k++)
-			{
-				wij = wij * uij + _WeightParm[RoadSurface][k];
-			}
-
-			totalareatmp[i] = totalareatmp[i] * wij;
-		}
-
-		for (int i = 0; i < DPa.size(); ++i)
-		{
-			DPa[i] = 0;
-		}
-
-		// 每类病害的扣分
-		double DP = 0;
-		for (int i = 0; i < len; i++)
-		{
-			DPa[roadDiseaseType[i].type.fEffectType] += totalareatmp[i];
-			DP += totalareatmp[i];
-		}
-
-		double DP2 = 0;
-		for (int i = 0; i < DPa.size(); ++i)
-		{
-			if (DP > 0)
-			{
-				uij = DPa[i] / DP;
-			}
-			else
-			{
-				uij = 0;
-			}
-
-			wij = _WeightParm[RoadSurface][0];
-			for (int k = 1; k < _WeightParm[RoadSurface].size(); k++)
-			{
-				wij = wij * uij + _WeightParm[RoadSurface][k];
-			}
-
-			DPa[i] = DPa[i] * wij;
-
-			DP2 = DP2 + DPa[i];
-		}
-	     PCIExcelStr = QString::number( 100 - DP2,'f',5); 
+		return false;
 	}
 
-
-		break;
-	case HnProjectEnums::RuralRoadlowLevel:
-		PCIExcelStr = QStringLiteral("=100-%2*POWER(%1,%3)").arg(QString::number(getDRScore())).arg(QString::number(m_roadTypeSetInfo.dPCI_a0))
-			.arg(QString::number(m_roadTypeSetInfo.dPCI_a1));
-		break;
-	default:
-		break;
+	m_roadTypeSetInfo = hnRoadTypeSetInfo();
+	const hnCommon::ROAD_WORK_TYPE drawType = m_project->getBaseDrawType();
+	const bool found = hnApp::hnDataManager::getDataManager()->getRoadTypeSetInfo(
+		Type, RoadDegreestr, RoadSurface, drawType, m_roadTypeSetInfo);
+	if (!found)
+	{
+		reportCalculationError(QStringLiteral("找不到道路计算参数，已停止该类型分段的 DR/PCI 计算：规范=%1，等级=%2，路面=%3，作业模式=%4")
+			.arg(HnProjectEnums::roadTypeEnumToQString(Type))
+			.arg(RoadDegreestr)
+			.arg(RoadSurfaceStr)
+			.arg(QString::fromLocal8Bit(hnCommon::workTypeToQString(drawType))));
+		return false;
 	}
 
+	if ((Type == HnProjectEnums::DegreeRoad2018 || Type == HnProjectEnums::RuralRoadlowLevel) &&
+		(!hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a0) || !hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a1) ||
+		m_roadTypeSetInfo.dPCI_a0 <= 0.0 || m_roadTypeSetInfo.dPCI_a1 <= 0.0))
+	{
+		reportCalculationError(QStringLiteral("道路计算参数中的 PCI 系数无效，已停止该类型分段计算：规范=%1，等级=%2，路面=%3")
+			.arg(HnProjectEnums::roadTypeEnumToQString(Type)).arg(RoadDegreestr).arg(RoadSurfaceStr));
+		return false;
+	}
 	return true;
 }
 
+bool hnOutExcelMile::calculateDrScore(double fallbackWidth, QVector<hnCommon::hnRoadDiseaseInfo>& diss)
+{
+	m_roadDisVec.clear();
+	setDrScore(0.0);
+	PCIExcelStr.clear();
+
+	const double segmentLength = getRoadLength();
+	double surveyWidth = SurveyWidth;
+	if (!hnDrPci::isFinite(surveyWidth) || surveyWidth <= hnDrPci::kEpsilon)
+	{
+		surveyWidth = fallbackWidth;
+		reportCalculationError(QStringLiteral("未获得分段实际检测宽度，DR 调查面积已回退使用工程默认宽度。"));
+	}
+	const double surveyArea = surveyWidth * segmentLength;
+	if (!hnDrPci::isFinite(surveyWidth) || surveyWidth <= hnDrPci::kEpsilon ||
+		!hnDrPci::isFinite(segmentLength) || segmentLength <= hnDrPci::kEpsilon ||
+		!hnDrPci::isFinite(surveyArea) || surveyArea <= hnDrPci::kEpsilon)
+	{
+		reportCalculationError(QStringLiteral("分段调查面积无效，已停止 DR/PCI 计算：起点=%1，终点=%2，长度=%3，宽度=%4")
+			.arg(StartMile).arg(EndMile).arg(segmentLength).arg(surveyWidth));
+		return false;
+	}
+
+	double sumArea = 0.0;
+	bool hasInvalidDisease = false;
+	for (int i = 0; i < diss.size(); ++i)
+	{
+		const hnCommon::hnRoadDiseaseInfo& source = diss[i];
+		double clippedArea = 0.0;
+		if (!hnDrPci::clippedWeightedArea(source.dDmiStart, source.dDmiEnd,
+			source.dArea, source.diseaseWeight, StartDmi, EndDmi, clippedArea))
+		{
+			hasInvalidDisease = true;
+			continue;
+		}
+		if (clippedArea <= hnDrPci::kEpsilon)
+		{
+			continue;
+		}
+		hnCommon::hnRoadDiseaseInfo clipped = source;
+		clipped.dArea = clippedArea;
+		m_roadDisVec.push_back(clipped);
+		sumArea += clippedArea;
+	}
+	if (hasInvalidDisease)
+	{
+		reportCalculationError(QStringLiteral("部分病害的里程、面积或权重无效，已跳过这些病害并继续计算。"));
+	}
+
+	double dr = 0.0;
+	if (!hnDrPci::calculateDr(sumArea, surveyArea, dr))
+	{
+		reportCalculationError(QStringLiteral("DR 计算结果无效，已停止该分段 PCI 计算：起点=%1，终点=%2")
+			.arg(StartMile).arg(EndMile));
+		return false;
+	}
+	setDrScore(dr); // Keep full precision; rounding happens only when writing report cells.
+
+	switch (Type)
+	{
+	case HnProjectEnums::None:
+		return true;
+	case HnProjectEnums::DegreeRoad2018:
+	case HnProjectEnums::RuralRoadlowLevel:
+	{
+		double pci = 0.0;
+		if (!hnDrPci::calculatePowerPci(getDRScore(), m_roadTypeSetInfo.dPCI_a0,
+			m_roadTypeSetInfo.dPCI_a1, pci))
+		{
+			reportCalculationError(QStringLiteral("PCI 系数或 DR 值无效，已停止该分段 PCI 计算。"));
+			return false;
+		}
+		PCIExcelStr = QStringLiteral("=100-%2*POWER(%1,%3)")
+			.arg(QString::number(getDRScore(), 'g', 15))
+			.arg(QString::number(m_roadTypeSetInfo.dPCI_a0, 'g', 15))
+			.arg(QString::number(m_roadTypeSetInfo.dPCI_a1, 'g', 15));
+		return true;
+	}
+	case HnProjectEnums::CityRoad:
+	{
+		// Compatibility field only: City-road DR is the total weighted damaged-area rate;
+		// CJJ PCI below is calculated from disease-density deductions, not directly from DR.
+		QVector<hnDiseaseSetInfo> diseaseSetInfos = hnApp::hnDataManager::getDataManager()->
+			getProjectRoadDiseaseNames(m_project, Type, RoadSurface);
+		QMap<hnDiseaseSetInfo, double> diseaseSum;
+		for (int i = 0; i < diseaseSetInfos.size(); ++i)
+			diseaseSum.insert(diseaseSetInfos[i], 0.0);
+		for (auto it = diseaseSum.begin(); it != diseaseSum.end(); ++it)
+		{
+			for (int i = 0; i < m_roadDisVec.size(); ++i)
+			{
+				if (strcmp(it.key().strDBTableName, m_roadDisVec[i].strDiseaseTableName) == 0)
+					it.value() += m_roadDisVec[i].dArea;
+			}
+		}
+
+		QVector<hn_RoadDiseaseType> roadDiseaseType;
+		for (auto it = diseaseSum.begin(); it != diseaseSum.end(); ++it)
+		{
+			hn_RoadDiseaseType current;
+			current.type = it.key();
+			const QStringList densityText = QString::fromLocal8Bit(current.type.strSHMD)
+				.split(' ', QString::SkipEmptyParts);
+			const QStringList deductionText = QString::fromLocal8Bit(current.type.strDXKF)
+				.split(' ', QString::SkipEmptyParts);
+			if (densityText.isEmpty() || densityText.size() != deductionText.size())
+			{
+				reportCalculationError(QStringLiteral("城镇道路病害密度/扣分配置不完整：%1")
+					.arg(QString::fromLocal8Bit(current.type.strDiseaseName)));
+				return false;
+			}
+			QVector<double> density;
+			QVector<double> deduction;
+			for (int i = 0; i < densityText.size(); ++i)
+			{
+				density.push_back(densityText[i].toDouble() * 0.01);
+				deduction.push_back(deductionText[i].toDouble());
+			}
+			current._MiduScore.push_back(density);
+			current._MiduScore.push_back(deduction);
+			current.d_sumArea = it.value();
+			roadDiseaseType.push_back(current);
+		}
+
+		QVector<double> deductions(roadDiseaseType.size(), 0.0);
+		QVector<double> categoryDeduction(5, 0.0);
+		for (int i = 0; i < roadDiseaseType.size(); ++i)
+		{
+			const int effectType = roadDiseaseType[i].type.fEffectType;
+			if (effectType < 0 || effectType >= categoryDeduction.size())
+			{
+				reportCalculationError(QStringLiteral("城镇道路病害影响分类超出有效范围，已停止 PCI 计算。"));
+				return false;
+			}
+			deductions[i] = ChaZhi(roadDiseaseType[i]._MiduScore,
+				roadDiseaseType[i].d_sumArea / surveyArea);
+			categoryDeduction[effectType] += deductions[i];
+		}
+
+		const QVector<QVector<double>> weightParameters{
+			{ 3.0, -5.5, 3.5, 0.0 }, { 3.0, -5.5, 3.5, 0.0 }
+		};
+		const int surfaceIndex = static_cast<int>(RoadSurface);
+		if (surfaceIndex < 0 || surfaceIndex >= weightParameters.size())
+		{
+			reportCalculationError(QStringLiteral("城镇道路 PCI 不支持当前路面类型。"));
+			return false;
+		}
+
+		for (int i = 0; i < deductions.size(); ++i)
+		{
+			const int effectType = roadDiseaseType[i].type.fEffectType;
+			const double uij = categoryDeduction[effectType] > 0.0
+				? deductions[i] / categoryDeduction[effectType] : 0.0;
+			deductions[i] *= hnDrPci::cityWeight(uij);
+		}
+
+		categoryDeduction.fill(0.0);
+		for (int i = 0; i < deductions.size(); ++i)
+			categoryDeduction[roadDiseaseType[i].type.fEffectType] += deductions[i];
+
+		double cityPci = 0.0;
+		if (!hnDrPci::calculateCityPciFromCategories(categoryDeduction, cityPci))
+		{
+			reportCalculationError(QStringLiteral("城镇道路综合扣分无效，已停止 PCI 计算。"));
+			return false;
+		}
+		PCIExcelStr = QString::number(cityPci, 'f', 5);
+		return true;
+	}
+	default:
+		return false;
+	}
+}
 bool hnOutExcelMile::calculateRQIScore(bool hasleftValue,bool hasRightValue)
 {
 	//计算rqi
@@ -1373,45 +1371,17 @@ for (auto dis : diss)
 
 double hnOutExcelMile::ChaZhi(QVector<QVector<double>> MiduScore, double mval)
 {
-	double sval = 0;
-	int len = MiduScore[0].size();
-	for (int i = 1; i < len; i++)
+	if (MiduScore.size() != 2)
 	{
-		if (mval < MiduScore[0][i] && mval >= MiduScore[0][i - 1])
-		{
-			if (i == 1)
-			{
-				sval = mval * (MiduScore[1][i] - MiduScore[1][i - 1]) / (MiduScore[0][i] - MiduScore[0][i - 1]);
-			}
-			else
-			{
-				if (i < len - 1)
-				{
-					sval = (mval - MiduScore[0][i - 1])
-						* (MiduScore[1][i] - MiduScore[1][i - 1])
-						/ (MiduScore[0][i] - MiduScore[0][i - 1])
-						+ MiduScore[1][i - 1];
-				}
-				else
-				{
-					if (MiduScore[0][len - 1] == MiduScore[0][len - 2])
-					{
-						sval = MiduScore[1][len - 1];
-					}
-					else
-					{
-						sval = (mval - MiduScore[0][i - 1])
-							* (MiduScore[1][i] - MiduScore[1][i - 1])
-							/ (MiduScore[0][i] - MiduScore[0][i - 1])
-							+ MiduScore[1][i - 1];
-					}
-				}
-			}
-		}
+		return 0.0;
 	}
-	return sval;
+	double result = 0.0;
+	if (!hnDrPci::interpolateClamped(MiduScore[0], MiduScore[1], mval, result))
+	{
+		return 0.0;
+	}
+	return result;
 }
-
 void hnOutExcelMile::GetRutDis(QVector<hnCommon::hnRoadDiseaseInfo> &rutDis,int side)
 {
 	QVector<double > rutThresh;

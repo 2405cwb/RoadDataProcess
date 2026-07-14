@@ -1,400 +1,408 @@
-# hnRoadDataProcess 项目快速上下文
+# hnRoadDataProcess
 
-> 生成时间：2026-05-22  
-> 用途：给 ChatGPT / Codex 快速理解项目，减少后续阅读 token。  
-> 当前文档基于快速浏览源码形成，重点覆盖 `hnApplication`（图像显示界面与缓存）、`hnProject`、`hnRoadDataProcess`。
+`hnRoadDataProcess` 是 Windows + C++ + Qt 的公路二维、三维、景观影像内业处理软件，覆盖工程导入、连续影像浏览、2D/3D 联动、病害绘制与管理、路面打标、里程校准、地图和成果输出。
 
-## 一句话概览
+本文基于 2026-07-14 当前工作区，重点说明当前 SDK 视图架构和病害链路。SDK 自身接口见 [SDK/README.md](SDK/README.md)，迁移过程和历史验证记录见 [docs/sdk_migration_task_handoff.md](docs/sdk_migration_task_handoff.md)。
 
-这是一个 Windows + Visual Studio C++ / Qt 的公路路面数据内业处理软件。主程序 `hnRoadDataProcess` 负责 Ribbon 主界面、工程导入、功能动作和各视图停靠；`hnApplication` 提供 2D/3D/景观图像浏览、病害绘制与数据服务；`hnProject` 负责解析二维/三维工程目录、成果库、里程桩/打标/图片路径/2D-3D 映射等工程上下文。
+## 1. 当前架构结论
 
-核心业务对象是 `hnPro::hnProject`。界面和图像控件大多通过 `hnApp::hnDataManager::getDataManager()->getCurrentProject()` 获取当前工程，再读取图片、里程、病害数据库、路面标准等信息。
+当前系统已经进入 SDK 视图迁移后的混合架构：
 
-## 推荐优先阅读文件
-
-### 主程序与界面编排
-
-| 文件 | 作用 |
-| --- | --- |
-| `hnRoadDataProcess/main.cpp` | Qt 应用入口，设置 DPI、日志、QSS，创建主窗口。 |
-| `hnRoadDataProcess/hnRoadDataProcess.h/.cpp` | 主窗口。创建 2D/3D/景观/病害列表/项目属性等 dock；连接菜单动作和各视图信号；打开工程后触发图像加载。 |
-| `hnRoadDataProcess/projectView.*` | 工程属性、打标、里程桩等项目侧栏。 |
-| `hnRoadDataProcess/hnDiseaseListWidget.*` | 病害列表与图像视图的选中联动。 |
-| `hnRoadDataProcess/adjustImageWidget.*` | 图像亮度/对比度控制面板，通过信号控制 2D/3D 视图。 |
-
-### 应用层、图像显示与缓存
-
-| 文件 | 作用 |
-| --- | --- |
-| `hnApplication/hnApplication.h/.cpp` | 应用层单例，创建 2D/3D 图像滚动控件和 3D 点云视图；点云显示使用 `hdPointCloud/PointCloudCache`。 |
-| `hnApplication/hnDataManager.h/.cpp` | 全局数据管理单例：工程管理、当前工程、道路规范参数、点云数据、病害服务。 |
-| `hnApplication/hnDiseaseService.h/.cpp` | 病害服务与病害缓存。维护全量病害缓存，提供按里程范围过滤、增删改时增量更新/失效。 |
-| `hnApplication/hn2dPixScrollWidget.*` | 2D 路面图像滚动容器，包装 `hn2dPixWidget`，负责滚动条、跳转、键盘浏览。 |
-| `hnApplication/hn3dPixScrollWidget.*` | 3D 影像滚动容器，包装 `hn3dPixWidget`，负责灰度/深度图浏览。 |
-| `hnApplication/hn2dPixWidget.*` | 2D 路面图像显示、病害绘制、里程/坐标换算、2D 到 3D 病害映射。 |
-| `hnApplication/hn3dPixWidget.*` | 3D 灰度/深度影像显示、控制点、三维坐标换算、3D 到 2D 病害映射。 |
-| `hnApplication/hn2d3dPixBaseWidget.*` | 2D/3D 图像控件的共同基类：绘制模式、线状病害、小框自动化绘制、翻页续画、临时状态缓存。 |
-| `hnApplication/hnStreetCameraView.*` | 景观图像单侧视图，使用 `QPixmap` 显示景观照片和景观病害。 |
-| `hnContinuousBrowsePix/hnBrowsePixWidget.*` | 连续浏览图像的底层控件，真正实现图片拼接显示、坐标转换、图像缓存和预加载。 |
-| `hnContinuousBrowsePix/imageLoader.*` | 扫描图片文件或接收图片路径列表，生成帧号到图片路径的映射。 |
-| `hnContinuousBrowsePix/hnContinuouslyBrowsePixWidget.*` | 滚动条、播放、缩放/原图窗口等浏览容器逻辑。 |
-
-### 工程解析与里程模型
-
-| 文件 | 作用 |
-| --- | --- |
-| `hnProject/hnProject.h/.cpp` | 当前工程总模型：打开工程、判断 2D/3D/23D 类型、成果库创建/迁移、里程桩/打标、图片路径、2D-3D 里程差。 |
-| `hnProject/hn2DProject.h/.cpp` | 二维工程：解析 `Setting.ini`、`ProjectInfo.txt`、`RoadImg`/`StreetImg` 图片路径、GPS、打标、里程桩、镜像配置。 |
-| `hnProject/hn3DProject.h/.cpp` | 三维工程：解析点云 `.cam`、`Pavement-cam-1.idx`、灰度/深度图路径，提供图像名、GPS 时间、三维坐标映射。 |
-| `hnProject/hnProjectManager.*` | 多工程管理，当前工程切换。 |
-| `hnProject/hnFileFun.*` | 图片名和里程文本之间的辅助转换。 |
-
-## 主要目录职责
-
-| 目录 | 说明 |
-| --- | --- |
-| `hnRoadDataProcess/` | 主可执行程序 UI、菜单动作、报表/DXF/Excel/IRM/控制点/工程配置等上层业务。 |
-| `hnApplication/` | 可复用业务应用层：图像视图、病害绘制、病害服务、全局数据管理、点云视图接入。 |
-| `hnProject/` | 工程模型层：读取/维护工程路径、成果库、里程、打标、图像列表、2D/3D 映射。 |
-| `hnContinuousBrowsePix/` | 连续图片浏览控件库，是 2D/3D 路面图像显示与图片缓存的底层。 |
-| `hnDataTable/` | SQLite 数据表封装，病害、工程设置、控制点、打标、里程桩等读写。 |
-| `hnCommon/` | 公共结构体/枚举/道路和病害数据结构。 |
-| `hnQtCommon/` | Qt 公共工具、枚举、异常、文本/文件辅助。 |
-| `hnConfigService/` | 全局配置读取，例如 `HnXRSettings`。 |
-| `hd*` 目录 | 3D 引擎、点云、场景、HLS/HLZ 数据等底层能力。 |
-| `3rd/` | 第三方依赖，通常不需要让 ChatGPT 阅读。 |
-| `x64/`、`Debug/`、`bin/`、`obj-x64/`、`.vs/`、`ipch/` | 构建产物或 IDE 缓存，通常跳过。 |
-
-## 核心运行流程
+- 2D/3D 图像显示由 `TiledGraphicsView` 和 `TunnelSectionItem` 负责。
+- 正式病害、临时病害、选中高亮、标签引线和材质标识由应用层 `hnSdkDiseaseGraphicsLayer` 加入同一个 SDK scene。
+- `hnBrowsePixWidget` 及旧 `paintEvent()` 仍保留，主要承载旧浏览状态、旧坐标/校验/入库兼容逻辑和非 SDK 路径；SDK 模式下不应再由它绘制正式图像与正式病害。
+- 业务数据库仍使用原有 `hnRoadDiseaseInfo`、`vec2dRect`、`vec3dRect` 和病害表结构。
+- 病害增删改查统一经过 `hnDiseaseService`，SDK 图层不直接操作数据库。
+- 2D/3D/景观联动统一进入 `hnRoadDataProcess::syncContinuousViews()`。
 
 ```mermaid
 flowchart TD
-    A["main.cpp 创建 QApplication"] --> B["hnRoadDataProcess 主窗口"]
-    B --> C["initDataManager / initRoadStandardInfo"]
-    B --> D["openProjectSlot 导入工程"]
-    D --> E["hnDataManager::getAllProject 解析工程列表"]
-    E --> F["hnDataManager::initProject / ProjectManager"]
-    F --> G["hnDataManager::setCurrentProject"]
-    G --> H["hnProject::openProject"]
-    H --> I["hn2DProject / hn3DProject 初始化"]
-    H --> J["成果数据/成果.db 打开或创建"]
-    G --> K["hnDiseaseService::setProject 并清缓存"]
-    B --> L["2D/3D/景观视图 load image"]
-    L --> M["hnBrowsePixWidget 缓存并绘制图片"]
+    A["hnRoadDataProcess 主窗口"] --> B["hnDataManager / hnProject"]
+    B --> C["图片列表、里程、打标、成果库"]
+    C --> D["hn2dPixWidget / hn3dPixWidget"]
+    D --> E["TiledGraphicsView"]
+    E --> F["TunnelSectionItem 连续图像"]
+    D --> G["hnSdkDiseaseGraphicsLayer"]
+    G --> E
+    B --> H["hnDiseaseService"]
+    H --> D
+    A --> I["hnStreetCameraView"]
+    A --> J["syncContinuousViews"]
+    J --> D
+    J --> I
 ```
 
-打开工程的大致路径：
+## 2. 主要模块
 
-1. `hnRoadDataProcess::openProjectSlot()` 让用户选择/配置工程。
-2. `hnDataManager::getAllProject()` 查找 `ProjectInfo.xml` 或 `ProjectInfo.txt`，判断工作类型。
-3. `hnDataManager::initProject()` 创建 `hnProjectManager` 并加入工程。
-4. `hnDataManager::setCurrentProject()` 切换当前工程，设置 `hnDiseaseService` 项目指针，并按需加载点云。
-5. `hnProject::openProject()` 判断 2D/3D/23D 类型，创建成果库，初始化 `hn2DProject` / `hn3DProject`，读取里程桩、打标和工程配置。
-6. 主窗口调用 `m_2dPixScrollWidget->loadRoadPicture()`、`m_3dPixScrollWidget->load3dImage()` 等加载图像。
-
-## 图像显示与缓存重点
-
-### 1. 底层连续浏览控件
-
-`hnContinuousBrowsePix/hnBrowsePixWidget` 是 2D/3D 图像显示的共同底座。关键成员：
-
-| 成员 | 作用 |
+| 目录 | 当前职责 |
 | --- | --- |
-| `m_pixNameMap` | `QMap<int, QString>`，帧号到图片绝对路径，帧号从 1 开始。 |
-| `m_reversePixNameMap` | 图片绝对路径到帧号，加速 `singleImagePointToBigImagePoint()` 查找。 |
-| `m_currentWidgetPixNames` | 当前视野内实际绘制的图片。 |
-| `m_imageMap` | `QMap<int, QImage>`，图片缓存。注释里曾考虑 `QCache<int, QImage>`，当前实际使用 `QMap`。 |
-| `m_imageMapMutex` | 保护 `m_imageMap`。 |
-| `m_preloadFuture` | `QtConcurrent::run` 后台预加载任务。 |
-| `m_loadFrameNum` | 当前底部帧前后各保留/预加载多少帧。 |
-| `m_tmpPixImageWithoutDisease` | 当前拼接后的底图缓存，不含病害，用于重绘和放大。 |
-| `m_tmpPixWithDiseaseImage` | 带病害的临时图像。 |
-| `m_buttomFrameIdx` | 当前视图底部帧号，可能是整数或半帧。 |
+| `hnRoadDataProcess/` | 主程序、Ribbon、dock 编排、工程切换、2D/3D/景观联动、病害列表、地图和输出。 |
+| `hnApplication/` | 2D/3D 业务视图、SDK 适配层、病害绘制状态机、病害 scene 图层和病害服务。 |
+| `SDK/` | 通用连续影像视图、图片数据源、坐标转换、缓存、LOD 和网格选择。 |
+| `hnProject/` | 2D/3D 工程解析、图片列表、编码器里程、真实桩号、打标、成果库和 2D/3D 差值。 |
+| `hnContinuousBrowsePix/` | 旧连续浏览控件。当前仍是 2D/3D 业务 widget 的继承基础，但不再是 SDK 模式的主显示层。 |
+| `hnDataTable/` | SQLite 数据表封装。 |
+| `hnCommon/` | 工程、里程、病害等公共数据结构。 |
+| `hnConfigService/` | 软件设置和视图配置。 |
+| `hd*` | 点云和三维底层模块。 |
 
-主要加载流程：
+## 3. 推荐阅读顺序
 
-1. `loadPix(QString)` 或 `loadPix(QStringList)` 清空 `m_pixNameMap` / `m_imageMap`。
-2. `imageLoader` 生成帧号到图片路径映射。
-3. 设置滚动条最大值为 `图片数 * 2`，因为滚动条支持半张图粒度。
-4. `paintEvent()` 创建当前窗口尺寸对应的 `QImage`。
-5. 如果 `m_isAllowDrawPix` 为 true，调用 `drawPicture()`。
-6. `drawPicture()` 调 `drawAllPixOnLabel()` 把若干张单图拼成当前大图。
-7. `drawAllPixOnLabel()` 会调用 `ensureImageLoaded()` 同步保证当前帧已在缓存，并调用 `schedulePreloadImages()` 异步预加载附近帧。
-8. 子类重载 `drawSomeThingOnImage()`，在底图上叠加病害、临时绘制、打标、控制点等。
-9. 最后 `QPainter(this).drawImage(this->rect(), image)` 一次性绘制到 QWidget。
+1. `hnRoadDataProcess/hnRoadDataProcess.cpp`
+   先看 dock 创建、工程打开、信号连接和 `syncContinuousViews()`。
+2. `hnApplication/hn2d3dPixBaseWidget.h/.cpp`
+   这是 SDK 视图适配、绘制状态机、里程定位、正式病害刷新和打标显示的中心。
+3. `hnApplication/hn2dPixWidget.cpp`、`hn3dPixWidget.cpp`
+   分别负责 2D/3D 数据库几何生成、读取和 scene path 转换。
+4. `hnApplication/hnSdkDiseaseGraphicsLayer.h/.cpp`
+   看正式病害、临时预览、选中、标签引线和材质边界如何加入 scene。
+5. `hnApplication/hnDiseaseService.h/.cpp`
+   看病害数据库访问、缓存失效和刷新信号。
+6. `SDK/src/TiledGraphicsView.*`、`TunnelSectionItem.*`
+   看连续布局、坐标转换、滚动缩放和图片加载。
+7. `SDK/include/tools/GridSelectionTool.h`、`SDK/src/GridSelectionTool.cpp`
+   看小框点选、矩形选格和折线 supercover 逻辑。
 
-缓存策略：
+## 4. 工程打开与卸载
 
-- `ensureImageLoaded(frameIdx)`：当前绘制必须用到的帧同步加载，读 `QImage(fileName)`，按 `m_isHMirrored/m_isVMirrored` 镜像后放入 `m_imageMap`。
-- `schedulePreloadImages(bottomFrameIdx)`：避免重复提交相同底部帧任务；已有任务运行时不再提交。
-- `updateImageMapBasedOnBottomFrameIdx(bottomFrameIdx)`：后台加载 `[bottomFrameIdx - m_loadFrameNum, bottomFrameIdx + m_loadFrameNum]` 范围内图片，并删除范围外缓存。
-- 如果绘制时图片尚未准备好，`delayReupdate()` 30ms 后重绘。
+工程核心对象是 `hnPro::hnProject`，全局入口是 `hnApp::hnDataManager`。
 
-坐标体系：
+```mermaid
+sequenceDiagram
+    participant UI as hnRoadDataProcess
+    participant DM as hnDataManager
+    participant P as hnProject
+    participant DS as hnDiseaseService
+    participant V as 2D/3D/景观视图
 
-- 单张图坐标：某一张原始图片内的像素坐标。
-- 大图坐标：当前窗口中拼接后的临时大图坐标。
-- 屏幕/widget 坐标：鼠标事件坐标。
-- 常用转换：
-  - `screenPointToBigImagePoint()`
-  - `bigImagePointToScreenPoint()`
-  - `screenToSingleImagePoint()`
-  - `singleImagePointToBigImagePoint()`
-  - `bigImagePointToSingleImagePoint()`
+    UI->>V: clearCurrentProjectUiState / clearSdkView
+    UI->>DM: initProject / setCurrentProject
+    DM->>P: openProject
+    P-->>DM: 图片、里程、打标、成果库
+    DM->>DS: setProject + invalidateCache
+    UI->>V: loadRoadPicture / load3DImage / loadStreet
+```
 
-### 2. 2D 路面图像
+切换或重新导入工程时，旧工程的以下状态必须一起清空：
 
-`hnApplication/hn2dPixWidget` 继承 `hn2d3dPixBaseWidget`，用于路面 2D 图像。
+- 2D/3D SDK scene、图片、病害、临时绘制和选中项。
+- 景观图片。
+- 病害列表。
+- 工程信息、采集打标列表和校桩列表。
+- 地图数据和状态栏。
 
-`loadRoadPicture()` 做的关键事：
+不能只清工程树或病害列表，否则新工程未双击前会残留旧视图。
 
-- 检查当前工程和 2D 工程是否存在。
-- 读取 2D 镜像配置 `mirroredSetting.ini`。
-- 从 `hnProjectSetInfo` 获取 `dRadioX/dRadioY`、图片宽高、路面宽度等。
-- 从 `hnProject::getCurrentMileVector()` 取当前所有里程点，收集 `mile.picturePath`。
-- 建立 `m_pixNameHnMileMap` 和 `m_milePixNameMap`，用于图片名/编码器里程/`hnMile` 的映射。
-- 调 `loadPix(pixNames)` 进入底层连续浏览控件。
-- 计算小框自动化模式的单图格子 `m_singleImageLittleFrameRects`。
-- 初始化绘制模式 `initFrameMode()`。
-- 对老版本病害执行一次尺寸补算/数据库更新逻辑。
+## 5. 当前视图所有权
 
-`drawSomeThingOnImage()` 叠加顺序：
+### 5.1 2D/3D 图像
 
-1. `adjustImage(image)` 调亮度/对比度。
-2. `drawDatabaseLoadData(image)` 画数据库中当前范围病害。
-3. `drawTmpData(image)` 画正在绘制的临时病害。
-4. `drawMarkValue(image)` 画打标分界线。
-5. `setCurrentHnMile()` 更新当前里程状态。
+`hn2d3dPixBaseWidget::loadSdkVerticalImageSequence()` 创建：
 
-2D 病害绘制支持：
+- `TiledGraphicsView`
+- `TunnelViewerController`
+- `WholeImageSourceFactory(LayoutOrientation::VerticalReverse, ...)`
 
-- 人工大框 `BIG_FRAME`
-- 自动化小框 `LITTLE_FRAME`
-- 设计面状 `DESIGN_FACETS`
-- 设计线状 `DESIGN_LINE`
-- 添加、编辑、删除、合并、获取里程等工作模式来自 `hnWorkMode`。
+工程图片顺序由项目层确定后传给 `TunnelViewerController::loadImages()`。当前路线使用反向纵向 scene：第一张图片在底部，编码器里程增大时 sceneY 减小。
 
-### 3. 3D 灰度/深度影像
+SDK 模式下：
 
-`hnApplication/hn3dPixWidget` 同样继承 `hn2d3dPixBaseWidget`，并混入 `hn3dImageMode`、`projectType`。
+- 图片由 `TunnelSectionItem::paint()` 绘制。
+- 普通滚轮移动视图。
+- `Ctrl+滚轮` 修改 view transform。
+- 病害框跟随 scene 变换，不应再由 QWidget overlay 以屏幕坐标重画。
 
-`load3DImagePictures()` 做的关键事：
+旧 `hnBrowsePixWidget::paintEvent()` 仍用于非 SDK 兼容路径。新增 SDK 功能不应再依赖它生成临时拼接大图。
 
-- 检查当前工程和 3D 工程是否存在。
-- 读取工程类型、3D 镜像配置。
-- 从 `hn3DProject` 获取图像宽高、比例、灰度图路径、深度图路径、全部图像名。
-- 根据 `ImageShowMode::Gray` 或 `ImageShowMode::RGB` 拼出 `GREYxxx` 或 `RGBxxx` 图片路径。
-- 计算小框自动化模式格子。
-- 调 `loadPix(pixNames)`。
-- 将预加载帧数设置为当前视图帧数的两倍。
-- 初始化绘制模式。
+### 5.2 景观图
 
-3D 图像中的坐标/里程主要依赖：
+景观图由 `hnStreetCameraView` 显示单张图片，不连续拼接。它按当前 2D 编码器里程选择对应景观图片；翻页后通过统一联动入口反向定位 2D/3D。
 
-- `hn3DProject::getMileByImage()`
-- `hn3DProject::getGpsTimer()`
-- `hn3DProject::get2DCoord()`
-- `hn3DProject::get3DCoord()`
-- `hn3dPixWidget::encoderMileToTrueMile()` / `trueMileToEncoderMile()`
+状态栏中的景观图片名由当前实际显示图片更新，不跟随鼠标在路面图上的位置变化。
 
-控制点逻辑也在 `hn3dPixWidget` 中：添加控制点时，会把当前图像名、像素坐标、GPS 时间、三维坐标写入成果库的控制点表。
+## 6. 坐标和里程
 
-### 4. 2D/3D 共同绘制基类
+### 6.1 SDK 坐标
 
-`hnApplication/hn2d3dPixBaseWidget` 统一了 2D/3D 病害绘制公共逻辑：
-
-- 工作模式、框选模式、放大镜、图片调整、深度计算、线/矩形算法通过多继承混入。
-- `lineDiseaseAddDisease()` 弹出病害类型选择，计算线状病害属性，写入 `hnDiseaseService`。
-- 小框自动化绘制维护：
-  - `m_littleSingleImagePoints`
-  - `m_litteBigImagePoints`
-  - `m_tmpLittleFrameDiseaseRects`
-  - `m_committedLittleFrameDiseaseRects`
-  - `m_cachedVisibleLittleFrameRects`
-  - `m_cachedVisibleLittleFramePixNames`
-- 翻页续画逻辑：
-  - `slot_moveMouse()`
-  - `scheduleMoveCursorToBestContinuePointAfterBrowse()`
-  - `moveCursorToBestContinuePointAfterBrowse()`
-  - `ignoreMouseMoveAfterAutoCursorMove()`
-- 右键拖拽删除、线状病害合并、选中病害等公共行为也在这里。
-
-### 5. 景观图像
-
-`hnStreetCameraView` 与 2D/3D 路面连续浏览不同，核心是 `QPixmap* m_LoadPic` / `m_displayPic` 加载和显示单张景观照片。它维护：
-
-- `m_listImage`
-- `m_nCurImageDmi`
-- `m_streetMiles`
-- `m_pixPathStreetMilesMap`
-
-景观图像路径来自 `hnProject::getLeftStreetMiles()` / `getRightStreetMiles()`，这些方法按道路图像间隔和景观图像间隔计算景观图片对应里程，并拼接 `StreetImg/Camera0/Image_xxxx` 或 `StreetImg2/Camera0/Image_xxxx` 路径。
-
-## 病害缓存
-
-`hnApplication/hnDiseaseService` 是当前病害读写的统一服务，重点是减少每次绘制都查数据库。
-
-关键成员：
-
-| 成员 | 作用 |
+| 坐标 | 含义 |
 | --- | --- |
-| `m_project` | 当前工程指针。 |
-| `m_allDiseaseCacheValid` | 全量病害缓存是否有效。 |
-| `m_allDiseaseCache` | 全量病害缓存，加载后排序。 |
+| viewport 坐标 | 鼠标在 SDK viewport 中的位置。 |
+| scene 坐标 | 整条连续路线的全局图形坐标。 |
+| 单图坐标 | 当前原始图片内的像素坐标。 |
+| `pixImagePoint` | `pixName + pixPoint`，当前 SDK 病害交互的基础点。 |
 
-关键方法：
+转换入口：
 
-- `setProject(project)`：切换工程时设置工程指针并 `invalidateCache()`。
-- `ensureAllDiseaseCache()`：缓存无效时调用 `getAllDisease()` 从成果库读取所有病害并排序。
-- `getRoadDiseasesInRange(begin, end, result)`：从缓存中按里程范围过滤路面病害。
-- `getStreetDiseaseInRange(begin, end, result)`：从缓存中按里程范围过滤景观病害。
-- `addDisease()` / `deleteOneDisease()` / `updateDisease()`：先写数据库，再更新或失效缓存，最后发 `diseaseChanged()` 等信号。
-- `deleteAll...()` / `addDataAffairs()`：批量变化时直接失效缓存并发 `diseaseReset()`。
+- `sdkScenePointToPixPoint()`：scene 点转 `pixImagePoint`。
+- `sdkPixPointToScenePoint()`：`pixImagePoint` 转 scene 点。
+- `TiledGraphicsView::mapToGlobalScene()`：图片名和单图像素转 scene。
+- `TiledGraphicsView::GlobalSceneToMap()`：scene 反查图片名和单图像素。
 
-注意：
+### 6.2 连续编码器里程
 
-- 2D/3D 图像控件构造时连接 `hnDiseaseService::diseaseChanged()` 到自己的 `slotDiseaseChanged()`，收到变化后清空当前视图病害并 `update()`。
-- `getAllStreetDiseases()` 和 `getAllRoadDiseases()` 都依赖全量缓存后再按 `ndiseaseType` 过滤。
-
-## 工程模型与文件结构约定
-
-### 工程类型
-
-`hnProject::openProject()` 根据 2D/3D 路径是否存在判断：
-
-- `PROJECT_2D_TYPE`：只有二维工程。
-- `PROJECT_XD_3D_TYPE`：只有相对/三维工程。
-- `PROJECT_23D_TYPE`：二维三维一体化。
-
-### 2D 工程常见文件/目录
-
-`hn2DProject::init()` 主要找这些路径：
-
-| 路径 | 作用 |
-| --- | --- |
-| `Setting.ini` | 必需，工作模式、图像间距、设备开关等。 |
-| `ProjectInfo.txt` | 必需，道路基本信息。 |
-| `RoadImg/Camera0/Image_xxxx/*.jpg` | 路面图像。 |
-| `StreetImg/Camera0/Image_xxxx/*.jpg` | 左侧景观图像。 |
-| `StreetImg/Camera1` 或 `StreetImg2/Camera0` | 右侧景观图像。 |
-| `RoadStatuMarkInfo.txt` | 外业打标文本。 |
-| `RoadTypeInfo.txt` | 完整路面材质/类型打标。 |
-| `Dmi2Mile.txt` | 编码器里程到真实桩号。 |
-| `MileStoneCaliInfo.txt` | 里程校准。 |
-| `GPS2Mile.txt` / `HighGps2Mile.txt` | GPS 与里程关系。 |
-| `23dConfig.txt` | 多工程用户桩号配置。 |
-| `mirroredSetting.ini` | 图像水平/垂直镜像配置，不存在会自动创建。 |
-
-`addPicturePaths()` 会扫描 `Image_` 子目录中的 `*.jpg`，按触发编号补齐可能丢帧的位置：如果触发编号大于当前计数，会重复追加当前图片路径直到计数追上。
-
-### 3D 工程常见文件/目录
-
-`hn3DProject::init()` 主要找：
-
-| 路径 | 作用 |
-| --- | --- |
-| `PointCloud/1/Mms-Cam-1.cam` 或 `PointCloud/1/iScan-Cam-1.cam` | 相对点云/相机数据入口，必需。 |
-| `PointCloud/1/*.hlz` | 绝对点云文件列表。 |
-| `Image/Pavement-cam-1.idx` | 影像索引，包含图像名、时间、里程、图像四角点等。 |
-| `Image/灰度图/GREY*.jpg` | 灰度图。 |
-| `Image/深度图/RGB*.jpg` | 深度图。 |
-| `3dProjectConfig.ini` | 3D 路面宽度等配置。 |
-| `mirroredSetting.ini` | 3D 图像镜像配置，不存在会自动创建。 |
-
-### 成果库
-
-`hnProject::getOrCreateResultDb()` 负责成果库：
-
-- 成果目录一般在工程根目录下 `成果数据/`。
-- 新版本成果库文件名固定为 `成果.db`。
-- 2D/23D 工程成果子目录优先按 `道路编号_上行/下行_起点_终点` 命名；兼容旧工程目录。
-- 首次创建成果库时会写入工程设置和里程桩。
-- 存在旧成果库但缺少导入标记时，会询问是否从外业 `Dmi2Mile.txt` / `RoadStatuMarkInfo.txt` 补充工作副本。
-- 导入完成后写 `FieldSourceImported.flag`。
-- 内业修改后的打标/较桩默认写成果库，不自动覆盖外业原始文本；可通过导出生成 `_内业修正.txt`。
-
-## 视图联动
-
-主窗口 `hnRoadDataProcess` 里创建：
-
-- `m_2dPixScrollWidget`：`hnApplication::newRaodDamageContinousBrowserPixWidget()`
-- `m_3dPixScrollWidget`：`hnApplication::new3DImageViewWidget()`
-- `m_pStreetViewWidget`：景观图像组件
-- `m_diseaseListWidget`：病害列表
-- `m_projectWidget`：项目属性/打标/里程桩
-- `m_adjustImageWidget`：亮度/对比度面板
-
-典型联动：
-
-- 2D/3D 视图选中病害后发 `signal_selectDisease`，病害列表同步选中。
-- 病害服务发 `diseaseChanged()` 后，2D/3D 控件清当前视图病害并重绘。
-- 2D 滚动条变化会发当前桩号/里程，驱动地图/实时指标等。
-- 2D/3D/景观视图之间通过滚动值或帧号建立同步；当前激活视图不同，主窗口会动态连接/断开信号，避免互相递归。
-- `adjustImageWidget` 发亮度/对比度信号到 2D/3D 图像控件，设置后 `update()` 重绘。
-
-## 需要特别注意的实现细节
-
-1. 很多中文字符串通过 `QString::fromLocal8Bit` 处理，源码里可能混有 GBK/UTF-8；读取时看到乱码不一定表示运行时错误。
-2. `hnBrowsePixWidget` 的滚动条最大值是 `图片数 * 2`，因为支持半帧显示。底部帧号可能是 `N` 或 `N + 0.5`。
-3. 2D 和 3D 都使用同一套连续浏览底层，但 2D 通常是多张路面图纵向拼接；3D 视图在部分坐标恢复逻辑中按当前单图处理。
-4. 2D/3D 小框自动化模式默认每格代表 0.1m，像素边长由 `caculateLittleFrameSideLenth(widthScale/heightScale, 0.1)` 计算。
-5. `hn2d3dPixBaseWidget` 里有翻页后继续绘制的鼠标自动移动逻辑，调试小框绘制跨页问题时优先看这一层。
-6. 病害数据写库不要绕开 `hnDiseaseService`，否则缓存和界面信号可能不同步。
-7. 点云显示层有两套缓存/持有方式：
-   - `hnDataManager::m_vecPtCloud` 直接打开 `.hlz` 点云并持有。
-   - `hnApplication::addPtCloud()` 通过 `CPointCloudCache::GetCacheInstance()->CacheSeaPcd()` 获取点云缓存。
-8. `hnProject` 是工程数据的中心，不建议在 UI 层重复解析工程目录或文件。
-
-## 常见任务入口
-
-| 任务 | 优先看 |
-| --- | --- |
-| 打开工程失败 | `hnRoadDataProcess::openProjectSlot()`、`hnDataManager::getAllProject()`、`hnProject::openProject()`、`hn2DProject::init()`、`hn3DProject::init()` |
-| 2D 图片不显示/卡顿 | `hn2dPixWidget::loadRoadPicture()`、`hnBrowsePixWidget::loadPix()`、`drawAllPixOnLabel()`、`ensureImageLoaded()`、`schedulePreloadImages()` |
-| 3D 灰度/深度图不显示 | `hn3dPixWidget::load3DImagePictures()`、`hn3DProject::setCurProject()`、`hn3DProject::getAllImage()` |
-| 图像缓存异常 | `hnBrowsePixWidget::m_imageMap`、`updateImageMapBasedOnBottomFrameIdx()`、`delayReupdate()` |
-| 病害绘制/编辑/删除 | `hn2d3dPixBaseWidget` 公共逻辑 + `hn2dPixWidget` / `hn3dPixWidget` 各自坐标生成 |
-| 病害列表和图像不同步 | `hnDiseaseService` 信号、`slotDiseaseChanged()`、`signal_selectDisease` 连接 |
-| 里程/桩号不对 | `hnProject::enclToTrueMile()`、`trueMileToEncl()`、`initMileList()`、`hn2DProject::add2dMilePile()` |
-| 2D/3D 映射不对 | `hnProject::get2d3dMileDiff()`、`hn2dPixWidget::generate...Hn3d...`、`hn3dPixWidget::generate...Hn2d...`、`hn2d3dCoordinates` |
-| 镜像问题 | `hn2DProject/hn3DProject::getIsHMirrored/getIsVMirrored`、`hnBrowsePixWidget::ensureImageLoaded()`、坐标写库处的镜像反算 |
-| 景观病害 | `hnStreetWidget`、`hnStreetCameraView`、`hnProject::getLeftStreetMiles/getRightStreetMiles`、`hnDiseaseService::getStreetDiseaseInRange()` |
-| 报表/DXF 输出 | `hnRoadDataProcess` 中 `write...Excel`、`output...Dxf` 相关函数，外加 `hnDxfIO`、`QXlsx` |
-
-## 后续给 ChatGPT 的建议提示词
-
-可以把本文件作为上下文，并附上你要改的具体文件或函数。示例：
+对单图高度 `H`、每张图对应里程 `D`、帧号 `frameIdx` 和单图 y：
 
 ```text
-请先阅读 docs/PROJECT_CONTEXT_FOR_CHATGPT.md。
-这次只关注 hnApplication/hnBrowsePixWidget.cpp 和 hnApplication/hn2dPixWidget.cpp。
-我要解决的问题是：滚动 2D 路面图像时偶尔黑屏/重绘延迟。
-请优先检查图像缓存 m_imageMap、schedulePreloadImages、drawAllPixOnLabel、delayReupdate 的控制流。
-不要阅读 3rd、x64、Debug、bin、obj-x64、.vs、ipch。
+imageBeginMile = (frameIdx - 1) * D
+offsetInImage  = (H - localY) * D / H
+encoderMile    = imageBeginMile + offsetInImage
 ```
 
-如果是病害绘制问题：
+当前 scene 使用 `VerticalReverse`，因此编码器里程与 sceneY 的转换不能套用正向纵向布局。统一使用：
+
+- `encoderMileToSdkSceneY()`
+- `sdkSceneYToEncoderMile()`
+- `sdkPixPointToEncoderMile()`
+- `sdkAnchorToEncoderMile()`
+
+### 6.3 真实桩号
+
+真实桩号和编码器里程通过 `hnProject::enclToTrueMile()` / `trueMileToEncl()` 转换。显示桩号、打标跳转和景观图定位不能把两者混用。
+
+### 6.4 2D/3D 差值
+
+`2D3D_DIFF` 表示编码器里程差值，不是像素差：
 
 ```text
-请先阅读 docs/PROJECT_CONTEXT_FOR_CHATGPT.md。
-我要调试 2D/3D 小框自动化病害跨页续画问题。
-优先看 hn2d3dPixBaseWidget.cpp 的 slot_moveMouse、commitCurrentLittleRectDrawSelection、
-moveCursorToBestContinuePointAfterBrowse、ignoreMouseMoveAfterAutoCursorMove，
-再看 hn2dPixWidget.cpp / hn3dPixWidget.cpp 里对应的坐标转换函数。
+target3D = source2D - diff
+target2D = source3D + diff
 ```
 
-## 建议跳过的内容
+当前联动基准是视图底部编码器里程。目标视图与目标值相差小于 `0.01m` 时不再滚动，以避免 2D/3D 来回追赶。
 
-为节省 token，除非任务明确相关，后续不要让模型展开这些目录：
+## 7. 2D/3D/景观联动
 
-- `3rd/`
-- `.vs/`
-- `Debug/`
-- `x64/`
-- `bin/`
-- `obj-x64/`
-- `ipch/`
-- 各项目下 `GeneratedFiles/`、`moc/`、`uic/` 生成文件
-- `QXlsx/` 源码，除非正在修 Excel 导出
-- `hd*` 底层引擎源码，除非正在修 3D 引擎/点云渲染
+唯一跨视图入口是：
 
+```cpp
+hnRoadDataProcess::syncContinuousViews(
+    ContinuousViewSyncSource source,
+    double sourceEncoderMile);
+```
+
+规则：
+
+| 来源 | 2D 目标 | 3D 目标 | 景观图目标 |
+| --- | --- | --- | --- |
+| 2D | 当前值 | `2D - diff` | 2D 里程 |
+| 3D | `3D + diff` | 当前值 | 目标 2D 里程 |
+| 景观图 | 景观对应 2D 里程 | `2D - diff` | 当前图片 |
+
+只有 `signal_sdkUserBottomEncoderMileChanged` 触发跨视图同步。普通 `signal_sdkBottomEncoderMileChanged` 只更新状态栏、旧状态和外层控件，防止程序定位再次反向触发同步。
+
+所有用户入口都应最终进入同一方法：滚轮、W/S、方向键、滚动条拖动、病害列表定位、里程跳转、打标跳转和景观图翻页。
+
+## 8. 病害数据与唯一键
+
+### 8.1 数据服务
+
+病害读写统一走 `hnDiseaseService`：
+
+- `getRoadDiseasesInRange()`
+- `addDisease()`
+- `updateDisease()`
+- `deleteOneDisease()`
+- `invalidateCache()`
+
+数据库写入成功后必须失效或正确更新全量病害缓存，再发出 `diseaseChanged()`。不要从 UI 或 SDK 图层绕过服务直接写表。
+
+### 8.2 唯一键
+
+病害 ID 只在单张数据库表内唯一。应用层 scene key 使用：
+
+```text
+<tableName>#<diseaseId>
+```
+
+例如 `DisPSB#162`。选中、命中、删除、缓存和列表联动都应使用该组合 key，不能只比较 `nID`。
+
+## 9. 病害绘制链路
+
+### 9.1 通用流程
+
+```mermaid
+flowchart LR
+    A["SDK 鼠标点"] --> B["pixImagePoint"]
+    B --> C["临时 scene 几何"]
+    C --> D["病害选择对话框"]
+    D -->|确认| E["生成 hnRoadDiseaseInfo"]
+    E --> F["hnDiseaseService::addDisease"]
+    F --> G["数据库 + 缓存失效"]
+    G --> H["refreshSdkDiseaseLayer"]
+    H --> I["数据库几何 -> SDK scene path"]
+    I --> J["hnSdkDiseaseGraphicsLayer"]
+    D -->|Esc/关闭| K["resetSdkDiseaseDrawingState"]
+```
+
+确认入库后，新增病害应自动成为 2D/3D 共同选中项。取消对话框只取消当前一笔，保留添加模式，但在下一次左键前鼠标移动不得继续生成病害。
+
+### 9.2 大框和设计模式
+
+SDK 交互点应以 `pixImagePoint` 或 scene 几何为真相源。提交时转换一次写入原数据库结构。正式显示再从数据库几何转换回 scene。
+
+尚未完全迁移的线状兼容路径仍可能调用旧大图点转换；新增逻辑不应继续扩大这部分依赖。
+
+### 9.3 小框模式
+
+小框数据库格式不变：
+
+- 2D：`vec2dRect`
+- 3D：`vec3dRect`
+- `nDrawType == 1`
+- 面积按格子数量乘以单格面积计算。
+
+当前交互：
+
+- 普通轨迹模式：左键开始，移动记录轨迹，再次左键结束。
+- `R`：矩形选择。绘制阶段只显示大矩形，确认前再生成最终格子。
+- `B`：折线选择。左键增加折线点，右键或结束键提交，确认前用 supercover 补齐线段经过格子。
+- `D`：保留给 SDK 向右浏览，不再切换小框模式。
+
+绘制阶段避免把几千个格子逐个加入 scene。正式显示分为：
+
+- `DenseRect`：密集矩形小框只显示外接矩形。
+- `SparseCells`：折线/轨迹小框显示合并后的稀疏格子路径。
+
+删除模式不依赖 scene 是否逐格显示：左键用 `imageName + 单图像素` 命中并删除一个数据库格子，右键删除完整病害。
+
+## 10. 正式病害显示
+
+正式病害唯一刷新入口是：
+
+```cpp
+hn2d3dPixBaseWidget::refreshSdkDiseaseLayer();
+```
+
+主要调用链：
+
+```text
+refreshSdkDiseaseLayer
+  -> clearSdkLittleFrameRenderCache
+  -> refreshSdkDiseaseItems
+  -> hnDiseaseService::getRoadDiseasesInRange
+  -> addSdkDiseaseItem
+  -> hn2dPixWidget/hn3dPixWidget::sdkDiseaseScenePath
+  -> hnSdkDiseaseGraphicsLayer::addDiseasePath
+```
+
+`m_sdkLittleFrameRenderCache` 只缓存已经成功生成的 scene path：
+
+- 第一次刷新时为空是正常现象。
+- 缓存未命中后必须现场生成 path。
+- 只有非空 path 才写入缓存。
+- 新增、删除、修改、翻转或重新加载后必须清缓存。
+- 缓存为空不是数据库病害不显示的直接原因，真正要检查的是 path 为什么没有生成。
+
+选中状态只改变颜色，保持未选中状态的线型和线宽。选中 key 在 2D/3D 间同步。
+
+## 11. 路面打标与跨材质限制
+
+打标来自当前工程 `getCurrentMarkVector()`。SDK 图层使用固定 sceneY 的横向边界线、半透明色带、标签和箭头显示打标位置；标签必须随道路 scene 一起滚动，不能固定在 viewport 边缘。
+
+双击打标列表时优先使用行内保存的原始编码器里程，其次按 `markId` 回查工程打标，最后才从真实桩号反算。
+
+提交病害前，`temporaryDiseaseEncoderMileRange()` 计算临时几何覆盖的编码器里程范围，`isTmpDiseaseRoadMarkRangeValid()` 检查范围内材质、标准和等级。跨不兼容材质/标准的病害不允许入库。
+
+## 12. 图片缓存
+
+SDK 单图模式复用现有异步加载体系，但不全量常驻工程图片：
+
+- 缩略图进入 `AsyncImageLoader::m_thumbnailCache`，上限约 500 MB。
+- 数据库切片高清进入 `m_cache`，上限约 1000 MB。
+- 普通单图高清主要保存在 `TunnelSectionItem::m_loadedTiles`，不再重复放入全局高清缓存。
+- 当前视口附近提前加载，远离滑动窗口后释放。
+
+因此进程内存不只来自两个 `QCache`，还包括当前 item 的高清 QPixmap、scene item、OpenCV/点云、数据库缓存和 Qt 图形资源。判断内存问题时应分别观察这些层，而不是只调整 QCache 上限。
+
+## 13. 当前已知问题：数据库有小框，scene path 为空
+
+2026-07-10 至 2026-07-14 的当前阻塞案例：
+
+```text
+[HN_SDK_DISEASE_RENDER_ATTEMPT]
+key=DisPSB#162
+drawType=1
+pathEmpty=true
+vec2d=59
+vec3d=59
+dDmi=890
+dMileage=894.3
+range=879.662 895.662
+```
+
+这个日志已经证明：
+
+- 病害已进入数据库和病害服务查询结果。
+- 当前查询范围包含病害。
+- 2D/3D 几何都不为空。
+- 失败点位于 `sdkDiseaseScenePath()` 的“数据库单图点 -> SDK scene 点”阶段。
+- `m_sdkLittleFrameRenderCache` 为空只是首次缓存未命中，不是根因。
+
+排查顺序：
+
+1. 在 `hn2dPixWidget::sdkDiseaseScenePath()` 的 `pointToScene` 中检查每个点的 `m_dmi/x/y`。
+2. 检查 `resolve2dDiseaseImageNameByMile()` 返回的图片名和帧号。
+3. 确认该图片名存在于 `TiledGraphicsView::m_items` 的 `getImageName()`。
+4. 检查 `mapToGlobalScene()` 是否真实命中 item；不能把 `(0,0)` 兜底当成功。
+5. 检查四个 scene 点是否被映射成同一点，导致 `QRectF` 宽或高为 0。
+6. 只有生成有效 `QPainterPath` 后才检查 `hnSdkDiseaseGraphicsLayer` 的可见性和样式。
+
+相关日志：
+
+- `HN_SDK_DISEASE_REFRESH`：查询范围和病害数量。
+- `HN_SDK_DISEASE_ENSURE`：指定病害进入强制刷新。
+- `HN_SDK_DISEASE_RENDER_ATTEMPT`：数据库几何和最终 path 状态。
+- `HN_SDK_DISEASE_2D_POINT_FAIL`：2D 点无法解析图片。
+- `HN_SDK_DISEASE_RENDER_SKIP`：空 path 被跳过。
+
+## 14. 构建与验证
+
+推荐使用 VS2022 MSBuild：
+
+```powershell
+$msbuild = "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
+
+& $msbuild hnRoadDataProcess.sln /t:TunnelViewerSDK `
+  /p:Configuration=Debug /p:Platform=x64 /m /v:minimal
+
+& $msbuild hnRoadDataProcess.sln /t:hnApplication `
+  /p:Configuration=Debug /p:Platform=x64 /m /v:minimal
+
+& $msbuild hnRoadDataProcess.sln /t:hnRoadDataProcess `
+  /p:Configuration=Debug /p:Platform=x64 /m:1 /nr:false /v:minimal
+```
+
+主程序或 DLL 正在运行时可能出现 `LNK1104`。关闭 `hnRoadDataProcess.exe` 后再链接。老工程还可能遇到 `.sbr`、PDB 或编码页 warning；不要在修业务问题时顺手清理无关构建产物。
+
+手工验证至少覆盖：
+
+- 2D/3D 普通滚轮、W/S、方向键和滚动条联动。
+- `Ctrl+滚轮` 缩放时图像和病害几何一致变换。
+- 景观图翻页反向同步。
+- 大框、小框 R、小框 B、设计面、设计线的确认与取消。
+- 新增后自动选中，删除后立即消失。
+- 2D/3D 同一病害同步选中。
+- 打标跳转、固定 scene 位置和跨材质禁止。
+- 长距离滚动内存不无限增长。
+
+## 15. 开发约束
+
+- SDK 单图坐标和 scene 坐标是新交互的真相源；不要在新增 SDK 绘制中重新引入旧临时大图坐标。
+- 数据库结构暂不改，只在提交和读取边界转换一次。
+- SDK 核心保持通用，业务 key、表名、病害属性和材质规则留在 `hnApplication`。
+- 任何病害增删改后主动调用统一刷新入口，不依赖滚动触发。
+- 2D/3D 跨视图同步只响应用户 bottom 信号，程序定位必须有回环保护。
+- 源码混有本地编码。编辑 GBK 文件时必须保留原编码；新 Markdown 文档统一 UTF-8。
+- 工作区长期包含大量未提交修改，禁止通过 `git checkout --`、`git reset --hard` 等方式覆盖既有工作。
+
+## 16. 后续清理边界
+
+当前阶段应先保证 SDK 显示和病害闭环正确，再删除旧代码：
+
+1. 修通数据库病害到 scene path 的稳定转换。
+2. 完成大框、小框和设计模式 2D/3D 验收。
+3. 确认 SDK 模式不再调用旧正式绘制。
+4. 给仍被非 SDK 路径使用的旧函数标注“旧浏览路径专用”。
+5. 删除无调用的旧滚动条、overlay 和重复联动槽。
+
+不要为了“看起来干净”提前删除仍被坐标校验、属性计算、数据库转换或旧项目入口调用的函数。

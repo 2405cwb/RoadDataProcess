@@ -20,9 +20,9 @@ public:
 	~hnRegionJumpDlg();
 
 signals:
-	void signal_updateScrollValue(int value);
+	void signal_updateScrollValue(double encoderMile);
 signals:
-	void signal_road3dFrameIdxChanged(int frameidx);
+	void signal_road3dFrameIdxChanged(double encoderMile);
 
 public:
 	//获取编码器里程

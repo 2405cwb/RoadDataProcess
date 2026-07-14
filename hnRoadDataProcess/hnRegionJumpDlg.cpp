@@ -83,26 +83,11 @@ void hnRegionJumpDlg::slot_onJumpPushButtonClicked()
 	if (PROJECT_23D_TYPE == projectType ||
 		PROJECT_2D_TYPE == projectType)
 	{
-		auto projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		int imageNum = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector().size();
-		if (encoderMile > imageNum * projectSetInfo.dRoadLength)
-		{
-			encoderMile = imageNum * projectSetInfo.dRoadLength;
-		}
-		double roadLenth = projectSetInfo.dRoadLength;
-		if (roadLenth == 0)
-		{
-			return;
-		}
-		int frameIdx = encoderMile / roadLenth;
-		emit signal_updateScrollValue(frameIdx);
+		emit signal_updateScrollValue(encoderMile);
 	}
 	else
 	{
-		const int roadHeight = 8;
-		const int frameIdx3d = encoderMile / roadHeight;
-
-		emit this->signal_road3dFrameIdxChanged(frameIdx3d);
+		emit this->signal_road3dFrameIdxChanged(encoderMile);
 	}
 
 

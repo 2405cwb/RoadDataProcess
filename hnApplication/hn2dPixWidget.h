@@ -81,6 +81,8 @@ private:
 private:
 	//绘制数据库加载内容
 	void drawDatabaseLoadData(QImage &image) override final;
+	QVector<QRect> sdkDiseaseBigImageRects(const hnRoadDiseaseInfo& disease) override final;
+	QPainterPath sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease) override final;
 
 	//绘制临时内容
 	void drawTmpData(QImage &image)override final;
@@ -95,7 +97,10 @@ private:
 	QPoint hn2dPointToImageQtPoint(const hn2dPointWithMileI &hn2dPoint);
 
 
-	QMap<double, QString>::const_iterator getPreviousStakeIterator(const QMap<double, QString>&map, int curMile);
+	QMap<double, QString>::const_iterator getPreviousStakeIterator(const QMap<double, QString>&map, double curMile);
+
+	// Resolve a 2D disease encoder mile to the project image loaded in SDK view.
+	bool resolve2dDiseaseImageNameByMile(double encoderMile, QString& imageName) const;
 
 private:
 	//通用编辑病害的通用接口
@@ -190,6 +195,14 @@ protected:
 		const pixImagePoint& point,
 		bool up,
 		QPoint& widgetPoint)  override;
+	bool sdkCommitBigFrameDisease() override;
+	bool sdkCommitLittleFrameDisease() override;
+	QVector<QRect> sdkCreateLittleFrameRects(const QVector<pixImagePoint>& pixImagePoints) override;
+	int sdkLittleFrameHitIndex(const hnRoadDiseaseInfo& disease, const pixImagePoint& point) override;
+	bool sdkLittleFrameCellSceneRect(const hnRoadDiseaseInfo& disease, int hitIndex, QRectF& sceneRect) override;
+	void updateSdkLittleFrameDiseaseAfterCellDelete(hnRoadDiseaseInfo& disease) override;
+	QString sdkStatusInfoFromWidgetPoint(const QPoint& widgetPoint) override;
+	QString sdkStatusInfoFromContext(const SdkStatusContext& context) override;
 private:
 	//画自动化模式的流程
 	bool littleFrameProcess();

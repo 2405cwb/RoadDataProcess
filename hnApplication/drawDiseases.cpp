@@ -144,11 +144,13 @@ QString drawDiseases::buildLittleFrameDiseaseDetailLabel(
 	const hnRoadDiseaseInfo &disease,
 	bool includeDepth) const
 {
+	const double displayLength = disease.dRealLen > 0.0 ? disease.dRealLen : disease.dLength;
+	const double displayWidth = disease.dReaWidth > 0.0 ? disease.dReaWidth : disease.dWidth;
 	QString text = buildShortDiseaseLabel(disease)
 		+ "\n" + buildDiseaseMileLabel(disease)
-		+ "\n" + QStringLiteral("长度：") + QString::number(disease.dLength, 'f', 2)
-		+ "\n" + QStringLiteral("宽度：") + QString::number(disease.dWidth, 'f', 2)
-		+ "\n" + QStringLiteral("面积：") + QString::number(disease.dArea, 'f', 2);
+		+ "\n" + QStringLiteral("计算长度：") + QString::number(displayLength, 'f', 2)
+		+ "\n" + QStringLiteral("计算宽度：") + QString::number(displayWidth, 'f', 2)
+		+ "\n" + QStringLiteral("计算面积：") + QString::number(disease.dArea, 'f', 2);
 
 	if (includeDepth && disease.dDepth != 0)
 	{
@@ -163,7 +165,6 @@ QString drawDiseases::buildLittleFrameDiseaseDetailLabel(
 
 	return text;
 }
-
 QString drawDiseases::buildFrameDiseaseLabel(
 	const hnRoadDiseaseInfo &disease,
 	bool selected,
@@ -392,9 +393,10 @@ bool drawDiseases::isSeclectedMergeDisease(const hnRoadDiseaseInfo & disease)
 
 void drawDiseases::claerSelectPoint()
 {
-	m_seclectPoint.pixName.clear();
-	m_seclectPoint.pixPoint.setX(-1);
-	m_seclectPoint.pixPoint.setY(-1);
+    m_encoderMile = -1;
+    m_seclectPoint.pixName.clear();
+    m_seclectPoint.pixPoint.setX(-1);
+    m_seclectPoint.pixPoint.setY(-1);
 }
 
 void drawDiseases::drawLineOnImage(const QLine &line,int lineWidth, const QColor & color, QImage & image)

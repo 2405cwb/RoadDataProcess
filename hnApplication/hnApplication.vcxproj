@@ -67,14 +67,14 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../SDK/include;../SDK/include/tools;../SDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level1</WarningLevel>
       <FunctionLevelLinking>
       </FunctionLevelLinking>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);../3rd/opencv3.2.0/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Qt5Core.lib;Qt5Widgets.lib;Qt5Gui.lib;hnDataTable.lib;qtmain.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib</AdditionalDependencies>
+      <AdditionalDependencies>Qt5Core.lib;Qt5Widgets.lib;Qt5Gui.lib;Qt5Sql.lib;hnDataTable.lib;qtmain.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib;TunnelViewerSDK.lib</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <PostBuildEvent>
@@ -88,11 +88,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../SDK/include;../SDK/include/tools;../SDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;hnDataTable.lib;qtmaind.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320d.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);../3rd/opencv3.2.0/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;Qt5Sqld.lib;hnDataTable.lib;qtmaind.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320d.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib;TunnelViewerSDK.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);../SDK/debug;../3rd/opencv3.2.0/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -133,6 +133,7 @@
     <ClCompile Include="depthDialog.cpp" />
     <ClCompile Include="DepthDisease.cpp" />
     <ClCompile Include="drawDiseases.cpp" />
+    <ClCompile Include="LittleFrameRenderPathBuilder.cpp" />
     <ClCompile Include="hn2d3dPixBaseWidget.cpp" />
     <ClCompile Include="hn2d3dCoordinates.cpp" />
     <ClCompile Include="hn2DCameraView.cpp" />
@@ -143,8 +144,8 @@
     <ClCompile Include="hnApp.cpp" />
     <ClCompile Include="hnDataManager.cpp" />
     <ClCompile Include="hnDiseaseService.cpp" />
+    <ClCompile Include="hnSdkDiseaseGraphicsLayer.cpp" />
     <ClCompile Include="hnFrameMode.cpp" />
-    <ClCompile Include="hnMagnify.cpp" />
     <ClCompile Include="hn2dPixWidget.cpp" />
     <ClCompile Include="hn2dPixScrollWidget.cpp" />
     <ClCompile Include="hn3dPixWidget.cpp" />
@@ -165,7 +166,9 @@
     <QtMoc Include="hn2d3dPixBaseWidget.h" />
     <ClInclude Include="hnAdjustImage.h" />
     <QtMoc Include="hnDiseaseService.h" />
+    <ClInclude Include="hnSdkDiseaseGraphicsLayer.h" />
     <ClInclude Include="lineAlgorithm.h" />
+    <ClInclude Include="LittleFrameRenderPathBuilder.h" />
     <ClInclude Include="mergeDisease.h" />
     <ClInclude Include="pixImagePoint.h" />
     <ClInclude Include="projectType.h" />
@@ -175,7 +178,6 @@
     <ClInclude Include="hn3dImageMode.h" />
     <QtMoc Include="hnAddStreetDiseaseDialog.h" />
     <ClInclude Include="hnFrameMode.h" />
-    <ClInclude Include="hnMagnify.h" />
     <ClInclude Include="hnWorkMode.h" />
     <QtMoc Include="hn2DCameraView.h" />
     <QtMoc Include="hn3DCameraView.h" />
@@ -199,6 +201,11 @@
   <ItemGroup>
     <QtUic Include="depthDialog.ui" />
     <QtUic Include="ShowCtrlPointInfoDlg.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SDK\TunnelViewerSDK.vcxproj">
+      <Project>{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

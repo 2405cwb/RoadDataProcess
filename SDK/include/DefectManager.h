@@ -1,12 +1,14 @@
 #pragma once
+
 #include <QObject>
 #include <QGraphicsScene>
-#include "IDefectStorage.h"
-#include "items/DefectShapeItem.h"
+#include <QHash>
 #include <QMap>
 
-// 定义样式结构体
-struct DefectStyle {
+#include "IDefectStorage.h"
+#include "items/DefectShapeItem.h"
+
+/* 简单样式包 旧接口还在用 */ struct DefectStyle {
     QPen pen;
     QBrush brush;
 };
@@ -15,47 +17,29 @@ class DefectManager : public QObject
 {
     Q_OBJECT
 public:
-    explicit DefectManager(QGraphicsScene* scene, QObject* parent = nullptr)
-        : QObject(parent), m_scene(scene), m_storage(nullptr) {
+    /* Manager 只管一类标注集合 scene 由 View 持有 */ explicit DefectManager(QGraphicsScene* scene, QObject* parent = nullptr)
+        : QObject(parent), m_scene(scene), m_storage(nullptr) {}
+
+    /* 当前实现接管 storage 指针 析构时一起释放 */ ~DefectManager() {
+        if (m_storage) delete m_storage;
     }
 
-    ~DefectManager() { if (m_storage) delete m_storage; }
-
-    // 🟢 获取当前内存/场景中加载的病害总数
-    int getTotalDefectCount() const {
+    /* 返回当前场景里已加载的标注数量 */ int getTotalDefectCount() const {
         return m_items.size();
     }
 
-    // ==========================================
-    // 🟢 核心改造：基于业务代码的样式注册表
-    // ==========================================
-
-    // 批量注册上端同事传过来的病害配置表
-    void registerDefectConfigs(const QList<DefectTypeConfig>& configs) {
+    /* 批量注册标注类型 SDK 不解释业务含义 */ void registerDefectConfigs(const QList<DefectTypeConfig>& configs) {
         m_configs.clear();
-		for (const auto& cfg : configs)
-		{
-            m_configs[cfg.defectCode] = cfg;
+        for (const auto& cfg : configs) {
+            const int code = cfg.typeCode != 0 ? cfg.typeCode : cfg.defectCode;
+            DefectTypeConfig normalized = cfg;
+            normalized.typeCode = code;
+            normalized.defectCode = code;
+            m_configs[code] = normalized;
         }
     }
 
-    // ==========================================
-    // 🟢 获取指定几何形状对应的所有业务病害配置
-    // ==========================================
-  //  QList<DefectTypeConfig> getConfigsByShape(DrawShape shapeType) const {
-  //      QList<DefectTypeConfig> result;
-  //      // 遍历整个字典
-		//for (auto it = m_configs.begin(); it != m_configs.end(); ++it) {
-		//	if (it.value().defaultShape == shapeType) {
-		//		result.append(it.value());
-		//	}
-		//}
-  //      return result;
-  //  }
-
-
-    // 根据业务代码获取完整配置
-    QList<DefectTypeConfig> getConfigsByShape(DrawShape shapeType) const {
+    /* 按默认图形筛类型 点线面工具栏会用到 */ QList<DefectTypeConfig> getConfigsByShape(DrawShape shapeType) const {
         QList<DefectTypeConfig> result;
         for (auto it = m_configs.begin(); it != m_configs.end(); ++it) {
             if (it.value().defaultShape == shapeType) {
@@ -65,90 +49,63 @@ public:
         return result;
     }
 
-    DefectTypeConfig getConfig(int defectCode) const {
+    /* 按业务编码取样式 没配就给一个能看见的默认样式 */ DefectTypeConfig getConfig(int defectCode) const {
         if (m_configs.contains(defectCode)) {
             return m_configs.value(defectCode);
         }
-        // 兜底默认配置：黄色实线
-        //return { 0, "未知病害", Shape_Line, QPen(Qt::yellow, 3, Qt::SolidLine), Qt::NoBrush };
-		return{ 0, "未知病害", QPen(Qt::yellow, 3, Qt::SolidLine), Qt::NoBrush };
+        return{ 0, QStringLiteral("Unknown Annotation"), QPen(Qt::yellow, 3, Qt::SolidLine), Qt::NoBrush };
     }
 
- 
-
-    // ==========================================
-    // 2. 存储引擎注入与连接
-    // ==========================================
-    void setStorageStrategy(IDefectStorage* storage) {
+    /* 注入存储策略 JSON SQLite 或服务接口都可以 */ void setStorageStrategy(IDefectStorage* storage) {
         if (m_storage) delete m_storage;
         m_storage = storage;
     }
 
-    void setConnectionUri(const QString& uri) { m_currentUri = uri; }
-    QString connectionUri() const { return m_currentUri; }
+    /* 设置当前存储连接串 */ void setConnectionUri(const QString& uri) {
+        m_currentUri = uri;
+    }
 
-    // ==========================================
-    // 3. 核心业务逻辑 (增、删、全量读)
-    // ==========================================
+    /* 返回当前存储连接串 */ QString connectionUri() const {
+        return m_currentUri;
+    }
 
-    // 🟢 参数 triggerSave：默认 true 表示用户画的，要保存；false 表示从文件读的，别保存！
-    void addDefect(DefectShapeItem* item, bool triggerSave = true) {
-       
-		if (m_items.contains(item->getUuid()))
-		{
-			return;
-		}
-		
-		// 从 Item 中读取它的业务代码
-        int code = item->property("defectCode").toInt();
-        // 查字典，获取这件衣服
+    /* 添加标注 triggerSave=false 用于加载时避免回写 */ void addDefect(DefectShapeItem* item, bool triggerSave = true) {
+        if (!item || m_items.contains(item->getUuid())) {
+            return;
+        }
+
+        const int code = annotationCode(item);
         DefectTypeConfig cfg = getConfig(code);
         item->setPen(cfg.pen);
         item->setBrush(cfg.brush);
-		setMoviesType(item);
-        //item->setToolTip(cfg.mark);
-        //m_items.append(item);
-		m_items.insert(item->getUuid(), item);
+        applyMovePolicy(item);
+
+        m_items.insert(item->getUuid(), item);
         m_scene->addItem(item);
-    
-		//TODO 新增功能 20260227 增加病害移动功能：监听 Item 的位置变化信号，自动更新数据库
+
         connect(item, &DefectShapeItem::sigDefectMoved, this, [this](DefectShapeItem* movedItem) {
-          
-			emit sigDefectMoved(movedItem->toData());
+            emit sigDefectMoved(toStorageData(movedItem));
+        });
 
-			//if (m_storage && !m_currentUri.isEmpty()) {
-   //             // 将被拖动的 Item 转成纯数据
-   //             DefectData data = movedItem->toData();
-
-   //             // 💥 为什么这里调用 addOne？
-   //             // 因为我们在 SQLite 的 addOne 里写的是 "REPLACE INTO"
-   //             // 只要 UUID 没变，SQLite 会自动把旧位置的记录覆盖掉，实现无缝更新！
-   //             m_storage->addOne(data, m_currentUri);
-
-   //             //qDebug() << QString::fromLocal8Bit(" 病害 [%1] 已被拖动，数据库自动更新完毕！").arg(data.name);
-   //         }
-            });
-
-        // 💥 只有用户手动新增的，才触发增量保存
         if (triggerSave && m_storage && !m_currentUri.isEmpty()) {
-            m_storage->addOne(item->toData(), m_currentUri);
+            m_storage->addOne(toStorageData(item), m_currentUri);
         }
     }
 
-    void removeDefect(DefectShapeItem* item) {
+    /* 从场景和存储里删除一个标注 */ void removeDefect(DefectShapeItem* item) {
+        if (!item) return;
         QString uuid = QString::number(item->getUuid());
         if (m_items.remove(item->getUuid())) {
             m_scene->removeItem(item);
             delete item;
 
-            // 💥 触发增量删除
             if (m_storage && !m_currentUri.isEmpty()) {
                 m_storage->deleteOne(uuid, m_currentUri);
             }
         }
     }
-    // 🟢 清理屏幕上的旧病害
-    void clearDefects() {
+
+    /* 清空当前 Manager 管的标注 */ void clearDefects() {
         for (auto item : m_items) {
             m_scene->removeItem(item);
             delete item;
@@ -156,120 +113,122 @@ public:
         m_items.clear();
     }
 
-
-    // 🟢 触发全量加载 (由 MainWindow 在初始化时调用)
-    bool loadDefects() {
+    /* 从当前存储连接全量加载标注 */ bool loadDefects() {
         if (!m_storage || m_currentUri.isEmpty()) return false;
 
-        for (auto item : m_items) { m_scene->removeItem(item); delete item; }
-        m_items.clear();
-
+        clearDefects();
         QList<DefectData> dataList = m_storage->loadAll(m_currentUri);
         for (const auto& data : dataList) {
-            DefectShapeItem* item = new DefectShapeItem(data.shape, data.name, static_cast<DrawShape>(data.type), data.uuid);
-            item->fromData(data);
-
-            // 💥 注意：传 false！阻止加载时无限死循环写入文件！
-            addDefect(item, false);
+            addDefect(createItemFromData(data), false);
         }
         return true;
     }
 
-    // 🟢 按里程区间加载病害
-    bool loadDefectsByRange(double startMile, double endMile) {
+    /* 按范围加载 参数名先兼容 startMile/endMile */ bool loadDefectsByRange(double startMile, double endMile) {
         if (!m_storage || m_currentUri.isEmpty()) return false;
 
-        // 1. 先把屏幕上以前的病害清空
         clearDefects();
-
-        // 2. 向存储引擎 (JSON/SQLite) 发起区间查询
         QList<DefectData> dataList = m_storage->loadByRange(m_currentUri, startMile, endMile);
-
-        // 3. 把查出来的病害生成 UI 控件，扔上屏幕
         for (const auto& data : dataList) {
-            DefectShapeItem* item = new DefectShapeItem(data.shape, data.name, static_cast<DrawShape>(data.type), data.uuid);
-            item->fromData(data);
-
-            // 注意：传 false 防止触发自动保存死循环！
-            addDefect(item, false);
+            addDefect(createItemFromData(data), false);
         }
         return true;
     }
 
-
-    // ==========================================
-    // 🟢 触发全量保存 (给 MainWindow 的右键菜单手动存盘用)
-    // ==========================================
-    bool saveDefects(const QString& uri = "") {
+    /* 全量保存 不传 uri 就用当前连接串 */ bool saveDefects(const QString& uri = "") {
         if (!m_storage) return false;
 
-        // 如果没传路径，就用系统当前设置的默认路径
         QString targetUri = uri.isEmpty() ? m_currentUri : uri;
         if (targetUri.isEmpty()) return false;
 
         QList<DefectData> dataList;
         for (auto item : m_items) {
-            dataList.append(item->toData());
+            dataList.append(toStorageData(item));
         }
         return m_storage->saveAll(dataList, targetUri);
     }
 
-	void setMoviesType(DefectShapeItem* item)
-	{
-		switch (item->m_elementType)
-		{
-		case Type_Cp3:
-		{
-			item->setLocked(true);
-			break;
-		}
-		case Type_Chain:
-		{
-			item->setLocked(true);
-			break;
-		}
-		case Type_Disease:
-		{
-			item->setMoveAxis(Axis_Free);
-			break;
-		}
-		case Type_Ring:
-		{
-			item->setMoveAxis(Axis_Horizontal);
-			break;
-		}
-		case Type_Section:
-		{
-			item->setMoveAxis(Axis_Horizontal);
-			break;
-		}
-		case Type_Platform:
-		{
-			item->setMoveAxis(Axis_Horizontal);
-			break;
-		}
-		default:
-			break;
-		}
-	}
+    /* 兼容老名字 实际走通用移动策略 */ void setMoviesType(DefectShapeItem* item) {
+        applyMovePolicy(item);
+    }
 
-	// 根据ID找item
-	DefectShapeItem* getItemUseId(int uuid)
-	{
-		return m_items.value(uuid);
-	}
+    /* 按 id 找标注 */ DefectShapeItem* getItemUseId(int uuid) {
+        return m_items.value(uuid);
+    }
 
 signals:
-	void sigDefectMoved(DefectData item);
+    /* 标注移动后抛出纯数据 */ void sigDefectMoved(DefectData item);
+
+private:
+    /* 从 item 上取编码 兼容新旧字段和属性包 */ int annotationCode(DefectShapeItem* item) const {
+        int code = item->property("typeCode").toInt();
+        if (code == 0) code = item->property("defectCode").toInt();
+        if (code == 0) code = item->getAttribute("typeCode").toInt();
+        if (code == 0) code = item->getAttribute("defectCode").toInt();
+        return code;
+    }
+
+    /* 保存前补齐 typeCode 和 defectCode */ DefectData toStorageData(DefectShapeItem* item) const {
+        DefectData data = item->toData();
+        const int code = annotationCode(item);
+        data.typeCode = code;
+        data.defectCode = code;
+        data.category = item->getAttribute("category").toString();
+        return data;
+    }
+
+    /* 从纯数据创建图元 并把编码写回 property */ DefectShapeItem* createItemFromData(const DefectData& data) const {
+        DefectShapeItem* item = new DefectShapeItem(data.shape, data.name, data.type, data.uuid);
+        item->fromData(data);
+        const int code = data.typeCode != 0 ? data.typeCode : data.defectCode;
+        item->setProperty("typeCode", code);
+        item->setProperty("defectCode", code);
+        if (!data.category.isEmpty()) {
+            item->setAttribute("category", data.category);
+        }
+        return item;
+    }
+
+    /* 优先读通用 moveAxis/locked 没配再走旧 ElementType */ void applyMovePolicy(DefectShapeItem* item) {
+        QVariant lockedValue = item->property("locked");
+        if (!lockedValue.isValid()) lockedValue = item->getAttribute("locked");
+        if (lockedValue.isValid()) {
+            item->setLocked(lockedValue.toBool());
+        }
+
+        QVariant axisValue = item->property("moveAxis");
+        if (!axisValue.isValid()) axisValue = item->getAttribute("moveAxis");
+        if (axisValue.isValid()) {
+            item->setMoveAxis(static_cast<MoveAxis>(axisValue.toInt()));
+            return;
+        }
+
+        switch (item->m_elementType) {
+        case Type_Cp3:
+        case Type_Chain:
+            item->setLocked(true);
+            break;
+        case Type_Ring:
+        case Type_Section:
+        case Type_Platform:
+            item->setMoveAxis(Axis_Horizontal);
+            break;
+        case Type_Disease:
+        case Type_AUTORING:
+        case Type_CustomOverlay:
+        default:
+            item->setMoveAxis(Axis_Free);
+            break;
+        }
+    }
 
 private:
     QGraphicsScene* m_scene;
-    //QList<DefectShapeItem*> m_items;
-	QHash<int ,DefectShapeItem*> m_items;
-
+    QHash<int, DefectShapeItem*> m_items;
     IDefectStorage* m_storage;
     QMap<int, DefectStyle> m_styles;
     QString m_currentUri;
-
-    QMap<int, DefectTypeConfig> m_configs; // 💥 新字典：业务代码 -> 配置
+    QMap<int, DefectTypeConfig> m_configs;
 };
+
+/* 新代码可以用 AnnotationManager 老代码继续用 DefectManager */ using AnnotationManager = DefectManager;

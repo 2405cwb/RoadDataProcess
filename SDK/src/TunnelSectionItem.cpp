@@ -17,6 +17,9 @@ TunnelSectionItem::TunnelSectionItem(AbstractTileSource* source, QGraphicsItem* 
     m_width = size.width();
 	m_height = size.height();
 	m_tileSize = m_source->tileSize();
+	if (m_tileSize <= 0) {
+		m_tileSize = qMax(1, qMax((int)m_width, (int)m_height));
+	}
 
     // 开启设备坐标缓存，对静态图元有一定性能提升
  //   setCacheMode(DeviceCoordinateCache);  
@@ -27,8 +30,8 @@ TunnelSectionItem::TunnelSectionItem(AbstractTileSource* source, QGraphicsItem* 
 
 	connect(AsyncImageLoader::instance(), &AsyncImageLoader::sigThumbnailLoaded,
 		this, [this](const QString& path, QPixmap pix) {
-		// 核对：是当前这个数据库的缩略图吗？
-		if (path == m_source->getThumbnailImage()) {
+		// 核对：是当前这个数据源的缩略图吗？整图源和数据库源都会走这个 key。
+		if (path == m_source->thumbnailCacheKey()) {
 			m_isThumbLoading = false;
 			if (!m_shouldKeepThumbnail) return; // 如果还没加载完就移出屏幕了，直接丢弃
 
@@ -85,9 +88,16 @@ void TunnelSectionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
 
 	//  核心性能引擎：获取当前在屏幕上“真正暴露（可见）”的物理区域
 	QRectF exposedRect = option->exposedRect;
+	const bool hMirrored = m_source && m_source->isHMirrored();
+	const bool vMirrored = m_source && m_source->isVMirrored();
+	if (hMirrored || vMirrored) {
+		painter->save();
+		painter->translate(hMirrored ? m_width : 0, vMirrored ? m_height : 0);
+		painter->scale(hMirrored ? -1.0 : 1.0, vMirrored ? -1.0 : 1.0);
+	}
 
 	if (m_thumbnail.isNull()) {
-		m_thumbnail = AsyncImageLoader::instance()->getSyncThumbnail(m_source->getThumbnailImage());
+		m_thumbnail = AsyncImageLoader::instance()->getSyncThumbnail(m_source->thumbnailCacheKey());
 	}
 
 	// 1. 底层：绘制缩略图 
@@ -128,6 +138,10 @@ void TunnelSectionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
 				painter->drawPixmap(targetRect, i.value(), i.value().rect()); 
 			}
 		}
+	}
+
+	if (hMirrored || vMirrored) {
+		painter->restore();
 	}
 
 	 
@@ -230,10 +244,12 @@ bool TunnelSectionItem::calcVisibleRange(const QRectF& sceneRect, int& startCol,
     if (intersect.isEmpty()) {
         return false;
     } 
-    startCol = qFloor(intersect.left() / m_tileSize);
-    endCol = qFloor(intersect.right() / m_tileSize);
-    startRow = qFloor(intersect.top() / m_tileSize);
-    endRow = qFloor(intersect.bottom() / m_tileSize);
+	const int maxCol = qMax(0, qCeil(m_width / m_tileSize) - 1);
+	const int maxRow = qMax(0, qCeil(m_height / m_tileSize) - 1);
+    startCol = qBound(0, qFloor(intersect.left() / m_tileSize), maxCol);
+    endCol = qBound(0, qFloor(intersect.right() / m_tileSize), maxCol);
+    startRow = qBound(0, qFloor(intersect.top() / m_tileSize), maxRow);
+    endRow = qBound(0, qFloor(intersect.bottom() / m_tileSize), maxRow);
 
     return true;
 }
@@ -256,18 +272,22 @@ void TunnelSectionItem::requestMissingTiles(int startCol, int endCol, int startR
 			{
 				return;
 			}
+			if (!m_source->hasTile(c, r)) continue;
+
             TileKey key = { c * m_tileSize, r * m_tileSize }; 
             if (m_loadedTiles.contains(key)) continue; 
        
-			QString baseDbPath = m_source->getDbPath();
-			QString requestUri = QString("%1|%2|%3").arg(baseDbPath).arg(c).arg(r);
+			QString requestUri = m_source->tileRequestKey(c, r);
+			if (requestUri.isEmpty()) continue;
 			if (m_pendingPaths.contains(requestUri)) continue;
 
 			// 3. 记账：记录 路径 -> 坐标
 			m_pendingPaths.insert(requestUri, key);
 
-			// 4. 发起请求
-			AsyncImageLoader::instance()->requestImage(requestUri);
+			// 单图模式下原图很大，只保留在当前 Item 的 m_loadedTiles 中；
+			// 数据库切片仍复用全局高清缓存。
+			const bool useSharedCache = !(m_source && m_source->sourceMode() == ImageSourceMode::WholeImage);
+			AsyncImageLoader::instance()->requestImage(requestUri, useSharedCache);
 			currentLoadCount++;
         }
     }
@@ -317,8 +337,8 @@ void TunnelSectionItem::ensureThumbnailRequested()
 	if (!m_thumbnail.isNull() || m_isThumbLoading) return;
 
 	m_isThumbLoading = true;
-	// 发起异步请求，传入数据库路径 (Loader 会自己判断并去库里查)
-	AsyncImageLoader::instance()->requestThumbnail(m_source->getThumbnailImage(), QSize(2048, 2048));
+	// 发起异步请求，Loader 会自己判断这是数据库还是普通图片。
+	AsyncImageLoader::instance()->requestThumbnail(m_source->thumbnailCacheKey(), QSize(2048, 2048));
 }
 
 void TunnelSectionItem::releaseThumbnail()

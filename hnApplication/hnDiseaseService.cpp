@@ -301,39 +301,65 @@ bool hnDiseaseService::addDisease(
 		return false;
 	}
 	const hnCommon::hnProjectSetInfo& projectInfo = m_project->getCurProSetInfo();
+	const bool traceLittleFrame =
+		disease.nDrawType == 1 ||
+		disease.vec2dRect.size() >= 128 ||
+		disease.vec3dRect.size() >= 128;
+	QElapsedTimer addTimer;
+	QElapsedTimer stepTimer;
+	if (traceLittleFrame)
+	{
+		addTimer.start();
+		stepTimer.start();
+	}
 	//注意看看这个方法 会不会回填ID
 	bool ok = m_project->getDB()->getDiseaseTable()->writeSingleDatas_Service(
 		projectInfo,
 		disease
 	);
+	const qint64 writeMs = traceLittleFrame ? stepTimer.restart() : 0;
 	if (!ok)
 	{
+		if (traceLittleFrame)
+		{
+			#ifdef _DEBUG
+			qDebug() << "HN_LITTLE_FRAME_PERF addDisease failed"
+				<< "id=" << disease.nID
+				<< "drawType=" << disease.nDrawType
+				<< "vec2d=" << disease.vec2dRect.size()
+				<< "vec3d=" << disease.vec3dRect.size()
+				<< "writeMs=" << writeMs
+				<< "totalMs=" << addTimer.elapsed();
+			#endif
+		}
 		return false;
 	}
 	if (m_allDiseaseCacheValid)
 	{
-		if (disease.nID>0)
-		{
-			int index = findDiseaseIndexInCache(disease);
-			if (index <0)
-			{
-				//m_allDiseaseCache.push_back(disease);
-
-				auto it = std::lower_bound(m_allDiseaseCache.begin(), m_allDiseaseCache.end(), disease);
-				m_allDiseaseCache.insert(it, disease);
-
-			}
-			else
-			{
-				invalidateCache();
-			}
-		}
+		// Database write is the source of truth after an add. Invalidate instead of
+		// trusting the caller-filled ID, otherwise SDK views can miss the new disease.
+		invalidateCache();
 	}
+	const qint64 cacheMs = traceLittleFrame ? stepTimer.restart() : 0;
 	emit diseaseAdded(disease);
 	emit diseaseChanged();
+	const qint64 signalMs = traceLittleFrame ? stepTimer.elapsed() : 0;
+	if (traceLittleFrame)
+	{
+		#ifdef _DEBUG
+		qDebug() << "HN_LITTLE_FRAME_PERF addDisease"
+			<< "id=" << disease.nID
+			<< "drawType=" << disease.nDrawType
+			<< "vec2d=" << disease.vec2dRect.size()
+			<< "vec3d=" << disease.vec3dRect.size()
+			<< "writeMs=" << writeMs
+			<< "cacheMs=" << cacheMs
+			<< "signalMs=" << signalMs
+			<< "totalMs=" << addTimer.elapsed();
+		#endif
+	}
 	return true;
 }
-
 bool hnDiseaseService::addDataAffairs(QString tableName, bool write, QVector<hnCommon::hnRoadDiseaseInfo>& diseases)
 {
 	if (m_project == 0)

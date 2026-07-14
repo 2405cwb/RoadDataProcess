@@ -113,19 +113,14 @@
     <QtMoc Include="hnBrowsePixWidget.h">
       <Include Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.\GeneratedFiles\$(ConfigurationName);.\GeneratedFiles;.;$(QTDIR)\include;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtANGLE;$(QTDIR)\include\QtCore;release;$(QTDIR)\mkspecs\win32-msvc2015;%(AdditionalIncludeDirectories)</Include>
     </QtMoc>
-    <QtMoc Include="CustomScrollBar.h" />
     <ClInclude Include="hncontinuousbrowsepix_global.h" />
     <QtMoc Include="hnImagePainter.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CustomScrollBar.cpp" />
     <ClCompile Include="hnBrowsePixWidget.cpp" />
     <ClCompile Include="hnContinuouslyBrowsePixWidget.cpp" />
     <ClCompile Include="hnImagePainter.cpp" />
     <ClCompile Include="imageLoader.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <QtUic Include="CustomScrollBar.ui" />
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="Resource.qrc">

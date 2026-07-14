@@ -37,12 +37,12 @@ struct HNAPPLICATION_EXPORT DiseaseDrawStyle
 	int lineLabelFontSize = 12;
 
 	QColor bigFrameRectColor = QColor(144, 238, 144);
-	QColor littleFrameRectColor = Qt::red;
-	QColor selectedRectColor = QColor(0, 255, 255);
+	QColor littleFrameRectColor = QColor(144, 238, 144);
+	QColor selectedRectColor = Qt::red;
 	QColor mergedRectColor = Qt::yellow;
 
 	QColor tempRectColor = Qt::blue;
-	QColor lineDiseaseColor = Qt::red;
+	QColor lineDiseaseColor = QColor(144, 238, 144);
 	QColor tempLineDiseaseColor = Qt::red;
 	QColor tempDashLineColor = Qt::yellow;
 

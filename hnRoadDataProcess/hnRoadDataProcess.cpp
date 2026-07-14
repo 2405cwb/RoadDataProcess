@@ -12,6 +12,9 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QDateTime>
+#include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QTimer>
 #include "..\hnQtRibbonUI\hnRibbonBar.h"
 #include "..\hnQtRibbonUI\hnRibbonCategory.h"
 #include "..\hnQtRibbonUI\hnRibbonPannel.h"
@@ -175,6 +178,14 @@ void hnRoadDataProcess::widgetviewActive(WId hwnd)
 
 void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 {
+	// QWebEngine starts its global shutdown when the last top-level window
+	// closes.  Destroy the map page first so Chromium has no live scheduler
+	// clients left when ResourceDispatcherHostImpl::OnShutdown() runs.
+	if (m_mapWidget)
+	{
+		m_mapWidget->shutdownWebEngine();
+	}
+
 	if (!m_projects->isOpenProject())
 	{
 		return;
@@ -195,6 +206,7 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 
 void hnRoadDataProcess::showEvent(QShowEvent *event)
 {
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][MainWindowShow]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "visible=" << isVisible()
@@ -203,6 +215,7 @@ void hnRoadDataProcess::showEvent(QShowEvent *event)
 		<< "maximized=" << isMaximized()
 		<< "fullScreen=" << isFullScreen()
 		<< "geo=" << QString("%1,%2,%3,%4").arg(geometry().x()).arg(geometry().y()).arg(geometry().width()).arg(geometry().height());
+	#endif
 	this->setAttribute(Qt::WA_Mapped);
 	QWidget::showEvent(event);
 }
@@ -495,9 +508,11 @@ void hnRoadDataProcess::createView()
 
 	m_projectDockWidget = new hn::CDockWidget(QStringLiteral("信息_校桩_打标"), this);
 	m_projectDockWidget->setFeatures(tFeatures);
+	m_projectWidget->setMinimumWidth(0);
+	m_projectWidget->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 	m_projectDockWidget->setWidget(m_projectWidget);
 	m_projectWidget->setHidden(false);
-	m_projectDockWidget->setMinimumWidth(350);
+	m_projectDockWidget->setMinimumWidth(260);
 	m_DockManager->addDockWidget(hn::LeftDockWidgetArea, m_projectDockWidget);
 	m_pShowPaneMenu->addAction(m_projectDockWidget->toggleViewAction());
 	 
@@ -595,9 +610,6 @@ void hnRoadDataProcess::initShortCuts()
 	QHotkey *moveDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier), true, this);
 	connect(moveDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToMoveDiseaseMode);
 
-	//放大镜
-	QHotkey *magnifyDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier | Qt::AltModifier), true, this);
-	connect(magnifyDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_onMagnifyActionClicked);
 
 	//合并病害
 	QHotkey *mergeDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_U | Qt::ShiftModifier), true, this);
@@ -608,23 +620,39 @@ void hnRoadDataProcess::initShortCuts()
 
 	connect(enterHotKey, &QHotkey::activated, [this]() {
 
-		if (m_2dPixScrollWidget->getPixWidget()->getMode() == hnWorkMode::GET_MILE)
-		{
-			double diff = m_2dPixScrollWidget->getPixWidget()->getEncoderMile() -
-				m_3dPixScrollWidget->getPixWidget()->getEncoderMile();
-			if (hnDataManager::getDataManager()->getDataManager()->isOpenProject())
-			{
-				if (hnDataManager::getDataManager()->getDataManager()->getCurrentProject()->get3DProject())
-				{
-					m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
-					m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
-					hnDataManager::getDataManager()->getDataManager()->getCurrentProject()->set2d3dMileDiff(diff);
-					QMessageBox::information(nullptr, QString::fromLocal8Bit("提示"),
+        if (m_2dPixScrollWidget->getPixWidget()->getMode() == hnWorkMode::GET_MILE)
+        {
+            const double selected2dMile = m_2dPixScrollWidget->getPixWidget()->getEncoderMile();
+            const double selected3dMile = m_3dPixScrollWidget->getPixWidget()->getEncoderMile();
+            if (selected2dMile < 0.0 || selected3dMile < 0.0)
+            {
+                QMessageBox::warning(nullptr, QString::fromLocal8Bit("提示"),
+                    QString::fromLocal8Bit("请先分别点击二维视图和三维视图中的同一位置，再按Shift+C 进行矫正"),
+                    QString::fromLocal8Bit("确定"));
+                return;
+            }
+
+            double diff = selected2dMile - selected3dMile;
+            auto dataManager = hnDataManager::getDataManager();
+            if (dataManager->isOpenProject())
+            {
+                auto currentProject = dataManager->getCurrentProject();
+                if (currentProject && currentProject->get3DProject())
+                {
+                    m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
+                    m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
+                    currentProject->set2d3dMileDiff(diff);
+                    m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+                    m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+                    const double source2dMile = m_2dPixScrollWidget->getPixWidget()->currentBottomEncoderMile();
+                    syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
+
+                    QMessageBox::information(nullptr, QString::fromLocal8Bit("提示"),
 						QString::fromLocal8Bit("已经对二三维里程差值进行矫正"),
-						QString::fromLocal8Bit("确定"));
-				}
-			}
-		}
+                        QString::fromLocal8Bit("确定"));
+                }
+            }
+        }
 	});
 }
 
@@ -706,9 +734,57 @@ void hnRoadDataProcess::createConnect()
 		this, &hnRoadDataProcess::updatePixWidget);
 	*/
 
-	//选中病害后，病害列表滚动
-	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
-	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_selectDisease, this->m_diseaseListWidget, &hnDiseaseListWidget::slot_selectDisease);
+	// Sync disease selection to the other view and the list. The source view has
+	// already applied the user action and must not rebuild its SDK layer a second time.
+	auto syncDiseaseSelectionFromView = [this](const hnRoadDiseaseInfo& disease, bool sourceIs2d)
+	{
+		if (this->m_isDiseaseSelectionSync)
+		{
+			return;
+		}
+		QScopedValueRollback<bool> selectionGuard(this->m_isDiseaseSelectionSync, true);
+
+		if (this->m_diseaseListWidget)
+		{
+			this->m_diseaseListWidget->slot_selectDisease(disease);
+		}
+		auto applySelectionToTarget = [&disease](hn2d3dPixBaseWidget* target)
+		{
+			if (!target)
+			{
+				return;
+			}
+			target->setSelectedDisease(disease);
+			if (disease.nID >= 0)
+			{
+				// Existing diseases can be outside the target view's visible mileage range.
+				// Center after the selection layer is rebuilt so the visual state is observable.
+				QTimer::singleShot(0, target, [target, disease]()
+				{
+					target->centerSdkDiseaseInView(disease);
+				});
+			}
+		};
+
+		if (!sourceIs2d && this->m_2dPixScrollWidget && this->m_2dPixScrollWidget->getPixWidget())
+		{
+			applySelectionToTarget(this->m_2dPixScrollWidget->getPixWidget());
+		}
+		if (sourceIs2d && this->m_3dPixScrollWidget && this->m_3dPixScrollWidget->getPixWidget())
+		{
+			applySelectionToTarget(this->m_3dPixScrollWidget->getPixWidget());
+		}
+	};
+	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_selectDisease,
+		this, [syncDiseaseSelectionFromView](const hnRoadDiseaseInfo& disease)
+	{
+		syncDiseaseSelectionFromView(disease, true);
+	});
+	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_selectDisease,
+		this, [syncDiseaseSelectionFromView](const hnRoadDiseaseInfo& disease)
+	{
+		syncDiseaseSelectionFromView(disease, false);
+	});
 
 
 	/*connect(this->m_diseaseListWidget , &hnDiseaseListWidget::signal_updateView, this , &hnRoadDataProcess::updatePixWidget);*/
@@ -751,40 +827,53 @@ void hnRoadDataProcess::createConnect()
 
 	//病害列表发出帧序号改变的信号   路面显示窗口对应跳转
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_road2dFrameIdxChanged,
-		[this](int frameIdx) {
-
-		//二维视图滚动条变化，更新三维视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用三维视图滚动条变化，更新二维视图
-		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-		//二维视图滚动条变化，更新景观视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-		this->m_2dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
+		[this](double encoderMile) {
+		const double targetMile = qMax(0.0, encoderMile);
+		this->m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
 	});
 	
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_setDiseaseIsChecked,
-		[this](int diseaseId) {
-		this->m_2dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId);
-		this->m_3dPixScrollWidget->slot_setSelectedDiseaseId(diseaseId);
+		[this](const hnRoadDiseaseInfo& disease) {
+		this->m_2dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
+		this->m_3dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
+		QTimer::singleShot(0, this, [this, disease]() {
+			this->m_2dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
+			this->m_3dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
+		});
+		updatePixWidget();
+	});
+	connect(hnDataManager::getDataManager()->getDiseaseService(), &hnDiseaseService::diseaseDeleted,
+		this, [this](const hnRoadDiseaseInfo&) {
+		this->m_2dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+		this->m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
 		updatePixWidget();
 	});
 
 	//三维
-	connect(m_diseaseListWidget, &hnDiseaseListWidget::signal_road3dFrameIdxChanged, [this](int frameIdx) {
-		m_3dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
+	connect(m_diseaseListWidget, &hnDiseaseListWidget::signal_road3dFrameIdxChanged, [this](double encoderMile) {
+		const double targetMile = qMax(0.0, encoderMile);
+		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road3D, targetMile);
 	});
 
-	//路面显示窗口发送状态栏信息变化，状态栏进行更新
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_statusInfoChanged,
 		this->m_statusBarWidget, QOverload<const QString&>::of(&statusBarWidget::updateLabelTextSlot));
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_statusInfoChanged,
 		this->m_statusBarWidget, QOverload<const QString&>::of(&statusBarWidget::updateLabelTextSlot));
+
+	// 只有用户操作触发跨视图同步，程序滚动产生的普通bottom 信号只用于状态刷新，避免 2D/3D 来回追赶。
+	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_sdkUserBottomEncoderMileChanged,
+		this, [this](double source2dMile)
+	{
+		syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
+	});
+
+	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_sdkUserBottomEncoderMileChanged,
+		this, [this](double source3dMile)
+	{
+		syncContinuousViews(ContinuousViewSyncSource::Road3D, source3dMile);
+	});
 
 	//切换三维浏览模式
 	connect(this->m_3dGrayModeAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeGray3dMode);
@@ -796,66 +885,10 @@ void hnRoadDataProcess::createConnect()
 	//	connect(this->m_updateAllDiseasesAct, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDiseaseDatabase);
 	connect(this->m_updateDatabase, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDatabase);
 
-#pragma region 二维 三维 景观 视图浏览映射 已经做了防止冲突的处理
-	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_enterWidget,
-		[this]() {
+#pragma region SDKViewMapping
 		//二维视图滚动条变化，更新三维视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用 三维视图滚动条变化，更新二维视图
-		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-		//二维视图滚动条变化，更新景观视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-		//禁用景观帧序号变化时,更新二维窗口
-		disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
-			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
-	});
-
-	connect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_enterWidget,
-		[this]() {
-		//禁用 二维视图滚动条变化，更新三维视图
-		disconnect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用 景观帧序号变化时,更新二维窗口
-		disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
-			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
-
-		//三维视图滚动条变化，更新二维视图
-		connect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-		//二维视图滚动条变化，更新景观视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-	});
-
-	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_enterWidget,
-		[this]() {
-
-		//景观帧序号变化时,更新二维窗口
-		connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
-			this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
-
-		//禁用 二维视图滚动条变化，更新景观视图
-		disconnect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-		//二维视图滚动条变化，更新三维视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用 三维视图滚动条变化，更新二维视图
-		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-	});
-
-
+    connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
+        this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged, Qt::UniqueConnection);
 #pragma endregion
 
 	//二维三维发送信号，原始比例更新视图
@@ -935,53 +968,23 @@ void hnRoadDataProcess::createConnect()
 	//里程跳转对话框 发送跳转信号，二维视图跳转
 	// todo三维跳转
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_updateScrollValue,
-		[this](int frameIdx) {
-		//二维视图滚动条变化，更新三维视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用三维视图滚动条变化，更新二维视图
-		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-		//二维视图滚动条变化，更新景观视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-		m_2dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
+		[this](double encoderMile) {
+		const double targetMile = qMax(0.0, encoderMile);
+		m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
 	});
 
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_road3dFrameIdxChanged,
-		[this](int frameIdx) {
-		m_3dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
+		[this](double encoderMile) {
+		const double targetMile = qMax(0.0, encoderMile);
+		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road3D, targetMile);
 	});
-
 
 	connect(m_projectWidget, &projectView::signal_jumpToMile, this, &hnRoadDataProcess::slot_jumpToMile);
+	connect(m_projectWidget, &projectView::signal_jumpToMark, this, &hnRoadDataProcess::slot_jumpToMark);
 
-	connect(this, &hnRoadDataProcess::signal_jumpScrollValue,
-		[this](int frameIdx) {
-		//二维视图滚动条变化，更新三维视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-		//禁用三维视图滚动条变化，更新二维视图
-		disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-		//二维视图滚动条变化，更新景观视图
-		connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-			this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-		m_2dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
-	});
-
-	connect(this, &hnRoadDataProcess::signal_jumpRoad3dFrameIdxChanged,
-		[this](int frameIdx) {
-		m_3dPixScrollWidget->slot_updateScrollBarValue(frameIdx);
-	});
-
-
+	// Old frame-index jump signals are no longer connected; slot_jumpToMile scrolls the SDK view directly.
 
 	connect(this, &hnRoadDataProcess::signal_updateProject, this->m_projectWidget, &projectView::slot_updateProjectSetting);
 	//镜像
@@ -1391,24 +1394,6 @@ void hnRoadDataProcess::createViewsCategory(hnRibbonCategory* page)
 	this->m_3dRgbModeAct = new QAction(rgbModeIcon, QStringLiteral("&深度图模式"));
 	image3dModePannel->addLargeAction(m_3dRgbModeAct);
 
-	//放大镜 Pannel
-	hnRibbonPannel* magnifyPannel = page->addPannel(QStringLiteral("放大镜"));
-
-	//放大镜打开/关闭
-	  QIcon magnifyIcon = QIcon::fromTheme(QStringLiteral("magnifyIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/打开放大镜.png")));
-	m_magnifyAction = new QAction(magnifyIcon, QString::fromLocal8Bit("打开放大镜"));
-	magnifyPannel->addLargeAction(m_magnifyAction);
-	connect(m_magnifyAction, &QAction::triggered,
-		this, &hnRoadDataProcess::slot_onMagnifyActionClicked);
-
-	//放大镜设置
-	  QIcon magnifySettingIcon = QIcon::fromTheme(QStringLiteral("magnifySettingIcon"),
-		QIcon(QStringLiteral(":/icons/iconsNew/放大镜设置.png")));
-	m_magnifySettingAction = new QAction(magnifySettingIcon, QString::fromLocal8Bit("放大镜设置"));
-	magnifyPannel->addLargeAction(m_magnifySettingAction);
-	connect(m_magnifySettingAction, &QAction::triggered,
-		this, &hnRoadDataProcess::slot_onMagnifySettingActionClicked);
 
 }
 
@@ -1515,17 +1500,21 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 	totalTimer.start();
 	 
 	QString selectedItemText = item->text(0);
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][TreeProjectOpenStart]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "item=" << selectedItemText
 		<< "column=" << column;
+	#endif
 	int grade = item->data(1, Qt::UserRole).value<int>();
 	if (grade == 1)  //用户点击的是有效节点  二维工程名
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 			<< "reason=grade1"
 			<< "item=" << selectedItemText
 			<< "totalMs=" << totalTimer.elapsed();
+		#endif
 		return;
 	}
 
@@ -1534,10 +1523,12 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 	//检查工程 人工模式自动化模式类型冲突
 	if (!this->checkProjectFrameTypeConflict(projectName))
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 			<< "reason=frameTypeConflict"
 			<< "item=" << selectedItemText
 			<< "totalMs=" << totalTimer.elapsed();
+		#endif
 		return;
 	}
 	auto curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
@@ -1549,23 +1540,31 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 		// 清空所有视图图片
 		stepTimer.start();
 		this->clearAllWidgetPixs();
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=clearAllWidgetPixs" << "elapsedMs=" << stepTimer.elapsed();
+		#endif
 		loading.setMessage(QStringLiteral("所有窗口加载图片..."));
 		//所有窗口加载图片
 		stepTimer.restart();
 		this->allWidgetLoadPictures();
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
+		#endif
 		loading.setMessage(QStringLiteral("更新病害列表..."));
 
 		//更新病害列表
 		stepTimer.restart();
 		this->m_diseaseListWidget->updateAllDiseases();
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateAllDiseases" << "elapsedMs=" << stepTimer.elapsed();
+		#endif
 		loading.setMessage(QStringLiteral("更新树状视图..."));
 		//更新树状视图
 		stepTimer.restart();
 		this->updateTreeWidget();
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
+		#endif
 		QVector<hnCommon::hnMarkInfo> marks;
 		if (m_projects->getCurrentProject()->getProjectType() == PROJECT_JD_3D_TYPE)
 		{
@@ -1593,7 +1592,9 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 
 		emit signal_updateProject(setting, marks, datas);
 		emit signal_loadBaiduMap();
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=emitUpdateSignals" << "totalMsSoFar=" << totalTimer.elapsed();
+		#endif
 		auto type = curProject->getProjectType();
 
 		//获取二三维里程差值，如果是0，提示用户做差值处理
@@ -1610,10 +1611,12 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 			}
 		}
 	}
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 		<< "item=" << selectedItemText
 		<< "hasProject=" << (curProject != nullptr)
 		<< "totalMs=" << totalTimer.elapsed();
+	#endif
 }
 
 void hnRoadDataProcess::slot_selectNodeChange()
@@ -1900,36 +1903,40 @@ void hnRoadDataProcess::slot_changeToMoveDiseaseMode()
 void hnRoadDataProcess::slot_changeToMergeDiseaseMode()
 {
 	//取消画病害
-	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
-	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+    this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+    this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-	//路面破损窗口设置模式
-	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
+    //路面破损窗口设置模式
+    this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 
-	//三维窗口设置模式
-	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
-
+    //三维窗口设置模式
+    this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 }
 
 void hnRoadDataProcess::slot_changeTo23dMileCorrectMode()
 {
-	if (!m_projects->isOpenProject())
-	{
-		return;
-	}
+    if (!m_projects->isOpenProject())
+    {
+        return;
+    }
+
 	//取消画病害
-	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
-	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+    this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+    this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+    this->m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
+    this->m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
+    this->m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+    this->m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
 
-	//路面破损窗口设置模式
-	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
+    //路面破损窗口设置模式
+    this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-	//三维窗口设置模式
-	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
+    //三维窗口设置模式
+    this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-	QMessageBox::information(this, QStringLiteral("提示"),
+    QMessageBox::information(this, QStringLiteral("提示"),
 		QStringLiteral("请依次点击二维视图、三维视图上相同的位置，然后键盘按Shift + C，进行矫正"),
-		QString::fromLocal8Bit("确定"));
+        QString::fromLocal8Bit("确定"));
 }
 
 void hnRoadDataProcess::slot_changeAddCtrlPointMode()
@@ -2332,169 +2339,174 @@ void hnRoadDataProcess::slot_updateDiseaseDatabase()
 
 }
 
-void hnRoadDataProcess::slot_update3dViewScrollBar(int value2d)
+bool hnRoadDataProcess::canUseContinuousViewSync() const
 {
-	if (!hnDataManager::getDataManager()->isOpenProject())
+	const auto dataManager = hnDataManager::getDataManager();
+	if (!dataManager || !dataManager->isOpenProject())
 	{
-		return;
+		return false;
 	}
-	if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject() ||
-		!hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+
+	auto project = dataManager->getCurrentProject();
+	if (!project || !project->get2DProject() || !project->get3DProject())
 	{
-		return;
+		return false;
 	}
-	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue();
-	int maxValue3d = this->m_3dPixScrollWidget->getMaxScrollBarValue();
 
-	double diff2d3d = hnDataManager::getDataManager()->getCurrentProject()->get2d3dMileDiff();
-	auto projectInfo = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	value2d = value2d + (int)(diff2d3d / (projectInfo.dRoadLength / 2));
-
-	int value3d = maxValue3d - (maxValue2d - value2d) / 4;
-	this->m_3dPixScrollWidget->setCurrentScrollBarValue(value3d);
+	return m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget()
+		&& m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget();
 }
 
-void hnRoadDataProcess::slot_update2dViewScrollBar(int value3d)
+void hnRoadDataProcess::syncStreetViewBy2dEncoderMile(double encoderMile)
 {
-	if (!hnDataManager::getDataManager()->isOpenProject())
+	if (!hnDataManager::getDataManager()->isOpenProject() || !m_pStreetViewWidget)
 	{
 		return;
 	}
-	if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject() ||
-		!hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->get2DProject())
 	{
 		return;
 	}
-	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue();
-	int maxValue3d = this->m_3dPixScrollWidget->getMaxScrollBarValue();
-	double diff2d3d = hnDataManager::getDataManager()->getCurrentProject()->get2d3dMileDiff();
 
-	const double road3dHeight = 8.0;
-	value3d = value3d - (int)(diff2d3d / (road3dHeight / 2));
+	// 景观控件现有接口收的是“行驶距离整数”，内部再按 StreetDis/StreetDis2 算图片序号。
+    {
+        QSignalBlocker blocker(m_pStreetViewWidget);
+        m_pStreetViewWidget->updateViewImage(qMax(0, qRound(encoderMile)));
+    }
 
-	int value2d = maxValue2d - (maxValue3d - value3d) * 4;
-	this->m_2dPixScrollWidget->setCurrentScrollBarValue(value2d);
+    const QString streetImagePath = m_pStreetViewWidget->currentStreetImagePath();
+    m_2dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+    if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+    {
+        m_3dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+    }
 }
 
-void hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged(int scrollBarValue2d)
+void hnRoadDataProcess::syncContinuousViews(ContinuousViewSyncSource source, double sourceEncoderMile)
 {
-	if (!hnDataManager::getDataManager()->isOpenProject())
+	if (m_isProgrammaticViewSync)
 	{
 		return;
 	}
-	if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+
+	const auto dataManager = hnDataManager::getDataManager();
+	if (!dataManager || !dataManager->isOpenProject())
 	{
 		return;
 	}
-	//test23ds
-	int leftStreetDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreetImgDis;
-	int rightStreetDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreeRightImgDis;
-	 
 
+	auto project = dataManager->getCurrentProject();
+	if (!project)
+	{
+		return;
+	}
 
-	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue(); 
-	//真实的帧号  用从下到上的滚动条值除以2
-	//int true2dFrameIdx = (maxValue2d - scrollBarValue2d) / 2;
-	int true2dFrameIdx = (maxValue2d - scrollBarValue2d) ;
+	const bool has2dView = project->get2DProject()
+		&& m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget();
+	const bool has3dView = project->get3DProject()
+		&& m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget();
+	const bool canSync23d = has2dView && has3dView;
+	const double sourceMile = qMax(0.0, sourceEncoderMile);
+	const double syncToleranceMeters = 0.01;
+	auto scrollBottomIfNeeded = [syncToleranceMeters](hn2d3dPixBaseWidget* pixWidget, double targetMile)
+	{
+		if (!pixWidget)
+		{
+			return;
+		}
 
-	//// 景观的帧号 二维是2m一张，景观是20米一张，所以就是除以10
-	//int streetFrameIdx = true2dFrameIdx / (leftStreetDis / 2);
-	//if (rightStreetDis !=0)
-	//{
-	//	int leftIdx = true2dFrameIdx / (leftStreetDis / 2);
-	//	int rightIdx = true2dFrameIdx / (rightStreetDis / 2);
-	//	streetFrameIdx = leftIdx <= rightIdx ? leftIdx : rightIdx;
-	//}
-	//设置景观帧号
-	this->m_pStreetViewWidget->updateViewImage(true2dFrameIdx);
+		const double clampedTargetMile = qMax(0.0, targetMile);
+		if (qAbs(pixWidget->currentBottomEncoderMile() - clampedTargetMile) >= syncToleranceMeters)
+		{
+			pixWidget->scrollBottomToEncoderMile(clampedTargetMile);
+		}
+		pixWidget->refreshSdkViewState();
+	};
+
+	QScopedValueRollback<bool> syncingGuard(m_isProgrammaticViewSync, true);
+
+	if (source == ContinuousViewSyncSource::Road2D)
+	{
+		if (canSync23d)
+		{
+			const double diff2d3d = project->get2d3dMileDiff();
+			const double target3dMile = qMax(0.0, sourceMile - diff2d3d);
+			scrollBottomIfNeeded(m_3dPixScrollWidget->getPixWidget(), target3dMile);
+		}
+
+		if (has2dView)
+		{
+			syncStreetViewBy2dEncoderMile(sourceMile);
+			m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+		}
+		return;
+	}
+
+	if (source == ContinuousViewSyncSource::Road3D)
+	{
+		if (canSync23d)
+		{
+			const double diff2d3d = project->get2d3dMileDiff();
+			const double target2dMile = qMax(0.0, sourceMile + diff2d3d);
+			scrollBottomIfNeeded(m_2dPixScrollWidget->getPixWidget(), target2dMile);
+			syncStreetViewBy2dEncoderMile(target2dMile);
+			m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+		}
+		else if (has3dView)
+		{
+			m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+		}
+		return;
+	}
+
+	if (source == ContinuousViewSyncSource::Street)
+	{
+		if (has2dView)
+		{
+			scrollBottomIfNeeded(m_2dPixScrollWidget->getPixWidget(), sourceMile);
+		}
+
+		if (canSync23d)
+		{
+			const double diff2d3d = project->get2d3dMileDiff();
+			const double target3dMile = qMax(0.0, sourceMile - diff2d3d);
+			scrollBottomIfNeeded(m_3dPixScrollWidget->getPixWidget(), target3dMile);
+		}
+
+		const QString streetImagePath = m_pStreetViewWidget ? m_pStreetViewWidget->currentStreetImagePath() : QString();
+		if (has2dView)
+		{
+			m_2dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+			m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+		}
+		if (has3dView)
+		{
+			m_3dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+			m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+		}
+	}
 }
-
 void hnRoadDataProcess::slot_streetWidgetFrameIdxChanged(int streetFrameIdx)
 {
-	//2d帧号 二维是2米一张，景观是20米一张 所以要乘10
-	int streetDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreetImgDis;
-	int streetRightDis = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_StreeRightImgDis;
-	 int showModel =  m_pStreetViewWidget->getStreetShowModel();
-	if (showModel == 0 && streetDis!= streetRightDis)
-	{
-		//如果左右景观不一致
-		return;
-	} 
-	  
-	int frame2dIdx = streetFrameIdx / 2;
+    if (m_isProgrammaticViewSync)
+    {
+        return;
+    }
 
-	//获取最大2d帧号
-	int maxValue2d = this->m_2dPixScrollWidget->getMaxScrollBarValue();
+    if (!hnDataManager::getDataManager()->isOpenProject())
+    {
+        return;
+    }
+    if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+    {
+        return;
+    }
 
-	//2d的滚动条的值等于2d最大帧号减去帧号 *2(滚动条本身就是帧号的两倍)，因为帧号为0的时候，滚动条在最底下，为最大值
-	int value2d = maxValue2d - frame2dIdx * 2;
-
-	QTimer::singleShot(30, [=]() {
-		//设置2d视图的帧号
-		this->m_2dPixScrollWidget->setCurrentScrollBarValue(value2d);
-	});
-
-	
+    // 景观信号传出来的是行驶距离，不是纯图片下标，直接作为 2D 编码器里程使用。
+    syncContinuousViews(ContinuousViewSyncSource::Street, qMax(0, streetFrameIdx));
 }
-
-void hnRoadDataProcess::slot_onMagnifyActionClicked()
-{
-	bool isOpen = false;
-	QString actionText;
-	if (m_magnifyAction->text().contains(QString::fromLocal8Bit("打开")))
-	{
-		isOpen = true;
-		actionText = QString::fromLocal8Bit("关闭放大镜");
-	}
-	else
-	{
-		isOpen = false;
-		actionText = QString::fromLocal8Bit("打开放大镜");
-	}
-
-	this->m_2dPixScrollWidget->
-		getPixWidget()->setIsMagnification(isOpen);
-	m_3dPixScrollWidget->getPixWidget()->setIsMagnification(isOpen);
-	m_magnifyAction->setText(actionText);
-
-	//更新所有视图
-	this->updateAllWidget();
-}
-
-void hnRoadDataProcess::slot_onMagnifySettingActionClicked()
-{
-	if (!hnDataManager::getDataManager()->isOpenProject())
-	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"),
-			QString::fromLocal8Bit("请先打开工程"), QString::fromLocal8Bit("确定"));
-		return;
-	}
-
-	int pixelSize = this->m_2dPixScrollWidget->getPixWidget()->
-		getPixLenOfSide();
-	int offset = this->m_2dPixScrollWidget->getPixWidget()->
-		getOffsetDistance();
-	int manifycation = this->m_2dPixScrollWidget->getPixWidget()->
-		getMagnification();
-
-	hnMagnifySettingDlg dialog;
-	dialog.setMagnifySetting(pixelSize, offset, manifycation);
-	int rc = dialog.exec();
-	if (rc == QDialog::Accepted)
-	{
-		dialog.getMagnifySetting(pixelSize, offset, manifycation);
-
-		this->m_2dPixScrollWidget->getPixWidget()->setPixLenOfSide(pixelSize);
-		this->m_2dPixScrollWidget->getPixWidget()->setOffsetDistance(offset);
-		this->m_2dPixScrollWidget->getPixWidget()->setMagnification(manifycation);
-
-		this->m_3dPixScrollWidget->getPixWidget()->setPixLenOfSide(pixelSize);
-		this->m_3dPixScrollWidget->getPixWidget()->setOffsetDistance(offset);
-		this->m_3dPixScrollWidget->getPixWidget()->setMagnification(manifycation);
-	}
-
-}
-
 
 void hnRoadDataProcess::slot_setDepthCaculate(bool isCaculate)
 {
@@ -2513,7 +2525,7 @@ void hnRoadDataProcess::slot_widgetMirrored(bool isH2dMirrored, bool isV2dMirror
 		hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->setIsHMirrored(isH2dMirrored);
 		hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->setIsVMirrored(isV2dMirrored);
 		this->m_2dPixScrollWidget->getPixWidget()->setHMirrored(isH2dMirrored);
-		this->m_2dPixScrollWidget->getPixWidget()->setHMirrored(isV2dMirrored);
+		this->m_2dPixScrollWidget->getPixWidget()->setVMirrored(isV2dMirrored);
 		this->m_2dPixScrollWidget->loadRoadPicture();
 		this->m_2dPixScrollWidget->getPixWidget()->update();
 	}
@@ -2600,7 +2612,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (diseaseInfo.vec3dRect.size() <= 0)
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请确保工程具有三维工程数据!"));
+			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 				auto rect3d = diseaseInfo.vec3dRect.at(0);
@@ -2608,7 +2620,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d))
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请确保工程具有三维工程数据!"));
+			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 
@@ -2669,7 +2681,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d00))
 				{
-					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请确保工程具有三维工程数据!"));
+			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 				else
@@ -3256,13 +3268,18 @@ void hnRoadDataProcess::slot_mergeAutoDisease()
 
 void hnRoadDataProcess::updateAllWidget()
 {
-	this->m_2dPixScrollWidget->update();
-	this->m_3dPixScrollWidget->update();
+	if (this->m_2dPixScrollWidget && this->m_2dPixScrollWidget->getPixWidget())
+	{
+		this->m_2dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+		this->m_2dPixScrollWidget->update();
+	}
+	if (this->m_3dPixScrollWidget && this->m_3dPixScrollWidget->getPixWidget())
+	{
+		this->m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+		this->m_3dPixScrollWidget->update();
+	}
 	this->m_diseaseListWidget->updateAllDiseases();
-
-
 }
-
 void hnRoadDataProcess::updatePixWidget()
 {
 	this->m_2dPixScrollWidget->update();
@@ -3428,34 +3445,44 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 	QElapsedTimer totalTimer;
 	QElapsedTimer stepTimer;
 	totalTimer.start();
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AllWidgetLoadStart]";
+	#endif
 	// 加载当前工程数据
 	hnPro::hnProject* curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	if (curProject)
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][AllWidgetLoadProject]"
 			<< "projectType=" << static_cast<int>(curProject->getProjectType())
 			<< "projectName=" << curProject->getProjectName();
+		#endif
 		if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE)
 		{
 			// 加载当前工程路面影像
 			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
+			#ifdef _DEBUG
 			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
+			#endif
 
 			// 加载景观影像
 			if (m_pStreetViewWidget)
 			{
 				stepTimer.restart();
 				m_pStreetViewWidget->initView();
+				#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
+				#endif
 			}
 			// 加载三维影像
 			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 			{
 				stepTimer.restart();
 				m_3dPixScrollWidget->load3dImage();
+				#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
+				#endif
 			}
 		}
 		else if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
@@ -3463,14 +3490,18 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 			// 加载当前工程路面影像
 			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
+			#ifdef _DEBUG
 			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
+			#endif
 
 			// 加载景观影像
 			if (m_pStreetViewWidget)
 			{
 				stepTimer.restart();
 				m_pStreetViewWidget->initView();
+				#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
+				#endif
 			}
 		}
 		else
@@ -3480,14 +3511,55 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 			{
 				stepTimer.start();
 				m_3dPixScrollWidget->load3dImage();
+				#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
+				#endif
 			}
 		}
 
 	}
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AllWidgetLoadEnd]" << "totalMs=" << totalTimer.elapsed();
+	#endif
 }
 
+void hnRoadDataProcess::clearCurrentProjectUiState()
+{
+	if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+	{
+		m_2dPixScrollWidget->getPixWidget()->clearPix();
+		m_2dPixScrollWidget->getPixWidget()->clearSdkView();
+	}
+	if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+	{
+		m_3dPixScrollWidget->getPixWidget()->clearPix();
+		m_3dPixScrollWidget->getPixWidget()->clearSdkView();
+	}
+	if (m_pStreetViewWidget)
+	{
+		m_pStreetViewWidget->clearPix();
+	}
+	if (m_diseaseListWidget)
+	{
+		m_diseaseListWidget->clearDiseases();
+	}
+	if (m_projectWidget)
+	{
+		m_projectWidget->clearProjectInfo();
+	}
+	if (m_projectListTreeWidget)
+	{
+		m_projectListTreeWidget->clear();
+	}
+	if (m_mapWidget)
+	{
+		m_mapWidget->clearMapData();
+	}
+	if (m_statusBarWidget)
+	{
+		m_statusBarWidget->updateLabelTextSlot(QString());
+	}
+}
 void hnRoadDataProcess::clearAllWidgetPixs()
 {
 	m_2dPixScrollWidget->getPixWidget()->clearPix();
@@ -3629,10 +3701,7 @@ bool hnRoadDataProcess::handleConflict(QString standard, int drawType)
 			QString::fromLocal8Bit("病害绘制方式与数据库冲突，不允许打开工程，如需切换绘制方式，请重新打开工程"),
 			QString::fromLocal8Bit("确定"));
 		hnApp::hnDataManager::getDataManager()->closeCurrentProject();
-		m_2dPixScrollWidget->getPixWidget()->clearPix();
-		m_3dPixScrollWidget->getPixWidget()->clearPix();
-
-		this->updateAllWidget();
+		clearCurrentProjectUiState();
 		return false;
 	}
 }
@@ -3647,47 +3716,118 @@ void hnRoadDataProcess::slot_jumpToMile(double mile)
 	{
 		return;
 	}
-	double m_region = mile;
 
-	double encoderMile;
+	double encoderMile = hnDataManager::getDataManager()->getCurrentProject()->trueMileToEncl(mile);
+	encoderMile = qMax(0.0, encoderMile);
 
-	encoderMile = hnDataManager::getDataManager()->getCurrentProject()->trueMileToEncl(m_region);
-
-	//异常处理 如果小于0 ，就赋值为0
-	if (encoderMile < 0)
-	{
-		encoderMile = 0;
-	}
-
-	//TODO 还需处理单二维的情况
 	auto projectType = hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
-	if (PROJECT_23D_TYPE == projectType ||
-		PROJECT_2D_TYPE == projectType)
+	if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
 	{
-		auto projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-		int imageNum = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector().size();
-		if (encoderMile > imageNum * projectSetInfo.dRoadLength)
-		{
-			encoderMile = imageNum * projectSetInfo.dRoadLength;
-		}
-		double roadLenth = projectSetInfo.dRoadLength;
-		if (roadLenth == 0)
-		{
-			return;
-		}
-		int frameIdx = encoderMile / roadLenth;
-		emit signal_jumpScrollValue(frameIdx);
+		m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(encoderMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road2D, encoderMile);
 	}
 	else
 	{
-		const int roadHeight = 8;
-		const int frameIdx3d = encoderMile / roadHeight;
-
-		emit  signal_jumpRoad3dFrameIdxChanged(frameIdx3d);
+		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(encoderMile);
 	}
 }
 
-// 打开工程
+void hnRoadDataProcess::slot_jumpToMark(int markId, double trueMile, double tableEncoderMile)
+{
+	if (!hnDataManager::getDataManager()->isOpenProject())
+	{
+		return;
+	}
+
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return;
+	}
+
+	// 表格第一列显示的是真实桩号；编码器里程必须和真实桩号能互相校验，避免旧库 EnclMile=0 时误跳到工程开头。
+	auto encoderMatchesTrueMile = [project, trueMile](double encoderMile)
+	{
+		if (encoderMile < 0.0)
+		{
+			return false;
+		}
+		if (trueMile <= 0.0)
+		{
+			return true;
+		}
+		const double checkedTrueMile = project->enclToTrueMile(encoderMile);
+		return qAbs(checkedTrueMile - trueMile) <= 5.0;
+	};
+
+	double encoderMile = -1.0;
+	if (encoderMatchesTrueMile(tableEncoderMile))
+	{
+		encoderMile = tableEncoderMile;
+	}
+
+	const QVector<hnCommon::hnMarkInfo> marks = project->getCurrentMarkVector();
+	for (const hnCommon::hnMarkInfo& mark : marks)
+	{
+		if (mark.nID != markId)
+		{
+			continue;
+		}
+		if (trueMile > 0.0 && qAbs(mark.dTrueMile - trueMile) > 0.01)
+		{
+			continue;
+		}
+
+		if (encoderMile < 0.0 && encoderMatchesTrueMile(mark.dEnclMile))
+		{
+			encoderMile = mark.dEnclMile;
+		}
+		if (encoderMile < 0.0 && mark.dTrueMile > 0.0)
+		{
+			encoderMile = project->trueMileToEncl(mark.dTrueMile);
+		}
+		break;
+	}
+
+	if (encoderMile < 0.0)
+	{
+		encoderMile = project->trueMileToEncl(trueMile);
+	}
+	encoderMile = qMax(0.0, encoderMile);
+
+	#ifdef _DEBUG
+	qDebug().noquote() << "[HN_MARK_JUMP]"
+		<< "markId=" << markId
+		<< "trueMile=" << trueMile
+		<< "tableEncoderMile=" << tableEncoderMile
+		<< "targetEncoderMile=" << encoderMile;
+	#endif
+
+	const auto projectType = project->getProjectType();
+	QScopedValueRollback<bool> syncingGuard(m_isProgrammaticViewSync, true);
+	if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
+	{
+		if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+		{
+			m_2dPixScrollWidget->getPixWidget()->centerOnEncoderMile(encoderMile);
+			m_2dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+		}
+
+		if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget() && project->get3DProject())
+		{
+			const double diff2d3d = project->get2d3dMileDiff();
+			m_3dPixScrollWidget->getPixWidget()->centerOnEncoderMile(qMax(0.0, encoderMile - diff2d3d));
+			m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+		}
+
+		syncStreetViewBy2dEncoderMile(encoderMile);
+	}
+	else if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+	{
+		m_3dPixScrollWidget->getPixWidget()->centerOnEncoderMile(encoderMile);
+		m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+	}
+}
 void hnRoadDataProcess::openProjectSlot()
 {
 	if (m_outExcelDialog != nullptr)
@@ -3733,14 +3873,10 @@ void hnRoadDataProcess::openProjectSlot()
 	 
 	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
 	
-	//关闭工程
+	clearCurrentProjectUiState();
 	if (m_projects->isHasProject())
 	{
 		m_projects->closeProject();
-		//清空二维视图窗口
-		m_2dPixScrollWidget->getPixWidget()->clearPix();
-		//清空三维视图窗口
-		m_3dPixScrollWidget->getPixWidget()->clearPix();
 	}
 
 	//根据各个模块标准设置其病害表名称
@@ -3773,17 +3909,21 @@ void hnRoadDataProcess::openLastProjectSlot()
 	QElapsedTimer totalTimer;
 	QElapsedTimer stepTimer;
 	totalTimer.start();
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStart]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "defaultPath=" << m_xrSetting->DefaultPath
 		<< "lastProject=" << m_xrSetting->lastProjectName
 		<< "lastFrame=" << m_xrSetting->lastProjectFn;
+	#endif
 	 
 	//获取用户选择的文件夹
 	QString projectPath = m_xrSetting->DefaultPath;
 	if (projectPath.isEmpty())
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=emptyDefaultPath" << "totalMs=" << totalTimer.elapsed();
+		#endif
 		QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未找到最近工程"),
 			QStringLiteral("确定"));
 		return;
@@ -3797,93 +3937,98 @@ void hnRoadDataProcess::openLastProjectSlot()
 	stepTimer.start();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
 	{
+		#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
 			<< "reason=getAllProjectFailed"
 			<< "stepMs=" << stepTimer.elapsed()
 			<< "totalMs=" << totalTimer.elapsed();
+		#endif
 		QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("未找到最近工程"),
 			QStringLiteral("确定"));
 		return;
 	}
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]"
 		<< "step=getAllProject"
 		<< "elapsedMs=" << stepTimer.elapsed()
 		<< "projectCount=" << m_projectDataInfos.size();
+	#endif
 
 	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
  
-	//关闭工程
 	stepTimer.restart();
+	clearCurrentProjectUiState();
 	if (m_projects->isHasProject())
 	{
 		m_projects->closeProject();
-		//清空二维视图窗口
-		m_2dPixScrollWidget->getPixWidget()->clearPix();
-		//清空三维视图窗口
-		m_3dPixScrollWidget->getPixWidget()->clearPix();
 	}
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=closeAndClear" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 	 
 
 	//根据各个模块标准设置其病害表名称
 	stepTimer.restart();
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=setProjectDiseaseVector" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 
 	loading.setMessage(QStringLiteral("正在初始化工程..."));
 	//初始化工程
 	stepTimer.restart();
 	m_projects->initProject(m_projectDataInfos);
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=initProject" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 
 	 
 	loading.setMessage(QStringLiteral("正在加载所有视图的图片数据..."));
 	// 加载所有视图的图片数据
 	stepTimer.restart();
 	this->allWidgetLoadPictures();
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 
 	loading.setMessage(QStringLiteral("正在更新树状视图..."));
 
 	//更新树状视图
 	stepTimer.restart();
 	this->updateTreeWidget();
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 	QTreeWidgetItem  * item = new QTreeWidgetItem(m_projectListTreeWidget);
 	item->setText(0, m_xrSetting->lastProjectName);
 	item->setData(1, Qt::UserRole, 0);
 	//选中最后工程
 	stepTimer.restart();
 	slot_dClickTreeItem(item, 0);
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=slot_dClickTreeItem" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
 
-	//界面跳转到对应帧号 
+	// Jump to the frame remembered by the last-project setting.
 	int frameNum2d = m_xrSetting->lastProjectFn;
 
-	//二维视图滚动条变化，更新三维视图
-	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-		this, &hnRoadDataProcess::slot_update3dViewScrollBar);
-
-	//禁用 三维视图滚动条变化，更新二维视图
-	disconnect(this->m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-		this, &hnRoadDataProcess::slot_update2dViewScrollBar);
-
-	//二维视图滚动条变化，更新景观视图
-	connect(this->m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::signal_scrollValueChanged,
-		this, &hnRoadDataProcess::slot_2dWidgetScrollBarValueChanged);
-
-	//禁用景观帧序号变化时,更新二维窗口
-	disconnect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
-		this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged);
-
-	int maxScrollValue2d = m_2dPixScrollWidget->getMaxScrollBarValue();
 	stepTimer.restart();
-	m_2dPixScrollWidget->setCurrentScrollBarValue(maxScrollValue2d - 2 * (frameNum2d - 1)); 
-	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=setScrollBarValue" << "elapsedMs=" << stepTimer.elapsed();
+	double roadImageDistance = 2.0;
+	if (hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+	{
+		roadImageDistance = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_RoadImgDis;
+	}
+	const double targetEncoderMile = qMax(0, frameNum2d - 1) * roadImageDistance;
+	m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetEncoderMile);
+    syncContinuousViews(ContinuousViewSyncSource::Road2D, targetEncoderMile);
+	#ifdef _DEBUG
+	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=scrollSdkToLastFrame" << "elapsedMs=" << stepTimer.elapsed();
+	#endif
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
 		<< "totalMs=" << totalTimer.elapsed()
-		<< "maxScroll=" << maxScrollValue2d
 		<< "targetFrame=" << frameNum2d;
+	#endif
 	 
 }
 
@@ -5394,6 +5539,8 @@ void hnRoadDataProcess::slot_markInfoSlot()
 				this->m_diseaseListWidget->updateAllDiseases();
 			}
 		}
+
+			this->updateAllWidget();
 	}
 	else if (result == QDialog::Rejected)
 	{
@@ -5404,7 +5551,12 @@ void hnRoadDataProcess::slot_markInfoSlot()
 // 清除工程
 void hnRoadDataProcess::slot_clearProjectSlot()
 {
-
+	clearCurrentProjectUiState();
+	m_projectDataInfos.clear();
+	if (m_projects && m_projects->isHasProject())
+	{
+		m_projects->closeProject();
+	}
 }
 void hnRoadDataProcess::slot_regionJump()
 {
@@ -5753,7 +5905,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 				xlsx.write(i + 2, colCnt++, curMile.getSciValue());
 				xlsx.write(i + 2, colCnt++, 100);//sri
 				xlsx.write(i + 2, colCnt++, 100);//pssi 
-				xlsx.write(i + 2, colCnt++, curMile.getDRScore()); //tci
+				xlsx.write(i + 2, colCnt++, curMile.getDRExcelScore()); //tci
 				xlsx.write(i + 2, colCnt++, curMile.getLeftIriValue());
 				xlsx.write(i + 2, colCnt++, curMile.getRightIriValue());
 				xlsx.write(i + 2, colCnt++, curMile.getJudgeIirValue());

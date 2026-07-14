@@ -3,11 +3,19 @@
 // 这里才需要包含具体的实现类
 #include "TiledGraphicsView.h" 
 #include "AbstractSourceFactory.h"
+#include "PackImageTileSource.h"
+#include "PackReaderQt.h"
 #include "./items/DefectShapeItem.h"   
 #include <QDebug> 
+#include <QDir>
+#include <QFileInfo>
+#include <QImage>
 #include<QSqlDatabase>
 #include<QSqlQuery>
 #include<QUuid>
+#include <QImageReader>
+
+#include <stdexcept>
 
 TunnelViewerController::TunnelViewerController(TiledGraphicsView* view, QObject* parent)
     : QObject(parent), m_view(view), m_factory(nullptr), m_maxRouteSections(2000)
@@ -64,6 +72,7 @@ bool TunnelViewerController::loadRoute(const QString& rootPath)
         return false;
     }
     m_rootPath = rootPath;
+	m_packFrameInfos.clear();
 	m_view->setLayoutOrientation(m_factory->layoutOrientation());
 
     m_view->set_scrollSpeed(m_factory->scrollSpeed());
@@ -166,6 +175,181 @@ bool TunnelViewerController::loadRoute(const QString& rootPath)
     return true;
 }
 
+bool TunnelViewerController::loadImages(const QStringList& imagePaths)
+{
+	if (!m_view || !m_factory) {
+		qWarning() << QString::fromLocal8Bit("Controller未初始化 View 或 Factory");
+		return false;
+	}
+
+	QStringList validPaths;
+	for (const QString& imagePath : imagePaths) {
+		if (!imagePath.isEmpty() && QFileInfo::exists(imagePath)) {
+			validPaths.append(QFileInfo(imagePath).absoluteFilePath());
+		}
+	}
+	if (validPaths.isEmpty()) {
+		qWarning() << "No valid images for SDK view.";
+		return false;
+	}
+	if (validPaths.size() > m_maxRouteSections) {
+		qWarning() << "Image count exceeds safety limit:"
+			<< validPaths.size() << "limit:" << m_maxRouteSections;
+		return false;
+	}
+
+	m_view->setLayoutOrientation(m_factory->layoutOrientation());
+	m_view->set_scrollSpeed(m_factory->scrollSpeed());
+	m_packFrameInfos.clear();
+	clear();
+
+	m_curTunnelNames.clear();
+	m_view->setUpdatesEnabled(false);
+	if (m_view->scene()) {
+		m_view->scene()->blockSignals(true);
+	}
+
+	for (const QString& imagePath : qAsConst(validPaths)) {
+		AbstractTileSource* source = m_factory->create(imagePath);
+		if (source && source->isValid()) {
+			m_view->addLayer(source);
+			m_curTunnelNames.append(source->oriImageName());
+		}
+		else {
+			if (source) delete source;
+			qWarning() << "Skipped invalid image:" << imagePath;
+		}
+	}
+
+	if (m_view->scene()) {
+		m_view->scene()->blockSignals(false);
+	}
+	m_view->setUpdatesEnabled(true);
+	m_view->resetToFit();
+	return !m_curTunnelNames.isEmpty();
+}
+
+bool TunnelViewerController::loadPackRoute(const QString& packRoot, const PackRouteOptions& options)
+{
+	if (!m_view) {
+		qWarning() << "Controller has no view.";
+		return false;
+	}
+
+	QFileInfo rootInfo(packRoot);
+	if (!rootInfo.exists() || !rootInfo.isDir()) {
+		qWarning() << "Pack root does not exist:" << packRoot;
+		return false;
+	}
+
+	const QString rootPath = rootInfo.absoluteFilePath();
+	const QString indexPath = QDir(rootPath).filePath("PackIndex.idx");
+	if (!QFileInfo::exists(indexPath)) {
+		qWarning() << "Unsupported pack v2 directory, PackIndex.idx not found:" << rootPath;
+		return false;
+	}
+
+	try {
+		PackReaderQt reader(rootPath, options.verifyOnOpen);
+		const quint64 frameCount = reader.count();
+		if (frameCount == 0) {
+			qWarning() << "Pack has no readable frames:" << rootPath;
+			return false;
+		}
+		if (frameCount > static_cast<quint64>(m_maxRouteSections)) {
+			qWarning() << "Pack frame count exceeds safety limit:"
+				<< static_cast<qulonglong>(frameCount) << "limit:" << m_maxRouteSections;
+			return false;
+		}
+
+		QByteArray firstJpeg = reader.readJpeg(0);
+		QImage firstImage;
+		firstImage.loadFromData(firstJpeg, "JPG");
+		if (firstImage.isNull()) {
+			qWarning() << "First pack frame cannot be decoded:" << rootPath;
+			return false;
+		}
+		const QSize frameSize = firstImage.size();
+
+		m_rootPath = rootPath;
+		m_packFrameInfos.clear();
+		m_curTunnelNames.clear();
+		clear();
+
+		m_view->setLayoutOrientation(options.orientation);
+		m_view->set_scrollSpeed(options.scrollSpeed);
+		m_view->setUpdatesEnabled(false);
+		if (m_view->scene()) {
+			m_view->scene()->blockSignals(true);
+		}
+
+		QProgressDialog progress(QString::fromLocal8Bit("正在加载 Pack 图像..."),
+			QString::fromLocal8Bit("取消"),
+			0,
+			static_cast<int>(frameCount),
+			m_view);
+		progress.setWindowModality(Qt::WindowModal);
+		progress.setMinimumDuration(500);
+		progress.setValue(0);
+
+		for (quint64 i = 0; i < frameCount; ++i) {
+			progress.setValue(static_cast<int>(i));
+			if (progress.wasCanceled()) {
+				restoreViewUpdates(false);
+				return false;
+			}
+
+			PACK_FRAME_INFO sdkInfo = reader.frameInfo(i);
+			const QString imageName = QString::number(static_cast<qulonglong>(sdkInfo.sourceIndex));
+
+			PackRouteFrameInfo frameInfo;
+			frameInfo.imageName = imageName;
+			frameInfo.globalIndex = static_cast<quint64>(sdkInfo.globalIndex);
+			frameInfo.sourceIndex = static_cast<quint64>(sdkInfo.sourceIndex);
+			frameInfo.timeValue = static_cast<quint64>(sdkInfo.timeValue);
+			frameInfo.width = frameSize.width();
+			frameInfo.height = frameSize.height();
+			m_packFrameInfos.append(frameInfo);
+			m_curTunnelNames.append(imageName);
+
+			AbstractTileSource* source = new PackImageTileSource(rootPath,
+				frameInfo.globalIndex,
+				frameInfo.sourceIndex,
+				frameInfo.timeValue,
+				frameSize,
+				imageName,
+				options.virtualTileSize,
+				options.hMirrored,
+				options.vMirrored);
+			if (source->isValid()) {
+				m_view->addLayer(source);
+			}
+			else {
+				delete source;
+				qWarning() << "Skipped invalid pack frame:" << imageName;
+			}
+		}
+
+		progress.setValue(static_cast<int>(frameCount));
+		if (m_view->scene()) {
+			m_view->scene()->blockSignals(false);
+		}
+		m_view->setUpdatesEnabled(true);
+		m_view->resetToFit();
+		return !m_packFrameInfos.isEmpty();
+	}
+	catch (const std::exception& ex) {
+		restoreViewUpdates(false);
+		qWarning() << "Failed to load pack route:" << rootPath << QString::fromLocal8Bit(ex.what());
+		return false;
+	}
+}
+
+QList<PackRouteFrameInfo> TunnelViewerController::packFrameInfos() const
+{
+	return m_packFrameInfos;
+}
+
  
 QList<DbImageInfo> TunnelViewerController::scanDatabaseFolder(const QString& rootFolder)
 {
@@ -174,8 +358,7 @@ QList<DbImageInfo> TunnelViewerController::scanDatabaseFolder(const QString& roo
 	if (!dir.exists()) return dbList;
 
 	// 只过滤出 .db 文件
-	QStringList filters;
-	filters << "*.db";
+	QStringList filters = m_factory ? m_factory->sourceFileFilters() : (QStringList() << "*.db");
 	QFileInfoList fileList = dir.entryInfoList(filters, QDir::Files);
 	int i = 0; 
 
@@ -286,6 +469,17 @@ QList<DbImageInfo> TunnelViewerController::scanDatabaseFolder(const QString& roo
 		}
 		QSqlDatabase::removeDatabase(connName);
 
+		if (info.width <= 0 || info.height <= 0) {
+			/* 如果不是 SQLite 切片库 就按普通图片试一次 整图模式就是走这里 */ QImageReader reader(info.dbFilePath);
+			const QSize imageSize = reader.size();
+			if (imageSize.isValid()) {
+				info.width = imageSize.width();
+				info.height = imageSize.height();
+				info.tileSize = qMax(info.width, info.height);
+				info.originalName = fileInfo.completeBaseName();
+			}
+		}
+
 		// 只有成功读到了宽高的数据库，才认为是有效工程
 		if (info.width > 0 && info.height > 0) {
 			dbList.append(info);
@@ -303,5 +497,6 @@ void TunnelViewerController::clear()
     //}
 	 
 	m_view->clear();
+	m_packFrameInfos.clear();
     //m_currentTotalLength = 0;
 }

@@ -9,7 +9,6 @@
 #include "../hnCommon/hnRoadStruct.h"
 #include "hn3dImageMode.h"
 #include "hn2d3dCoordinates.h"
-#include "hnMagnify.h"
 #include <QTimer>
 #include <QApplication>
 #include "../hnCommon/hnRoadStruct.h"
@@ -30,16 +29,19 @@ public:
 	//加载3d影像
 	void load3DImagePictures();
 
-	//设置进度条的值
-	void setScrollBarValue(const int scrollBarValue);
-
 public:
 	//设置2dMileVector
 	void setMileVector(QVector<hnMile> &hnMiles);
 
+	// 设置三维单张图代表的米数，默认 8 米，后面可以从配置文件覆盖。
+	void setImageDistanceMeters3d(double meters);
+
 private:
 	// 生成状态栏信息
 	QString generateStatusInfo(const QPoint &eventPos);
+
+	// 三维单张图的里程长度先集中放这里，不再在联动函数里写死 8。
+	double m_3dImageDistanceMeters = 8.0;
 
 protected:
 	//重载函数，绘图，往窗口上画东西
@@ -75,6 +77,8 @@ private:
 private:
 	//绘制数据库加载内容
 	void drawDatabaseLoadData(QImage &image) override final;
+	QVector<QRect> sdkDiseaseBigImageRects(const hnRoadDiseaseInfo& disease) override final;
+	QPainterPath sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease) override final;
 	//绘制临时内容
 	void drawTmpData(QImage &image)override final;
 
@@ -97,6 +101,14 @@ protected:
 		const pixImagePoint& point,
 		bool up,
 		QPoint& widgetPoint)  override;
+	bool sdkCommitBigFrameDisease() override;
+	bool sdkCommitLittleFrameDisease() override;
+	QVector<QRect> sdkCreateLittleFrameRects(const QVector<pixImagePoint>& pixImagePoints) override;
+	int sdkLittleFrameHitIndex(const hnRoadDiseaseInfo& disease, const pixImagePoint& point) override;
+	bool sdkLittleFrameCellSceneRect(const hnRoadDiseaseInfo& disease, int hitIndex, QRectF& sceneRect) override;
+	void updateSdkLittleFrameDiseaseAfterCellDelete(hnRoadDiseaseInfo& disease) override;
+	QString sdkStatusInfoFromWidgetPoint(const QPoint& widgetPoint) override;
+	QString sdkStatusInfoFromContext(const SdkStatusContext& context) override;
 private:
 	//画人工模式病害
 	void drawBigFrameDisease(const vector<hnRoadDiseaseInfo> &diseases, QImage &image);
@@ -179,6 +191,8 @@ private:
 
 	// 计算某个点的里程 这个函数不管是二三维和单三维都可以用
 	double caculateEncoderMileByBigImagePoint(const QPoint &bigImagePoint);
+	// 将工程二维基准里程换算为三维 SDK 视图使用的编码器里程。
+	double projectEncoderMileToSdkViewEncoderMile(double projectEncoderMile) const override;
 
 public:
 	double encoderMileToTrueMile(double encoderMile);

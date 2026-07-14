@@ -80,7 +80,6 @@ void HnXRSettings::readData()
 	diseaseRectShow = m_Setting->ReadBool("SETTING", "diseaseRectShow", false);
 	showGpsInfo = m_Setting->ReadBool("SETTING", "showGpsInfo", false);
 	RutDisWidth = m_Setting->ReadDouble("SETTING", "RutDisWidth", 0.00);
-	wheelScrollOneImage = m_Setting->ReadBool("SETTING", "wheelScrollOneImage", false);
 	mile2dmiToInt = m_Setting->ReadBool("SETTING", "mile2dmiToInt", false);
 }
 void HnXRSettings::writeData()
@@ -100,7 +99,6 @@ void HnXRSettings::writeData()
 	m_Setting->WriteString("SETTING", "diseaseMarkTxt", diseaseMarkTxt);
 	m_Setting->WriteBool("SETTING", "diseaseRectShow", diseaseRectShow);
 	m_Setting->WriteBool("SETTING", "showGpsInfo", showGpsInfo);
-	m_Setting->WriteBool("SETTING", "wheelScrollOneImage", wheelScrollOneImage);
 	m_Setting->WriteBool("SETTING", "mile2dmiToInt", mile2dmiToInt);
 
 	m_Setting->WriteBool("IRM", "Las_Filter", Las_Filter);

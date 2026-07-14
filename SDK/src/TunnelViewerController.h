@@ -22,8 +22,16 @@ public:
     void setSourceFactory(AbstractSourceFactory* factory);
 
     // 2. 核心接口：一键加载整个项目
-    // path: 包含所有切片文件夹的根目录，例如 "C:/Projects/Tunnel_01"
+	// path: 包含所有切片文件夹的根目录，例如 "C:/Projects/Tunnel_01"
 	bool loadRoute(const QString& rootPath);
+	// 旧项目已经把图片顺序排好了，就走这个入口直接加载，不再让 SDK 重新猜目录结构。
+	bool loadImages(const QStringList& imagePaths);
+
+
+	bool loadPackRoute(const QString& packRoot, const PackRouteOptions& options = PackRouteOptions());
+
+
+	QList<PackRouteFrameInfo> packFrameInfos() const;
 	QList<DbImageInfo> scanDatabaseFolder(const QString& rootFolder);
 	void setMaxRouteSections(int maxSections);
 	int maxRouteSections() const;
@@ -50,6 +58,7 @@ private:
     //图片根目录
     QString m_rootPath; 
 	int m_maxRouteSections;
+	QList<PackRouteFrameInfo> m_packFrameInfos;
 
     // 记录当前加载到了多长（像素），方便追加
     //double m_currentTotalLength;

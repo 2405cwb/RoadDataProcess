@@ -79,23 +79,6 @@ void hnContinuouslyBrowsePixWidget::setBrowsePixWidget(hnBrowsePixWidget * brows
 	this->setMouseTracking(true);
 }
 
-int hnContinuouslyBrowsePixWidget::getCurrentScrollBarValue()
-{
-	return this->m_scrollbar->value();
-}
-
-void hnContinuouslyBrowsePixWidget::setCurrentScrollBarValue(const int value)
-{
-	if (value != this->m_scrollbar->value())
-	{
-		this->m_scrollbar->setValue(value);		
-	}	
-}
-
-int hnContinuouslyBrowsePixWidget::getMaxScrollBarValue()
-{
-	return this->m_scrollbar->maximum();
-}
 
 
 
@@ -103,16 +86,12 @@ void hnContinuouslyBrowsePixWidget::init()
 {
 	this->setWindowTitle("图像显示");
 
-	m_scrollbar = new CustomScrollBar;
-	//设置滚动条为最大值  使图片显示在最底部
-	this->m_scrollbar->setValue(100);
-	// 自动播放标志
+	// SDK owns browsing now; the old automatic page playback stays disabled.
 	this->m_autoPlay = false;
 	
 
 	this->m_mainLayout = new QHBoxLayout();
 	this->m_mainLayout->addWidget(this->m_browsePixWidget);
-	this->m_mainLayout->addWidget(this->m_scrollbar);
 
 
 
@@ -227,7 +206,6 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	toolBarLayout->addWidget(markBtn);
 	toolBarLayout->addWidget(showGpsBtn);
 
-	addWheelScrollStepOption(toolBarLayout);
 //	toolBarLayout->addWidget(diseaseRectShowBtn);
 
 	toolBarLayout->addSpacerItem(new QSpacerItem(20, 10, QSizePolicy::Fixed, QSizePolicy::Minimum));
@@ -253,39 +231,12 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	});
 
 	connect(this->playBtn, &QPushButton::clicked, [&]() {
-
-		// 这里使用定时器也要使用其他线程
-		if (this->m_autoPlay == false)
-		{
-			this->m_autoPlay = !this->m_autoPlay;
-			std::thread scrollEvent(
-				[=]() {
-
-				playThePicture();
-			}
-			);
-			scrollEvent.detach();
-		}
-		else
-		{
-			this->m_autoPlay = !this->m_autoPlay;;			// 停止标志，修改滚动条的线程会自动退出
-		}
-
-		//this->m_autoPlay = !this->m_autoPlay;
-		if (this->m_autoPlay)
-		{
-			//	playBtn->setText(QStringLiteral("停止"));
-			QIcon		m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-				QIcon(QStringLiteral(":/new/prefix1/Icon/SelectAll_16x16.png")));
-			playBtn->setIcon(m_icon_temp);
-		}
-		else
-		{
-			//playBtn->setText(QStringLiteral("播放")); 
-			QIcon	m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-				QIcon(QStringLiteral(":/new/prefix1/Icon/Media_16x16.png")));
-			playBtn->setIcon(m_icon_temp);
-		}
+		// The SDK view owns browsing now. Keep this button from starting the old
+		// timer/thread playback path.
+		m_autoPlay = false;
+		QIcon m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
+			QIcon(QStringLiteral(":/new/prefix1/Icon/Media_16x16.png")));
+		playBtn->setIcon(m_icon_temp);
 	}
 	);
 	connect(this->addSpeedBtn, &QPushButton::clicked, [&]() {
@@ -372,66 +323,12 @@ void hnContinuouslyBrowsePixWidget::add3dToolbar()
 
 void hnContinuouslyBrowsePixWidget::initSigSlot()
 {
-
-	//信号槽连接   当滚动条数值变化时，通知label  进行相关操作
-	connect(this->m_scrollbar, &QScrollBar::valueChanged, 
-		[this](int value) {
-		m_browsePixWidget->slot_updateCurrentScrollBar(value);
-
-	});
-
-	//信号槽连接   showpixlabel告诉滚动条 滚动条的最大值
-	connect(this->m_browsePixWidget, &hnBrowsePixWidget::sig_scrollBarMaxValueChanged, 
-		this,&hnContinuouslyBrowsePixWidget::slot_setScrollBarMaxValue);
-
-	//信号槽连接  showpixlabel发送信号，提供滚动条的值，滚动条接受信号 设置数值
-	connect(this->m_browsePixWidget, &hnBrowsePixWidget::sig_scrollBarValueChanged,
-		m_scrollbar, &QScrollBar::setValue);
-
-	//信号和信号连接   滚动条发送信号 滚动条变化，这里是给联动用的 
-	connect(this->m_scrollbar, &QScrollBar::valueChanged, [this](int value) {
-		//如果浏览窗口允许联动，就发送信号
-		if (m_browsePixWidget->getIsAllowLinked())
-		{
-			emit signal_scrollValueChanged(value);
-		}
-	});
-	 
-}
-
-void hnContinuouslyBrowsePixWidget::addWheelScrollStepOption(QHBoxLayout* toolBarLayout)
-{
-	if (!toolBarLayout || !xrSetting)
-	{
-		return;
-	}
-	wheelOneImageChechBox = new QCheckBox(QStringLiteral("按张翻页"));
-	wheelOneImageChechBox->setMaximumWidth(85); 
-	wheelOneImageChechBox->setChecked(xrSetting->wheelScrollOneImage);
-	toolBarLayout->addWidget(wheelOneImageChechBox);
-
-	connect(wheelOneImageChechBox, &QCheckBox::stateChanged, this, [this](int state)
-	{
-
-		xrSetting->wheelScrollOneImage = (state == Qt::Checked);
-		xrSetting->writeData();
-	});
+	// SDK now owns image browsing. Old scrollbar signals are intentionally unused.
 }
 
 hnBrowsePixWidget * hnContinuouslyBrowsePixWidget::getShowPixLabel()
 {
 	return this->m_browsePixWidget;
-}
-
-void hnContinuouslyBrowsePixWidget::slot_setScrollBarMaxValue(int maxValue)
-{
-	this->m_scrollbar->setMaximum(maxValue);
-}
-
-
-void hnContinuouslyBrowsePixWidget::slot_updateScrollBarValue(int buttomFrameIdx)
-{
-	this->m_scrollbar->setValue(this->m_scrollbar->maximum() - buttomFrameIdx * 2);
 }
 
 void hnContinuouslyBrowsePixWidget::slot_setSelectedDiseaseId(int id)
@@ -466,27 +363,8 @@ void hnContinuouslyBrowsePixWidget::loadPix(const QStringList & pixNames)
 
 void hnContinuouslyBrowsePixWidget::wheelEvent(QWheelEvent * event)
 {
-	if (!m_scrollbar)
-	{
-		QWidget::wheelEvent(event);
-		return;
-	}
-	const int step = browseStep();
-	if (event->delta() > 0)// 当滚轮远离使用者时
-	{
-
-		this->m_scrollbar->setValue(m_scrollbar->value() - step);
-	}
-	else// 当滚轮向使用者方向旋转时
-	{
-		this->m_scrollbar->setValue(m_scrollbar->value() + step);
-	}
-	event->accept();
+	QWidget::wheelEvent(event);
 }
-
-
-
-
 
 void hnContinuouslyBrowsePixWidget::keyPressEvent(QKeyEvent *event)
 {
@@ -501,26 +379,12 @@ void hnContinuouslyBrowsePixWidget::enterEvent(QEvent * event)
 
 void hnContinuouslyBrowsePixWidget::playThePicture()
 {
-	 
-		while (this->m_autoPlay)
-		{
-			std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-			this->m_scrollbar->setValue(m_scrollbar->value() - 1);			// 滚动条从下向上滚动
-			std::this_thread::sleep_for(chrono::milliseconds(500 / this->m_playSpeed));
-		}
-		;
+	m_autoPlay = false;
 }
 
 int hnContinuouslyBrowsePixWidget::getBrowStep(bool is3d) const
 {
-	if (is3d)
-	{
-		return 1;
-	}
-	else
-	{
-		return (xrSetting && xrSetting->wheelScrollOneImage) ? 2 : 1;
-
-	}
+	Q_UNUSED(is3d);
+	return 1;
 }
 

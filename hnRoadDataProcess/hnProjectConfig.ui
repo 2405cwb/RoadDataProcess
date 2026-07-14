@@ -282,7 +282,7 @@
             <item row="7" column="1">
              <widget class="QLabel" name="label_21">
               <property name="text">
-               <string>D</string>
+               <string>R</string>
               </property>
              </widget>
             </item>

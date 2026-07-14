@@ -36,6 +36,9 @@
     <ClCompile Include="src\AsyncImageLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\GridSelectionTool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\TiledGraphicsView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -68,7 +71,19 @@
     <ClInclude Include="include\tools\AbstractTool.h">
       <Filter>tools</Filter>
     </ClInclude>
+    <ClInclude Include="include\tools\GridSelectionTool.h">
+      <Filter>tools</Filter>
+    </ClInclude>
     <ClInclude Include="include\IDefectStorage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\PackImageTileSource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\WholeImageSourceFactory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\WholeImageTileSource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\TunnelGlobal.h">

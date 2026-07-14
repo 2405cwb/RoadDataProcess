@@ -64,6 +64,25 @@ hnStreetWidget::~hnStreetWidget()
 }
 
 // ³õÊ¼»¯ÊÓÍ¼
+QString hnStreetWidget::currentStreetImagePath() const
+{
+    if (m_showModelIndex == 2 && m_pStreetViewDouble)
+    {
+        return m_pStreetViewDouble->currentImagePath();
+    }
+
+    if (m_pStreetView)
+    {
+        const QString leftPath = m_pStreetView->currentImagePath();
+        if (!leftPath.isEmpty())
+        {
+            return leftPath;
+        }
+    }
+
+    return m_pStreetViewDouble ? m_pStreetViewDouble->currentImagePath() : QString();
+}
+
 void hnStreetWidget::initView()
 {
 	if (!hnDataManager::getDataManager()->isOpenProject())

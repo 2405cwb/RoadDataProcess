@@ -52,12 +52,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>qt5.8.0</QtInstall>
-    <QtModules>core;testlib</QtModules>
+    <QtModules>core;gui;testlib</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>qt5.8.0</QtInstall>
-    <QtModules>core;testlib</QtModules>
+    <QtModules>core;gui;testlib</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.props')">
@@ -93,7 +93,10 @@
     <ClCompile Include="..\hnRoadDataProcess\IsMergeableDisease.cpp" />
     <ClCompile Include="..\hnRoadDataProcess\mergeTwoDiseases.cpp" />
     <ClCompile Include="..\hnRoadDataProcess\VMirror2dRectI.cpp" />
+    <ClCompile Include="..\hnApplication\LittleFrameRenderPathBuilder.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="test_LittleFrameRenderPathBuilder.cpp" />
+    <ClCompile Include="test_DrPciCalculator.cpp" />
     <ClCompile Include="test_isMergeableDisease.cpp" />
     <ClCompile Include="test_mergeAidcDiseases.cpp" />
     <ClCompile Include="test_mergeTwoDiseases.cpp" />
@@ -116,6 +119,8 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="test_VMirror2dRectI.h" />
+    <QtMoc Include="test_LittleFrameRenderPathBuilder.h" />
+    <QtMoc Include="test_DrPciCalculator.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\hnRoadDataProcess\VMirror2dRectI.h" />

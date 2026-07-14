@@ -35,6 +35,9 @@ public:
 
 	bool getDataComplete() { return m_dataCompletion; }
 
+	// Collect errors during a batch export; the dialog shows one deduplicated summary at the end.
+	void reportExcelError(const QString& message);
+
 	QVector<hnCommon::hnRoadDiseaseInfo> getRutDis() { return rutDiss; }
 private:
 	//根据传入分段区间进行分段

@@ -104,18 +104,22 @@ namespace
 			const QEvent::Type type = event->type();
 			if (type == QEvent::ApplicationActivate || type == QEvent::ApplicationDeactivate)
 			{
+				#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AppEvent]"
 					<< "event=" << hnEventTypeName(type)
 					<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+				#endif
 			}
 			else
 			{
 				QWidget* widget = qobject_cast<QWidget*>(watched);
 				if (hnShouldLogWidgetEvent(widget, type))
 				{
+					#ifdef _DEBUG
 					qDebug().noquote() << "[HN_PERF][WidgetEvent]"
 						<< "event=" << hnEventTypeName(type)
 						<< hnWidgetInfo(widget);
+					#endif
 				}
 			}
 
@@ -130,9 +134,11 @@ namespace
 				const qint64 gapMs = m_lastHeartbeat.elapsed();
 				if (gapMs >= 3000)
 				{
+					#ifdef _DEBUG
 					qDebug().noquote() << "[HN_PERF][EventLoopGap]"
 						<< "gapMs=" << gapMs
 						<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+					#endif
 				}
 				m_lastHeartbeat.restart();
 			});
@@ -199,7 +205,9 @@ int main(int argc, char *argv[])
 	HnRuntimeEventProbe runtimeEventProbe(&a);
 	a.installEventFilter(&runtimeEventProbe);
 	runtimeEventProbe.startHeartbeat();
+	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AppStart]" << "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+	#endif
 
 	//从文件中读取qss，应用
 	QString qssFileName = QApplication::applicationDirPath() + "/config/blue.css";
@@ -211,13 +219,18 @@ int main(int argc, char *argv[])
 
 
 	//主窗口启动
-    hnRoadDataProcess* w  = new hnRoadDataProcess();
-    w->show();
+    // Destroy WebEngine widgets before QApplication shuts down its global context.
+    hnRoadDataProcess w;
+    w.show();
 
 	 a.setWindowIcon(QIcon(":/icons/iconsNew/logo_xroe.ico"));
 	//_CrtDumpMemoryLeaks();
 
-	return a.exec();
+	const int exitCode = a.exec();
+	// Stop routing Qt/Chromium shutdown messages into the process-lifetime
+	// logger before QApplication and the main window start destructing.
+	qInstallMessageHandler(nullptr);
+	return exitCode;
 	}
 	catch (const std::exception& e)
 	{

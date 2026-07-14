@@ -30,6 +30,7 @@ public slots:
 	   void slot_Show3dDeepExample() override;
 
 	   void slot_roadMileAndDmiChanged(int index);
+	   void slot_sdkBottomEncoderMileChanged(double encoderMile);
 	   
 public:
 	hn2dPixWidget * getPixWidget();

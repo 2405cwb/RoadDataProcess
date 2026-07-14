@@ -220,16 +220,7 @@ private:
 
 	//设置图片分辨率
 	void setPixResolution(const int width, const int height);
-
 	/*信号*/
-signals:
-	//信号：滚动条最大值的变化
-	void sig_scrollBarMaxValueChanged(int pixNum);
-
-signals:
-	//信号：滚动条值变化
-	void sig_scrollBarValueChanged(int value);
-
 signals:
 	//信号  鼠标所指的位置帧数变化
 	void sig_mousePosFrameIdxUpdate(int frameIdx);
@@ -242,19 +233,20 @@ signals:
 public slots:
 	//更新图片  
 	void drawPicture(QImage &image);
-
-	//槽函数：更新当前的滚动条值
-	void slot_updateCurrentScrollBar(const int scrollBarValue);
-
-	public slots:
 	//移动图片命令
 	virtual void slot_moveMouse(bool up,bool is2D);
+protected:
+	// 只同步旧坐标转换还依赖的浏览状态，不主动触发旧图像重绘。
+	void syncBrowseStateFromBottomFrame(qreal bottomFrameIdx);
 public:
+	// SDK 接管图像显示后，旧控件只保留坐标和浏览状态。
+	void setSkipLegacyImagePaint(bool skip);
+
 	//设置预加载图片的帧数，前后各多少帧
 	void setLoadFrameNum(const int num);
 
 	//设置被选中的病害id
-	void setSelectedDiseaseId(int diseaseId);
+	virtual void setSelectedDiseaseId(int diseaseId);
 protected:
 	//获取鼠标位置的原始比例窗口
 	QImage getOriginalImage(const QPoint mousePos,const QImage &tmpImageWithoutDisease ,
@@ -385,6 +377,9 @@ protected:
 
 	//是否允许画路面图片
 	bool m_isAllowDrawPix;
+
+	// 为 true 时表示 SDK 已接管显示，旧 paintEvent 不再拼图或绘制 overlay。
+	bool m_skipLegacyImagePaint;
 
 	 
 	//临时内容画板

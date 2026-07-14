@@ -81,6 +81,20 @@ hnDiseaseListWidget::~hnDiseaseListWidget()
 {
 }
 
+void hnDiseaseListWidget::clearDiseases()
+{
+	if (m_model)
+	{
+		m_model->clear();
+		initTableHeader(m_model);
+	}
+	if (filterComboBox)
+	{
+		filterComboBox->blockSignals(true);
+		populateComboBox();
+		filterComboBox->blockSignals(false);
+	}
+}
 void hnDiseaseListWidget::updateAllDiseases()
 {
 	if (!m_model ||!sortDiseaseTypeModel)
@@ -255,29 +269,48 @@ hnDiseaseListWidget::DiseaseSelectionKey hnDiseaseListWidget::currentDiseaseSele
 
 bool hnDiseaseListWidget::selectDiseaseByKey(const DiseaseSelectionKey&key)
 {
-	if (!key.isValid() ||!m_view ||!sortDiseaseTypeModel)
+	if (!key.isValid() || !m_view || !sortDiseaseTypeModel)
 	{
 		return false;
 	}
-	const int rowCount = sortDiseaseTypeModel->rowCount();
-	for ( int row =  0 ; row <rowCount ; ++row)
-	{
-		QModelIndex  idIndex = sortDiseaseTypeModel->index(row, m_idColumn);
-		QModelIndex nameIdex = sortDiseaseTypeModel->index(row, m_tableNameColumn);
 
-		if (!idIndex .isValid()||!nameIdex.isValid())
+	auto selectVisibleDisease = [this, &key]() -> bool
+	{
+		const int rowCount = sortDiseaseTypeModel->rowCount();
+		for (int row = 0; row < rowCount; ++row)
 		{
-			continue;
+			const QModelIndex selectIndex = sortDiseaseTypeModel->index(row, 0);
+			if (!selectIndex.isValid())
+			{
+				continue;
+			}
+
+			const QVariant diseaseData = selectIndex.data(Qt::UserRole);
+			if (diseaseData.canConvert<hnRoadDiseaseInfo>())
+			{
+				const hnRoadDiseaseInfo rowDisease = diseaseData.value<hnRoadDiseaseInfo>();
+				if (rowDisease.nID == key.id &&
+					QString::fromLocal8Bit(rowDisease.strDiseaseTableName) == key.tableName)
+				{
+					MoveScrollBar(m_view, selectIndex);
+					return true;
+				}
+			}
 		}
-		const int id = idIndex.data().toInt();
-		const QString tableName = nameIdex.data().toString();
-		if (id==key.id && tableName == key.tableName)
-		{
-			QModelIndex selectIndex = sortDiseaseTypeModel->index(row, 0);
-			MoveScrollBar(m_view, selectIndex);
-			return true;
-		}
-	
+		return false;
+	};
+
+	if (selectVisibleDisease())
+	{
+		return true;
+	}
+
+	// The selected disease must be visible even when the user previously filtered
+	// the list to another disease category.
+	if (filterComboBox && filterComboBox->currentIndex() != 0)
+	{
+		filterComboBox->setCurrentIndex(0);
+		return selectVisibleDisease();
 	}
 	return false;
 }
@@ -285,33 +318,41 @@ bool hnDiseaseListWidget::selectDiseaseByKey(const DiseaseSelectionKey&key)
 void hnDiseaseListWidget::slot_itemDoubleClicked(const QModelIndex & index)
 {
 	if (!index.isValid() || !sortDiseaseTypeModel)
-        return;
+	{
+		return;
+	}
 
-    QModelIndex regionIdx = index.sibling(index.row(), m_centerMileColumn);
-    QModelIndex idIdx = index.sibling(index.row(), m_idColumn);
+	QModelIndex regionIdx = index.sibling(index.row(), m_centerMileColumn);
+	QModelIndex idIdx = index.sibling(index.row(), m_idColumn);
+	if (!regionIdx.isValid() || !idIdx.isValid())
+	{
+		return;
+	}
 
-    if (!regionIdx.isValid() || !idIdx.isValid())
-        return;
+	QVariant data = idIdx.data(Qt::UserRole);
+	if (!data.canConvert<hnRoadDiseaseInfo>())
+	{
+		return;
+	}
 
-    double region = regionIdx.data().toDouble();
-    int id = idIdx.data().toInt();
+	double region = regionIdx.data().toDouble();
+	hnRoadDiseaseInfo disease = data.value<hnRoadDiseaseInfo>();
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return;
+	}
 
-    auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
-    if (!project)
-        return;
-
-    auto projectType = project->getProjectType();
-
-    if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
-    {
-        road2dDiseaseJump(region, id);
-    }
-    else
-    {
-        road3dDiseaseJump(region, id);
-    }
+	auto projectType = project->getProjectType();
+	if (PROJECT_23D_TYPE == projectType || PROJECT_2D_TYPE == projectType)
+	{
+		road2dDiseaseJump(region, disease);
+	}
+	else
+	{
+		road3dDiseaseJump(region, disease);
+	}
 }
-
 void hnDiseaseListWidget::on_section_clicked(int logicalIndex)
 {
 	if (sortDiseaseTypeModel)
@@ -512,15 +553,25 @@ void hnDiseaseListWidget::slot_DiseaseUpdated(const hnCommon::hnRoadDiseaseInfo&
 
 void hnDiseaseListWidget::slot_selectDisease(const hnRoadDiseaseInfo& disease)
 {
-	if (!sortDiseaseTypeModel ||!m_view)
+	if (!sortDiseaseTypeModel || !m_view)
 	{
+		return;
+	}
+
+	if (disease.nID < 0)
+	{
+		if (m_view->selectionModel())
+		{
+			m_view->selectionModel()->clearSelection();
+			m_view->selectionModel()->clearCurrentIndex();
+		}
 		return;
 	}
 
 	DiseaseSelectionKey key;
 	key.id = disease.nID;
 	key.tableName = QString::fromLocal8Bit(disease.strDiseaseTableName);
-	selectDiseaseByKey(key);  
+	selectDiseaseByKey(key);
 
 }
 
@@ -548,34 +599,21 @@ void hnDiseaseListWidget::keyPressEvent(QKeyEvent * event)
 	QWidget::keyPressEvent(event);
 }
 
-void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const int diseaseID)
+void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const hnRoadDiseaseInfo& disease)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
 	}
 
-	auto projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	double roadLenth = projectSetInfo.dRoadLength;
-	if (roadLenth == 0)
-	{
-		return;
-	}
-	int frameIdx = encoderMile / roadLenth;
-
-	//发信号出去，病害角标
-	emit this->signal_road2dFrameIdxChanged(frameIdx);
-	emit this->signal_setDiseaseIsChecked(diseaseID);
+	emit this->signal_road2dFrameIdxChanged(encoderMile);
+	emit this->signal_setDiseaseIsChecked(disease);
 }
 
-void hnDiseaseListWidget::road3dDiseaseJump(const double encoderMile, const int diseaseID)
+void hnDiseaseListWidget::road3dDiseaseJump(const double encoderMile, const hnRoadDiseaseInfo& disease)
 {
-	const int roadHeight = 8;
-
-	const int frameIdx = encoderMile / roadHeight;
-
-	emit this->signal_road3dFrameIdxChanged(frameIdx);
-	emit this->signal_setDiseaseIsChecked(diseaseID);
+	emit this->signal_road3dFrameIdxChanged(encoderMile);
+	emit this->signal_setDiseaseIsChecked(disease);
 }
 
 void hnDiseaseListWidget::streetJump(const double encoderMile)
@@ -953,6 +991,6 @@ void hnDiseaseListWidget::MoveScrollBar(QTableView * view, QModelIndex viewIdx)
 
 			});*/
 
-		view->scrollTo(viewIdx, QAbstractItemView::EnsureVisible);
+		view->scrollTo(viewIdx, QAbstractItemView::PositionAtCenter);
 }
 

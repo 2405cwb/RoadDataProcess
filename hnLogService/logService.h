@@ -31,7 +31,7 @@ public:
     void setLogFileName(const QString name);
 protected:
     QFile m_logFile;
-    QTcpSocket* m_socket;
+    QTcpSocket* m_socket = nullptr;
     //**文件读写锁**//
     QReadWriteLock rwlock;
     //写日志到文件的锁

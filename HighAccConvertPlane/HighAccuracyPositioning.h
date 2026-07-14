@@ -13,7 +13,7 @@ public:
 	bool writeHighAccPicture();
 	 
 	// showGps 是否以经纬度格式输出 
-	void getHighAccPosition(bool showGps, int equipType, double nowMile, int curPosX, int curPosY, 
+	bool getHighAccPosition(bool showGps, int equipType, double nowMile, int curPosX, int curPosY, 
 		 double& dDiseaseLon, double& dDiseaseLat,  double& dDiseaseH);
 
 	int findMileIndexSorted(const QVector<_EXCELGPS_>&vecotr, double _mile, double epsilon = 1e-6);

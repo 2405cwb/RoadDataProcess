@@ -28,21 +28,61 @@ CustomBaiduMapView::CustomBaiduMapView(QWidget *parent)
 
 CustomBaiduMapView::~CustomBaiduMapView()
 {
-	 if (m_webView &&m_webView->page())
-	 {
-		 m_webView->page()->setWebChannel(nullptr);
-	 }
-	 if (m_webChannel)
-	 {
-		 m_webChannel->deregisterObject(this);
-	 }
+	shutdownWebEngine();
+}
+
+void CustomBaiduMapView::shutdownWebEngine()
+{
+	// The WebEngine global context starts shutting down when the last window
+	// closes. Destroy its page synchronously before QApplication reaches that
+	// phase, otherwise Chromium still sees a live ResourceScheduler client.
+	if (m_webView)
+	{
+		m_webView->stop();
+		if (m_webView->page())
+		{
+			m_webView->page()->setWebChannel(nullptr);
+		}
+	}
+
+	if (m_webChannel)
+	{
+		m_webChannel->deregisterObject(this);
+		delete m_webChannel;
+		m_webChannel = nullptr;
+	}
+
+	delete m_webView;
+	m_webView = nullptr;
 }
 
  
+void CustomBaiduMapView::clearMapData()
+{
+	m_gpsData.clear();
+	m_mileData.clear();
+	m_pointCnt = 0;
+	m_mileCnt = 0;
+	if (m_coordEdit)
+	{
+		m_coordEdit->clear();
+	}
+	if (m_tagEdit)
+	{
+		m_tagEdit->clear();
+	}
+	if (m_webView)
+	{
+		m_webView->setHtml(QStringLiteral("<html><body style='margin:0;background:#f5f7fa;'></body></html>"));
+	}
+}
 void CustomBaiduMapView::setupWebEngine()
 {
-	m_webChannel = new QWebChannel(this);
-	m_webChannel->registerObject("external", this);
+	if (!m_webChannel)
+	{
+		m_webChannel = new QWebChannel(this);
+		m_webChannel->registerObject("external", this);
+	}
 	m_webView->page()->setWebChannel(m_webChannel);
 
 	QString htmlPaht = QCoreApplication::applicationDirPath() + "/tianditu.html";

@@ -59,6 +59,8 @@ namespace hnApp
 		// 获取显示状态
 		bool getShowState() { return m_bShow; }
 
+        QString currentImagePath() const;
+
 		// 更新绘制数据
 		void updateDrawData();
 
@@ -232,6 +234,9 @@ namespace hnApp
 		
 		//存储处理后 用于显示的图像
 		QPixmap*  m_displayPic; //
+
+		// Clean, orientation-correct source used by the 1:1 preview.
+		QImage m_sourceImageWithoutDisease;
 
 		//图片是否需要旋转
 		bool  m_needRotate;

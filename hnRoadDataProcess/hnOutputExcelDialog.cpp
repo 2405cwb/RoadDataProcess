@@ -14,11 +14,46 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QProgressDialog>
+#include <QProgressBar>
+#include <QEventLoop>
 #include <QDesktopServices>
 #include "../hnQtCommon/MyCommonMethods.h" 
 #include "../ActiveQt/QAxObject"
 #include <QFontMetrics>
 #include <QPainter>
+#include <QDoubleValidator>
+#include <QtGlobal>
+#include "hnReportProjectInfo.h"
+
+namespace
+{
+	void setReportComboText(QComboBox* comboBox, const QString& text)
+	{
+		if (!comboBox || text.trimmed().isEmpty())
+		{
+			return;
+		}
+		int index = comboBox->findText(text);
+		if (index < 0)
+		{
+			comboBox->addItem(text);
+			index = comboBox->findText(text);
+		}
+		comboBox->setCurrentIndex(index);
+	}
+
+	bool reportProjectInfoFromUi(const Ui::hnOutputExcelDialog& ui, hnReportProjectInfo::Data& data)
+	{
+		bool widthOk = false;
+		data.roadWidth = ui.lineEdit_7->text().trimmed().toDouble(&widthOk);
+		data.maintenanceUnit = ui.lineEdit_4->text().trimmed();
+		data.laneType = ui.lineEdit_6->text().trimmed();
+		data.taskYear = ui.comboBox_5->currentText().trimmed();
+		data.inspectionCount = ui.comboBox_6->currentText().trimmed();
+		data.regionCode = ui.lineEdit_8->text().trimmed();
+		return widthOk && qIsFinite(data.roadWidth) && data.roadWidth > 0.0;
+	}
+}
 
 
 hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
@@ -105,7 +140,32 @@ hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
 
 void hnOutputExcelDialog::setSettingFrom()
 {
-	ui.groupBox_12->setVisible(false);
+	ui.groupBox_12->setVisible(true);
+	ui.groupBox_12->setEnabled(true);
+	ui.lineEdit_7->setValidator(new QDoubleValidator(0.01, 1000.0, 3, ui.lineEdit_7));
+
+	hnPro::hnProjectManager* projectManager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+	if (!projectManager)
+	{
+		return;
+	}
+	const auto projects = projectManager->getAllBaseProject();
+	if (projects.empty())
+	{
+		return;
+	}
+	if (projects.size() > 1)
+	{
+		ui.groupBox_12->setTitle(QStringLiteral("工程信息（应用到当前全部工程）"));
+	}
+
+	const hnReportProjectInfo::Data data = hnReportProjectInfo::load(projects.at(0));
+	ui.lineEdit_7->setText(QString::number(data.roadWidth, 'g', 12));
+	ui.lineEdit_4->setText(data.maintenanceUnit);
+	ui.lineEdit_6->setText(data.laneType);
+	setReportComboText(ui.comboBox_5, data.taskYear);
+	setReportComboText(ui.comboBox_6, data.inspectionCount);
+	ui.lineEdit_8->setText(data.regionCode);
 }
 
 
@@ -304,8 +364,6 @@ void hnOutputExcelDialog::getUserSelectExcelName(QGridLayout* grid, QMap<int, QV
 		}
 	}
 }
-
-
 void hnOutputExcelDialog::onTableChange(int index)
 {
 	//单表模式有三个页 
@@ -391,6 +449,14 @@ void hnOutputExcelDialog::onOkButton()
 {
 	m_xrSetting->ExcelErrorMessageList.clear();
 	setSetting();
+	hnReportProjectInfo::Data reportProjectInfo;
+	if (!reportProjectInfoFromUi(ui, reportProjectInfo))
+	{
+		QMessageBox::critical(this, QStringLiteral("参数错误"), QStringLiteral("检测路面宽度必须是大于 0 的有效数字。"));
+		ui.lineEdit_7->setFocus();
+		ui.lineEdit_7->selectAll();
+		return;
+	}
 	//弹出对话框 让用户设置输出位置
 	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择输出路径"), m_xrSetting->OutPath);
 	if (projectPath.isEmpty())
@@ -421,6 +487,16 @@ void hnOutputExcelDialog::onOkButton()
 	 
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
 	auto allProject = manager->getAllBaseProject(); 
+	for (auto project : allProject)
+	{
+		if (!hnReportProjectInfo::save(project, reportProjectInfo))
+		{
+			QMessageBox::critical(this, QStringLiteral("保存失败"),
+				QStringLiteral("无法把工程信息写入工程配置文件：\n%1")
+				.arg(QDir::toNativeSeparators(hnReportProjectInfo::configPath(project))));
+			return;
+		}
+	}
 	 
 	int count = allProject.size();
 #pragma region 设置进度条
@@ -434,36 +510,52 @@ void hnOutputExcelDialog::onOkButton()
 	{
 
 	}
-	m_progressDialog->setFixedSize(QSize(500, 50));
-	m_progressDialog->setAutoClose(true);
+	m_progressDialog->setWindowTitle(QStringLiteral("导出报表"));
+	m_progressDialog->setWindowModality(Qt::ApplicationModal);
+	m_progressDialog->setMinimumDuration(0);
+	m_progressDialog->setMinimumSize(QSize(640, 150));
+	m_progressDialog->setAutoClose(false);
+	m_progressDialog->setAutoReset(false);
 	m_progressDialog->setCancelButton(nullptr);
 	m_progressValue = 0;
-	m_progressDialog->setValue(m_progressValue);
-	m_progressDialog->setWindowTitle(QString::fromLocal8Bit("输出成果"));
-	m_progressDialog->setModal(true);
-	m_progressDialog->setMaximum(m_UserSelectCount*count);
+	const int totalTaskCount = m_UserSelectCount * count;
+	m_progressDialog->setRange(0, totalTaskCount);
+	m_progressDialog->setValue(0);
+	m_progressDialog->setLabelText(QStringLiteral("正在准备导出任务..."));
+	m_progressDialog->setStyleSheet(QStringLiteral(
+		"QProgressDialog { background: #F7F9FC; }"
+		"QLabel { color: #243247; font-size: 14px; padding: 10px 18px 4px 18px; }"
+		"QProgressBar { min-height: 24px; margin: 4px 18px 14px 18px; border: 1px solid #CBD5E1; "
+		"border-radius: 7px; background: #E8EDF4; color: #172033; font-weight: 600; text-align: center; }"
+		"QProgressBar::chunk { border-radius: 6px; background: #3478D4; }"));
+	if (QProgressBar* progressBar = m_progressDialog->findChild<QProgressBar*>())
+	{
+		progressBar->setFormat(QStringLiteral("总体进度  %p%    %v / %m 项"));
+		progressBar->setTextVisible(true);
+	}
 
 	m_progressDialog->show();
 
 	for (int i = 0; i < count; ++i)
 	{
-		m_progressValue = 0;
 		m_currentPorject = allProject.at(i);
 		//进度条设置
 	//	m_progressDialog->reset();
 		QString projectName ="";
 		if (m_nowProjectType == PROJECT_TYPE::PROJECT_23D_TYPE || m_nowProjectType == PROJECT_TYPE::PROJECT_2D_TYPE)
 		{
-			projectName = QString::fromLocal8Bit("当前出表工程:%1").arg(m_currentPorject->get2DProName()); 
+			projectName = m_currentPorject->get2DProName();
 		}
 		else
 		{
-			projectName = QString::fromLocal8Bit("当前出表工程:%1").arg(m_currentPorject->get3DProName()); 
+			projectName = m_currentPorject->get3DProName();
 		} 
 		 
-		m_progressDialog->setLabelText(projectName);
-		m_progressDialog->adjustSize();//强制重绘
-		QApplication::processEvents();
+		const QString projectProgressText = QStringLiteral("工程 %1 / %2：%3")
+			.arg(i + 1).arg(count).arg(projectName);
+		m_progressDialog->setProperty("projectProgressText", projectProgressText);
+		m_progressDialog->setLabelText(projectProgressText + QStringLiteral("\n正在准备报表..."));
+		QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 		
 #pragma endregion
 
@@ -535,35 +627,35 @@ void hnOutputExcelDialog::onOkButton()
 
 	}
 	if(m_progressDialog)
-	m_progressDialog->hide();
-	 
-	QDialog * tipDlg = new QDialog(this);
-	tipDlg->setWindowTitle(QStringLiteral("提示窗口"));
-	QPushButton* openFld = new QPushButton(QStringLiteral("打开目录"));
-	QPushButton* okBtn = new QPushButton(QStringLiteral("确定"));
-	QLabel * lable = new QLabel(QStringLiteral("所有出表任务已经完成!"), this);
-	m_xrSetting->outExcel = true;
-	QGridLayout * laout = new QGridLayout(tipDlg);
-	laout->addWidget(lable, 0, 0, 1, 2, Qt::AlignCenter);
-	laout->addWidget(openFld, 1, 0);
-	laout->addWidget(okBtn, 1, 1);
-	tipDlg->resize(200, 150);
-	tipDlg->setLayout(laout);
-	connect(okBtn, &QPushButton::clicked, this, [&]()
 	{
-		tipDlg->reject();
-		tipDlg->close();
+		m_progressDialog->setValue(m_progressDialog->maximum());
+		m_progressDialog->setLabelText(QStringLiteral("所有工程已处理完成\n正在整理导出结果..."));
+		QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+		m_progressDialog->hide();
 	}
-	);
-	connect(openFld, &QPushButton::clicked, this, [&]()
-	{
 
-		//打开文件夹
-		QDesktopServices::openUrl(QUrl::fromLocalFile(m_xrSetting->OutPath));
-		tipDlg->reject();
+	m_xrSetting->outExcel = true;
+	const QStringList exportErrors = m_xrSetting->ExcelErrorMessageList;
+	QMessageBox resultBox(this);
+	resultBox.setWindowTitle(exportErrors.isEmpty() ? QStringLiteral("报表导出完成")
+		: QStringLiteral("报表导出完成（有数据提示）"));
+	resultBox.setIcon(exportErrors.isEmpty() ? QMessageBox::Information : QMessageBox::Warning);
+	resultBox.setText(exportErrors.isEmpty()
+		? QStringLiteral("所有报表任务已处理完成。")
+		: QStringLiteral("报表任务已处理完成，共汇总 %1 项数据问题。\n导出过程中未重复弹窗，请展开“详细信息”统一查看。")
+			.arg(exportErrors.size()));
+	resultBox.setInformativeText(QStringLiteral("输出目录：%1").arg(QDir::toNativeSeparators(m_xrSetting->OutPath)));
+	if (!exportErrors.isEmpty())
+	{
+		resultBox.setDetailedText(exportErrors.join(QStringLiteral("\n\n")));
 	}
-	);
-	tipDlg->exec();
+	QPushButton* openFolderButton = resultBox.addButton(QStringLiteral("打开输出目录"), QMessageBox::ActionRole);
+	resultBox.addButton(QStringLiteral("关闭"), QMessageBox::AcceptRole);
+	resultBox.exec();
+	if (resultBox.clickedButton() == openFolderButton)
+	{
+		QDesktopServices::openUrl(QUrl::fromLocalFile(m_xrSetting->OutPath));
+	}
 
 }
 
@@ -1051,7 +1143,6 @@ bool hnOutputExcelDialog::changeSingleMileAndStandard(double sMile, double eMile
 	m_nowStandard = type;
 	return true;
 }
- 
 
 void hnOutputExcelDialog::readExcelConfigData()
 {
@@ -1131,6 +1222,4 @@ void hnOutputExcelDialog::startOutExcelManager_Street(const QString& excelDir,
 		
 		);
 	}
-} 
-
- 
+}

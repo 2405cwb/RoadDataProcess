@@ -100,7 +100,11 @@ public:
 
 	//获得DR值
 	double getDRScore();
+	// DR keeps full precision internally; this getter rounds only for report cells.
+	double getDRExcelScore();
    void	setDrScore(double value);
+	void setSurveyWidth(double value) { SurveyWidth = value; }
+	double getSurveyWidth() const { return SurveyWidth; }
 
 	//获得路面破损Pci评价
 	QString getPCIExcelStr();
@@ -253,6 +257,7 @@ public:
 private:
 
 	void setRoadLength(double length);
+	void reportCalculationError(const QString& message);
 
 	//终点
 	double EndMile;
@@ -267,6 +272,9 @@ private:
 
 	//道路长度
 	double RoadLength;
+
+	// 当前分段实际检测宽度；无效时才回退工程默认宽度。
+	double SurveyWidth;
 
 	//路面单元文字  备注
 	QString UnitStr;

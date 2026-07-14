@@ -119,6 +119,7 @@ namespace hnApp
 		
 		// 获取道路类型参数 cwb
 		bool getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard, QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, hnRoadTypeSetInfo& roadTypeSetInfo);
+		bool getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard, QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, ROAD_WORK_TYPE nDrawType, hnRoadTypeSetInfo& roadTypeSetInfo);
 		bool getRoadTypeSetInfo(const hnProjectSetInfo& settingInfo, hnRoadTypeSetInfo& roadTypeSetInfo);
 	public:
 
