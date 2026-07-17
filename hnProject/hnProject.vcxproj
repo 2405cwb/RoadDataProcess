@@ -114,6 +114,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+	<ClCompile Include="hnLineCameraConfig.cpp" />
     <ClCompile Include="hn2DProject.cpp" />
     <ClCompile Include="hn3DProject.cpp" />
     <ClCompile Include="hnFile.cpp" />
@@ -125,6 +126,7 @@
     <ClInclude Include="hnFileFun.h" />
     <ClInclude Include="hnProjectManager.h" />
     <ClInclude Include="hnproject_global.h" />
+    <ClInclude Include="hnLineCameraConfig.h" />
     <ClInclude Include="hnProject.h" />
     <ClCompile Include="hnProject.cpp" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-ï»¿#include "hnSdkDiseaseGraphicsLayer.h"
+#include "hnSdkDiseaseGraphicsLayer.h"
 
 #include <QBrush>
 #include <QFont>
@@ -6,6 +6,7 @@
 #include <QGraphicsItem>
 #include <QGraphicsLineItem>
 #include <QGraphicsPathItem>
+#include <QPainterPathStroker>
 #include <QGraphicsRectItem>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
@@ -63,6 +64,7 @@ void hnSdkDiseaseGraphicsLayer::clearCommitted()
 void hnSdkDiseaseGraphicsLayer::clearDiseases()
 {
 	clearItems(m_diseaseItems);
+	m_diseaseItemByKey.clear();
 	m_selectedDiseaseKey.clear();
 }
 
@@ -213,6 +215,7 @@ void hnSdkDiseaseGraphicsLayer::addDiseasePath(const QString& diseaseKey, const 
 		return;
 	}
 
+	removeDisease(diseaseKey);
 	QGraphicsPathItem* item = new QGraphicsPathItem(path);
 	item->setPen(makePen(color, width, style));
 	// Dense little-frame diseases can be rendered as one bounding rect.
@@ -270,10 +273,31 @@ void hnSdkDiseaseGraphicsLayer::addDiseasePath(const QString& diseaseKey, const 
 	}
 
 	m_diseaseItems.append(item);
+	m_diseaseItemByKey.insert(diseaseKey, item);
 	if (diseaseKey == m_selectedDiseaseKey)
 	{
 		setSelectedDiseaseKey(m_selectedDiseaseKey);
 	}
+}
+
+bool hnSdkDiseaseGraphicsLayer::containsDisease(const QString& diseaseKey) const
+{
+	return m_diseaseItemByKey.contains(diseaseKey);
+}
+
+QStringList hnSdkDiseaseGraphicsLayer::diseaseKeys() const
+{
+	return m_diseaseItemByKey.keys();
+}
+
+bool hnSdkDiseaseGraphicsLayer::removeDisease(const QString& diseaseKey)
+{
+	QGraphicsItem* item = m_diseaseItemByKey.take(diseaseKey);
+	if (!item) return false;
+	m_diseaseItems.removeOne(item);
+	if (m_scene) m_scene->removeItem(item);
+	delete item;
+	return true;
 }
 
 void hnSdkDiseaseGraphicsLayer::setSelectedDiseaseKey(const QString& diseaseKey)
@@ -317,9 +341,27 @@ QString hnSdkDiseaseGraphicsLayer::diseaseKeyAt(const QPointF& scenePos) const
 			return root->data(DiseaseKeyRole).toString();
 		}
 	}
+
+	// ÕýÊ½²¡º¦¿ò¶àÎªÍ¸Ã÷Ìî³ä£¬Ï¸ÏßÔÚ²»Í¬Ëõ·Å/DPI ÏÂ²»ÄÜÖ»¿¿¾«È· scene µãÃüÖÐ¡£
+	const qreal sceneTolerance = 8.0 / qMax<qreal>(0.01, qAbs(m_viewScaleX));
+	QPainterPathStroker stroker;
+	stroker.setWidth(sceneTolerance * 2.0);
+	for (auto iter = m_diseaseItems.crbegin(); iter != m_diseaseItems.crend(); ++iter)
+	{
+		QGraphicsPathItem* pathItem = dynamic_cast<QGraphicsPathItem*>(*iter);
+		if (!pathItem || pathItem->data(DiseaseKeyRole).toString().isEmpty())
+		{
+			continue;
+		}
+		const QPointF localPoint = pathItem->mapFromScene(scenePos);
+		const QPainterPath itemPath = pathItem->path();
+		if (itemPath.contains(localPoint) || stroker.createStroke(itemPath).contains(localPoint))
+		{
+			return pathItem->data(DiseaseKeyRole).toString();
+		}
+	}
 	return QString();
 }
-
 bool hnSdkDiseaseGraphicsLayer::diseaseSceneRect(const QString& diseaseKey, QRectF& rect) const
 {
 	bool found = false;

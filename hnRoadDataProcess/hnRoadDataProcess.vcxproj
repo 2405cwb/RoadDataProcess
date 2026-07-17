@@ -150,6 +150,7 @@
     <ClCompile Include="HighAccuracySettingForm.cpp" />
     <ClCompile Include="hnAboutInfoWidgets.cpp" />
     <ClCompile Include="hnCalRoadGeometry.cpp" />
+    <ClCompile Include="hnGeometryCalculation.cpp" />
     <ClCompile Include="hnDBManagerDlg.cpp" />
     <ClCompile Include="hnDiseaseSumAreaCaculate.cpp" />
     <ClCompile Include="hnDxfCaculateDialog.cpp" />
@@ -194,6 +195,7 @@
     <ClCompile Include="hnDiseaseListWidget.cpp" />
     <ClCompile Include="hnMarkInfoDlg.cpp" />
     <ClCompile Include="hnOpenProjectDlg.cpp" />
+    <ClCompile Include="hnLineCameraValidAreaDialog.cpp" />
     <ClCompile Include="hnRoadDataProcess.cpp" />
     <ClCompile Include="hnSelProjectDlg.cpp" />
     <ClCompile Include="hnwidget3dview.cpp" />
@@ -209,6 +211,7 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnOpenProjectDlg.h" />
+    <ClInclude Include="hnLineCameraValidAreaDialog.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnDiseaseListWidget.h" />
@@ -240,6 +243,7 @@
     <QtMoc Include="hnDBManagerDlg.h" />
     <QtMoc Include="HighAccuracySettingForm.h" />
     <ClInclude Include="hnCalRoadGeometry.h" />
+    <ClInclude Include="hnGeometryCalculation.h" />
     <ClInclude Include="hnOutExcelManage.h" />
     <ClInclude Include="MileAndDmi.h" />
     <ClInclude Include="ReportConfig.h" />

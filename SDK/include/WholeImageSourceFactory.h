@@ -37,6 +37,9 @@ public:
 		return m_scrollSpeed;
 	}
 
+	bool horizontalMirror() const override { return m_hMirrored; }
+	bool verticalMirror() const override { return m_vMirrored; }
+
 private:
 	LayoutOrientation m_orientation;
 	int m_scrollSpeed = 50;

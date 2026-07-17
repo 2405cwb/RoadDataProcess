@@ -16,11 +16,13 @@ hn3dPixScrollWidget::~hn3dPixScrollWidget()
 // ¼ÓÔØÓ°Ïñ
 void hn3dPixScrollWidget::load3dImage()
 {
+	stopAutoPlay();
 	m_p3dImageViewWidget->load3DImagePictures();
 }
 
 void hn3dPixScrollWidget::laodPicRetainScrollBarValue()
 {
+	stopAutoPlay();
 	const double currentEncoderMile = this->m_p3dImageViewWidget->currentBottomEncoderMile();
 	this->m_p3dImageViewWidget->load3DImagePictures();
 	this->m_p3dImageViewWidget->scrollBottomToEncoderMile(currentEncoderMile);
@@ -36,6 +38,8 @@ hn3dPixWidget * hn3dPixScrollWidget::getPixWidget()
 void hn3dPixScrollWidget::initConnect()
 {
 	connect(this, &hnContinuouslyBrowsePixWidget::signal_moveMouse, m_browsePixWidget, &hnBrowsePixWidget::slot_moveMouse);
+	connect(this, &hnContinuouslyBrowsePixWidget::signal_imageBrightnessChanged,
+		m_p3dImageViewWidget, &hn3dPixWidget::setSdkImageBrightness);
 }
 
 void hn3dPixScrollWidget::keyPressEvent(QKeyEvent *event)
@@ -53,6 +57,11 @@ int hn3dPixScrollWidget::browseStep() const
 bool hn3dPixScrollWidget::is2DView() const
 {
 	return false;
+}
+
+bool hn3dPixScrollWidget::stepOneImage()
+{
+	return m_p3dImageViewWidget && m_p3dImageViewWidget->stepSingleFrame(1);
 }
 
 void hn3dPixScrollWidget::mousePressEvent(QMouseEvent *event)

@@ -16,7 +16,7 @@ void logService::logToFile(QString msg)
     stream.setCodec("utf-8");
     //m_logFile.write(msg.toLatin1());
     //写入到文件中时，要加换行
-    stream << msg.toUtf8() << endl;
+    stream << msg << endl;
     //刷新
     m_logFile.flush();
 }

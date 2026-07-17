@@ -148,6 +148,9 @@ private:
 	//输入一个针对于一个大image的点，输出hnmile
 	hnMile getHnMileFromPoint(const QPoint &allImagePoint);
 
+	// 按 SDK 当前三维图片直接获取对应二维道路属性。
+	bool sdkHnMileFromPoint(const pixImagePoint& point, hnMile& mile) const override;
+
 	// 人工模式边界自适应 二三维可用
 	QRect bigFrameDiseaseAutoWidth(const QRect &bigImageRect);
 

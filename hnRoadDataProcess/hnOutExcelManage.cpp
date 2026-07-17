@@ -26,6 +26,10 @@ namespace
 		{
 			return 0.0;
 		}
+		if (project->isLineCameraProject())
+		{
+			return project->getLineCameraInfo().distanceFromRight(centerPixel);
+		}
 		const double width = reportRoadWidth(project);
 		const double centerMeter = centerPixel * project->getCurProSetInfo().dRadioX;
 		return qBound(0.0, width - centerMeter, width);

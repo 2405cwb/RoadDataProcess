@@ -23,6 +23,7 @@ signals:
 	void signal_Mirrored(bool isH2dMirrored, bool isV2dMirrored, bool isH3dMirrored, bool isV3dMirrored);
 signals:
 	void signal_isDepthCaculate(bool isCaculate);
+	void signal_wheelScrollOneImageChanged(bool enabled);
 
 private slots:
 	void on_okButton_clicked();

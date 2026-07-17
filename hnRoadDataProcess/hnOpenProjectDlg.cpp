@@ -1,4 +1,5 @@
 #include "hnOpenProjectDlg.h"
+#include <QDir>
 #include <QDoubleValidator>
 #include <QFile>
 #include <QtXml/QDomDocument>
@@ -10,6 +11,17 @@
 #include <QCheckBox>
 #include <QXmlStreamReader>
 #include "..\hnQtCommon\BaseException.h"
+#include "hnLineCameraValidAreaDialog.h"
+
+namespace
+{
+	QString lineCameraProjectRoot(const hnCommon::hnProjectDataInfo& data)
+	{
+		const QString root = QString::fromLocal8Bit(data.strProjectPath);
+		const QString twoDRoot = QDir(root).filePath(QString::fromLocal8Bit(data.str2DProName));
+		return hnPro::hnLineCameraConfig::isLineCameraProject(twoDRoot) ? twoDRoot : root;
+	}
+}
 
 hnOpenProjectDlg::hnOpenProjectDlg(const hnCommon::PROJECT_TYPE type, const QStringList &roadTypeNames, std::vector<hnCommon::hnProjectDataInfo> projectSettingInfos, QWidget *parent)
 	: QDialog(parent)
@@ -53,6 +65,9 @@ hnOpenProjectDlg::hnOpenProjectDlg(const hnCommon::PROJECT_TYPE type, const QStr
 	this->m_roadEndMileLable= new QLabel(QString::fromLocal8Bit("原始终点"), this);
 	this->m_scrollAreaGridLayout->addWidget(m_roadEndMileLable, 0, 7);
 
+	QLabel* lineAreaLabel = new QLabel(QStringLiteral("线阵有效区域"), this);
+	this->m_scrollAreaGridLayout->addWidget(lineAreaLabel, 0, 8);
+
 	m_proType = type;
 	//遍历工程信息,向界面上添加工程信息
 	this->addProjectInfoToWidget();
@@ -65,11 +80,146 @@ std::vector<hnCommon::hnProjectDataInfo> hnOpenProjectDlg::getProjectSettingInfo
 	return this->m_projectDataInfos;
 }
 
+void hnOpenProjectDlg::editLineCameraArea(int row)
+{
+	if (!m_lineCameraInfos.contains(row))
+	{
+		return;
+	}
+	hnPro::hnLineCameraInfo info = m_lineCameraInfos.value(row);
+	if (!info.cameraConfigValid)
+	{
+		QMessageBox::critical(this, QStringLiteral("线阵相机配置错误"), info.errorMessage);
+		return;
+	}
+	hnLineCameraValidAreaDialog dialog(info, this);
+	if (dialog.exec() != QDialog::Accepted)
+	{
+		return;
+	}
+	m_lineCameraInfos[row] = dialog.selectedInfo();
+	m_pendingLineCameraRows.insert(row);
+	updateLineCameraRow(row);
+}
+
+void hnOpenProjectDlg::updateLineCameraRow(int row)
+{
+	if (!m_lineCameraInfos.contains(row))
+	{
+		return;
+	}
+	const hnPro::hnLineCameraInfo info = m_lineCameraInfos.value(row);
+	QLabel* statusLabel = m_lineCameraStatusLabels.value(row, nullptr);
+	QLineEdit* widthEdit = m_lineCameraWidthEdits.value(row, nullptr);
+	if (widthEdit)
+	{
+		widthEdit->setText(info.validAreaConfigured ? QString::number(info.roadWidthMeters(), 'f', 5) : QString());
+	}
+	if (!statusLabel)
+	{
+		return;
+	}
+	if (!info.cameraConfigValid)
+	{
+		statusLabel->setText(QStringLiteral("配置错误"));
+		statusLabel->setToolTip(info.errorMessage);
+		statusLabel->setStyleSheet(QStringLiteral("color:#C62828; font-weight:600;"));
+	}
+	else if (!info.validAreaConfigured)
+	{
+		statusLabel->setText(QStringLiteral("未设置"));
+		statusLabel->setToolTip(QStringLiteral("必须设置有效区域后才能打开工程。"));
+		statusLabel->setStyleSheet(QStringLiteral("color:#C62828; font-weight:600;"));
+	}
+	else
+	{
+		statusLabel->setText(QStringLiteral("%1-%2 px / %3m")
+			.arg(info.leftPixel).arg(info.rightPixel).arg(info.roadWidthMeters(), 0, 'f', 3));
+		statusLabel->setToolTip(QStringLiteral("线阵相机有效区域已设置。"));
+		statusLabel->setStyleSheet(QStringLiteral("color:#237A3B; font-weight:600;"));
+	}
+}
+
+bool hnOpenProjectDlg::validateSelectedLineCameraAreas(QString& errorMessage) const
+{
+	errorMessage.clear();
+	QStringList errors;
+	for (int row = 1; row <= static_cast<int>(m_projectDataInfos.size()); ++row)
+	{
+		QLayoutItem* item = m_scrollAreaGridLayout->itemAtPosition(row, 0);
+		QCheckBox* checkBox = item ? qobject_cast<QCheckBox*>(item->widget()) : nullptr;
+		if (!checkBox || !checkBox->isChecked() || !m_lineCameraInfos.contains(row))
+		{
+			continue;
+		}
+		const hnPro::hnLineCameraInfo info = m_lineCameraInfos.value(row);
+		const QString projectName = checkBox->text();
+		if (!info.cameraConfigValid)
+		{
+			errors.append(QStringLiteral("工程【%1】：%2").arg(projectName, info.errorMessage));
+		}
+		else if (!info.validAreaConfigured)
+		{
+			errors.append(QStringLiteral("工程【%1】尚未设置线阵有效区域。").arg(projectName));
+		}
+	}
+	if (!errors.isEmpty())
+	{
+		errorMessage = QStringLiteral("以下线阵工程不能打开：\n\n%1").arg(errors.join(QStringLiteral("\n")));
+		return false;
+	}
+	return true;
+}
+
+bool hnOpenProjectDlg::savePendingLineCameraAreas(QString& errorMessage)
+{
+	errorMessage.clear();
+	for (int row : qAsConst(m_pendingLineCameraRows))
+	{
+		QLayoutItem* item = m_scrollAreaGridLayout->itemAtPosition(row, 0);
+		QCheckBox* checkBox = item ? qobject_cast<QCheckBox*>(item->widget()) : nullptr;
+		if (!checkBox || !checkBox->isChecked())
+		{
+			continue;
+		}
+		QString saveError;
+		if (!hnPro::hnLineCameraConfig::saveValidArea(m_lineCameraInfos.value(row), &saveError))
+		{
+			errorMessage = QStringLiteral("工程【%1】：%2").arg(checkBox->text(), saveError);
+			return false;
+		}
+	}
+	m_pendingLineCameraRows.clear();
+	return true;
+}
+
+void hnOpenProjectDlg::slot_onNextMissingLineAreaClicked()
+{
+	for (int row = 1; row <= static_cast<int>(m_projectDataInfos.size()); ++row)
+	{
+		QLayoutItem* item = m_scrollAreaGridLayout->itemAtPosition(row, 0);
+		QCheckBox* checkBox = item ? qobject_cast<QCheckBox*>(item->widget()) : nullptr;
+		if (checkBox && checkBox->isChecked() && m_lineCameraInfos.contains(row) &&
+			!m_lineCameraInfos.value(row).validAreaConfigured)
+		{
+			editLineCameraArea(row);
+			return;
+		}
+	}
+	QMessageBox::information(this, QStringLiteral("线阵有效区域"), QStringLiteral("所有已选择的线阵工程都已完成有效区域设置。"));
+}
 void hnOpenProjectDlg::slot_onOkPushButtonClicked(bool isClicked)
 {
 	if (m_projectDataInfos.empty())
 	{
 		QMessageBox::information(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("当前无工程"));
+		return;
+	}
+
+	QString lineCameraError;
+	if (!validateSelectedLineCameraAreas(lineCameraError))
+	{
+		QMessageBox::critical(this, QStringLiteral("线阵工程配置错误"), lineCameraError);
 		return;
 	}
 
@@ -112,9 +262,13 @@ void hnOpenProjectDlg::slot_onOkPushButtonClicked(bool isClicked)
 				projectDataInfo.proSetInfo.nDrawType = 2;
 			}
 		}
-		//路面宽度
+		//路面宽度：线阵工程只能使用有效区域派生宽度，面阵工程保留手工输入。
 		QLineEdit *roadWithLineEdit = (QLineEdit*)m_scrollAreaGridLayout->itemAtPosition(rowCount, 3)->widget();
-		if (roadWithLineEdit)
+		if (m_lineCameraInfos.contains(rowCount) && m_lineCameraInfos.value(rowCount).isLineCamera)
+		{
+			projectDataInfo.proSetInfo.dRoadWidth = m_lineCameraInfos.value(rowCount).roadWidthMeters();
+		}
+		else if (roadWithLineEdit)
 		{
 			projectDataInfo.proSetInfo.dRoadWidth = roadWithLineEdit->text().toDouble();
 		}
@@ -148,6 +302,11 @@ void hnOpenProjectDlg::slot_onOkPushButtonClicked(bool isClicked)
 		rowCount++;
 		dataInfos.push_back(projectDataInfo);
 	
+	}
+	if (!savePendingLineCameraAreas(lineCameraError))
+	{
+		QMessageBox::critical(this, QStringLiteral("保存线阵有效区域失败"), lineCameraError);
+		return;
 	}
 	//写入xml配置文件
 	this->writeProjectInfoToFile1(dataInfos);
@@ -275,7 +434,10 @@ void hnOpenProjectDlg::slot_onApplyAllPushButtonClicked(bool isClicked)
 			QComboBox *comboBox2 = (QComboBox *)this->m_scrollAreaGridLayout->itemAtPosition(rowCount, 2)->widget();
 			comboBox2->setCurrentText(drawDiseaseModel);
 			QLineEdit *lineEdit = (QLineEdit *)this->m_scrollAreaGridLayout->itemAtPosition(rowCount, 3)->widget();
-			lineEdit->setText(roadWidth);
+			if (!m_lineCameraInfos.contains(rowCount) || !m_lineCameraInfos.value(rowCount).isLineCamera)
+			{
+				lineEdit->setText(roadWidth);
+			}
 			rowCount++;
 		}
 	}
@@ -427,8 +589,22 @@ void hnOpenProjectDlg::addProjectInfoToWidget()
 		this->m_scrollAreaGridLayout->addWidget(drawDiseaseModelComboBox, rowCount, 2);
 		//道路宽度lineEdit
 		QLineEdit *lineEdit = new QLineEdit(this);
-		lineEdit->setMaximumWidth(50);
-		lineEdit->setText(QString::number(projectDataInfo.proSetInfo.dRoadWidth));
+		lineEdit->setMaximumWidth(90);
+		const hnPro::hnLineCameraInfo lineCameraInfo = hnPro::hnLineCameraConfig::load(lineCameraProjectRoot(projectDataInfo));
+		if (lineCameraInfo.isLineCamera)
+		{
+			m_lineCameraInfos.insert(rowCount, lineCameraInfo);
+			m_lineCameraWidthEdits.insert(rowCount, lineEdit);
+			lineEdit->setReadOnly(true);
+			lineEdit->setToolTip(QStringLiteral("线阵工程道路宽度由有效区域自动计算，不允许手工修改。"));
+			lineEdit->setStyleSheet(QStringLiteral("QLineEdit { background:#EEF3F8; color:#1D334A; }"));
+			lineEdit->setText(lineCameraInfo.validAreaConfigured
+				? QString::number(lineCameraInfo.roadWidthMeters(), 'f', 5) : QString());
+		}
+		else
+		{
+			lineEdit->setText(QString::number(projectDataInfo.proSetInfo.dRoadWidth));
+		}
 		this->m_scrollAreaGridLayout->addWidget(lineEdit, rowCount, 3);
 		//路面材质，沥青、水泥等。
 		QComboBox *roadMaterialComboBox = new QComboBox(this);
@@ -486,6 +662,27 @@ void hnOpenProjectDlg::addProjectInfoToWidget()
 		lineEmileEdit->setMaximumWidth(50);
 		lineEmileEdit->setText(QString::number(projectDataInfo.proSetInfo.dEndMile,'f',0));
 		this->m_scrollAreaGridLayout->addWidget(lineEmileEdit, rowCount, 7);
+
+		if (lineCameraInfo.isLineCamera)
+		{
+			QWidget* areaWidget = new QWidget(this);
+			QHBoxLayout* areaLayout = new QHBoxLayout(areaWidget);
+			areaLayout->setContentsMargins(0, 0, 0, 0);
+			QLabel* statusLabel = new QLabel(areaWidget);
+			QPushButton* settingButton = new QPushButton(QStringLiteral("设置"), areaWidget);
+			m_lineCameraStatusLabels.insert(rowCount, statusLabel);
+			areaLayout->addWidget(statusLabel);
+			areaLayout->addWidget(settingButton);
+			connect(settingButton, &QPushButton::clicked, this, [this, rowCount]() { editLineCameraArea(rowCount); });
+			this->m_scrollAreaGridLayout->addWidget(areaWidget, rowCount, 8);
+			updateLineCameraRow(rowCount);
+		}
+		else
+		{
+			QLabel* normalCameraLabel = new QLabel(QStringLiteral("面阵工程"), this);
+			normalCameraLabel->setStyleSheet(QStringLiteral("color:#75808C;"));
+			this->m_scrollAreaGridLayout->addWidget(normalCameraLabel, rowCount, 8);
+		}
 		rowCount++;
 	}
 
@@ -508,6 +705,9 @@ void hnOpenProjectDlg::addProjectInfoToWidget()
 	m_applyAllPushButton = new QPushButton(QString::fromLocal8Bit("一键配置"));
 	connect(m_applyAllPushButton, &QPushButton::clicked, this, &hnOpenProjectDlg::slot_onApplyAllPushButtonClicked);
 
+	m_nextMissingLineAreaButton = new QPushButton(QStringLiteral("设置下一个未完成线阵工程"));
+	connect(m_nextMissingLineAreaButton, &QPushButton::clicked, this, &hnOpenProjectDlg::slot_onNextMissingLineAreaClicked);
+
 	this->m_scrollArea = new QScrollArea();
 	this->m_scrollAreaWidget = new QWidget();
 
@@ -522,6 +722,7 @@ void hnOpenProjectDlg::addProjectInfoToWidget()
 	m_hBoxLayout->addItem(new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum));
 	m_hBoxLayout->addWidget(m_checkAllCheckBox);
 	m_hBoxLayout->addWidget(m_applyAllPushButton);
+	m_hBoxLayout->addWidget(m_nextMissingLineAreaButton);
 	QSpacerItem *spaserItem = new QSpacerItem(50, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
 	m_hBoxLayout->addItem(spaserItem);
 	m_hBoxLayout->addWidget(m_okPushButton);

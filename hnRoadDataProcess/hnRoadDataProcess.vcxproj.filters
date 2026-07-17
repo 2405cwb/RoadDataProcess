@@ -127,6 +127,9 @@
     <ClCompile Include="hnOpenProjectDlg.cpp">
       <Filter>对话框\打开工程对话框</Filter>
     </ClCompile>
+    <ClCompile Include="hnLineCameraValidAreaDialog.cpp">
+      <Filter>对话框\打开工程对话框</Filter>
+    </ClCompile>
     <ClCompile Include="hnDiseaseListWidget.cpp">
       <Filter>停靠窗口\病害列表窗口</Filter>
     </ClCompile>
@@ -256,6 +259,9 @@
     <ClCompile Include="hnCalRoadGeometry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="hnGeometryCalculation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnSelProjectDlg.h">
@@ -267,6 +273,9 @@
     <QtMoc Include="hnOpenProjectDlg.h">
       <Filter>对话框\打开工程对话框</Filter>
     </QtMoc>
+    <ClInclude Include="hnLineCameraValidAreaDialog.h">
+      <Filter>对话框\打开工程对话框</Filter>
+    </ClInclude>
     <QtMoc Include="hnDiseaseListWidget.h">
       <Filter>停靠窗口\病害列表窗口</Filter>
     </QtMoc>
@@ -437,6 +446,9 @@
       <Filter>对话框\IRM计算窗口</Filter>
     </ClInclude>
     <ClInclude Include="hnCalRoadGeometry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="hnGeometryCalculation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -32,6 +32,8 @@ public:
 	/* 返回浏览步长 */ virtual int scrollSpeed() const {
 		return 50;
 	}
+	virtual bool horizontalMirror() const { return false; }
+	virtual bool verticalMirror() const { return false; }
 };
 
 #endif // !ABSTRAC_TSOURCE_FACTORY_H

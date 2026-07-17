@@ -8,16 +8,19 @@
 #include "xlsxdocument.h"
 #include "../ReportConfig.h"
 #include "hnOutExcelManage.h"
+#include <QMap>
 QXLSX_USE_NAMESPACE
 
 using namespace hnApp;
 class HnXRSettings;
+class QTableWidget;
 class hnOutputExcelDialog : public QDialog
 {
 	Q_OBJECT
 
 public:
 	hnOutputExcelDialog(QWidget *parent = Q_NULLPTR);
+	static bool validateProjectCompatibility(const std::vector<hnPro::hnProject*>& projects, QString& errorMessage);
 
 protected:
 	void closeEvent(QCloseEvent * event) override
@@ -35,6 +38,8 @@ private:
 
 	//初始化出表设置界面
 	void setSettingFrom();
+	void setupMultiProjectWidthTable(const std::vector<hnPro::hnProject*>& projects);
+	bool projectRoadWidthsFromUi(QMap<hnPro::hnProject*, double>& widths, int& invalidRow) const;
 
 
 	//初始化单表出表
@@ -107,6 +112,8 @@ private:
 
 	//是否是单表模式
 	bool  isSingleProject;
+	QTableWidget* m_projectWidthTable = nullptr;
+	std::vector<hnPro::hnProject*> m_reportProjects;
 
 	//道路标准->模块名称->表名
 	QMap < HnProjectEnums::StandardParmTypeEnum,QMap<QString,QStringList>> allExcelModel1;

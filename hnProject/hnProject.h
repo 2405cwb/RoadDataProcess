@@ -5,6 +5,7 @@
 #include "..\hnCommon\hnRoadTypeDef.h"
 #include "..\hnDataTable\hnDBSqlite.h"
 #include "hnMile.h"
+#include "hnLineCameraConfig.h"
 #include <QVector>
 #include <QString>
 #include "..\hnCommon\hnRoadTypeDef.h"
@@ -77,6 +78,16 @@ namespace hnPro
 		HnProjectEnums::StandardParmTypeEnum  getBaseStandard();
 
 		hnCommon::ROAD_SURFACE_TYPE getBaseSurface();
+
+		bool isLineCameraProject() const { return m_lineCameraInfo.isLineCamera; }
+		const hnLineCameraInfo& getLineCameraInfo() const { return m_lineCameraInfo; }
+		double effectiveRoadWidth() const
+		{
+			return m_lineCameraInfo.isLineCamera && m_lineCameraInfo.validAreaConfigured
+				? m_lineCameraInfo.roadWidthMeters() : m_projectInfo.dRoadWidth;
+		}
+		bool reloadLineCameraInfo(QString* errorMessage = nullptr);
+		bool setLineCameraValidArea(int leftPixel, int rightPixel, QString* errorMessage = nullptr);
 
 	    // 获取二维工程
 		hn2DProject* get2DProject() { return m_p2DProject; }
@@ -261,6 +272,7 @@ namespace hnPro
 
 		// 工程配置信息
 		hnProjectSetInfo m_projectInfo;
+		hnLineCameraInfo m_lineCameraInfo;
 		
 		// 较桩里程桩信息
 		vector<hnMilePile> m_vecMileagePile;

@@ -15,6 +15,7 @@
 #include <QMetaObject>
 #include <QList>
 #include <QHash>
+#include <QByteArray>
 #include "lineAlgorithm.h"
 #include "../SDK/include/tools/GridSelectionTool.h"
 #include <qmath.h>
@@ -24,6 +25,7 @@ class TiledGraphicsView;
 struct TiledViewAnchor;
 class TunnelViewerController;
 class SdkDiseaseOverlayWidget;
+class QTimer;
 
 class HNAPPLICATION_EXPORT hn2d3dPixBaseWidget:
 	public hnBrowsePixWidget,
@@ -41,6 +43,8 @@ class HNAPPLICATION_EXPORT hn2d3dPixBaseWidget:
 public:
 	hn2d3dPixBaseWidget(QWidget *parent = Q_NULLPTR);
 	~hn2d3dPixBaseWidget();
+	void setSingleFrameNavigationEnabled(bool enabled);
+	bool stepSingleFrame(int visualDelta);
 
 protected:
 	enum WidgetType
@@ -61,7 +65,7 @@ protected:
 		double encoderMile = 0.0;
 	};
 
-	// SDK ??????????????????????????????????
+	// SDK 大框跨图绘制时的单图矩形片段，坐标为对应原始图片内的像素坐标。
 	struct SdkSingleImageRect
 	{
 		QString pixName;
@@ -74,14 +78,14 @@ protected:
 	};
 
 
-	// SDK ???????????????????????????????
+	// SDK 小框正式病害的渲染模式：稀疏格子逐格显示，密集区域显示外接矩形。
 	enum SdkLittleFrameRenderMode
 	{
 		SdkLittleFrameRenderSparseCells,
 		SdkLittleFrameRenderDenseRect
 	};
 
-	// SDK ??????????????????????????????????
+	// SDK 小框渲染缓存项，保存轻量 scene 路径及其显示模式。
 	struct SdkLittleFrameRenderCacheEntry
 	{
 		QPainterPath path;
@@ -129,6 +133,9 @@ public slots:
 public:
 	// 设置单张图对应的实际里程；SDK 单图模式用它在像素 Y 和连续编码器里程之间换算。
 	void setImageDistanceMeters(double meters);
+
+	// Adjust the current SDK-rendered image brightness, range -100 to 100.
+	void setSdkImageBrightness(int value);
 
 	// 获取当前 SDK 视图中心点对应的连续编码器里程，2D/3D 联动以该值作为同步基准。
 	double currentCenterEncoderMile() const;
@@ -286,7 +293,7 @@ protected:
 	// 把两个 SDK 单图点转换成旧“大图矩形”，仅用于旧小框算法兼容。
 	QRect sdkPixRectToBigImageRect(const pixImagePoint& first, const pixImagePoint& second) const;
 
-	// SDK ??/??????????????????????????????
+	// 将 SDK 大框或设计面选区按图片边界切分为多个单图矩形。
 	bool currentSdkBigFrameSingleRects(QVector<SdkSingleImageRect>& rects) const;
 
 	// SDK 鼠标按下事件处理入口，负责开始病害、追加点、右键提交或取消。
@@ -337,6 +344,10 @@ protected:
 	// 从病害服务按当前可见里程范围重建 SDK 正式病害 item。
 	void refreshSdkDiseaseItems();
 
+	// Coalesce scroll-driven refreshes; explicit editing and jumps still call refresh directly.
+	void scheduleSdkDiseaseRefresh();
+	QByteArray sdkDiseaseRenderFingerprint(const hnRoadDiseaseInfo& disease);
+
 	// 向 SDK 正式病害图层添加单个病害 item。
 	void addSdkDiseaseItem(const hnRoadDiseaseInfo& disease);
 
@@ -364,17 +375,20 @@ protected:
 	// 在 SDK scene 中按 viewport 点命中正式病害并同步选中状态。
 	bool selectSdkDiseaseAtViewportPoint(const QPoint& viewportPoint);
 
+	// 合并模式直接使用 SDK scene 命中病害，避免回退到已失效的旧 widget 坐标命中。
+	bool handleSdkMergeMousePress(QMouseEvent* mouseEvent);
+
 	// 在当前可见 SDK 病害中查找鼠标命中的小框病害和格子下标。
 	bool findSdkLittleFrameDiseaseAtPoint(const pixImagePoint& point, hnRoadDiseaseInfo& disease, int& hitIndex);
 
 
-	// ?????????????????????????????????????
+	// 删除模式下更新鼠标所在小格的临时高亮，离开病害时清除高亮。
 	void updateSdkLittleFrameDeleteHover(const QPoint& viewportPoint);
 
-	// ???????? key????? key????????????????????
+	// 生成小框渲染缓存 key；病害几何或显示参数变化时 key 必须随之变化。
 	QString sdkLittleFrameRenderCacheKey(const hnRoadDiseaseInfo& disease) const;
 
-	// ??/??????????????????????????????????
+	// 读取、写入和清空小框 scene 路径缓存，避免滚动时重复构造大量路径。
 	bool cachedSdkLittleFrameScenePath(const hnRoadDiseaseInfo& disease, QPainterPath& path) const;
 	void cacheSdkLittleFrameScenePath(const hnRoadDiseaseInfo& disease, const QPainterPath& path, SdkLittleFrameRenderMode mode);
 	void clearSdkLittleFrameRenderCache();
@@ -430,7 +444,7 @@ protected:
 	// 子类用 SDK 单图点命中数据库小框下标；删除模式不再使用旧大图鼠标坐标。
 	virtual int sdkLittleFrameHitIndex(const hnRoadDiseaseInfo& disease, const pixImagePoint& point) = 0;
 
-	// ????????????????? SDK scene ????????????????
+	// 子类把数据库中的指定小框格子转换为 SDK scene 矩形，用于删除悬停高亮。
 	virtual bool sdkLittleFrameCellSceneRect(const hnRoadDiseaseInfo& disease, int hitIndex, QRectF& sceneRect) = 0;
 
 	// 子类复用各自的小框更新逻辑，统一完成重算面积、更新数据库和刷新信号。
@@ -462,6 +476,13 @@ protected:
 
 	//输入一个针对于一个大image的点，输出hnmile
 	virtual hnMile getHnMileFromPoint(const QPoint &allImagePoint) = 0;
+
+	// SDK 绘制直接按图片名和单图像素获取道路上下文，禁止再绕行旧临时大图。
+	virtual bool sdkHnMileFromPoint(const pixImagePoint& point, hnMile& mile) const = 0;
+
+	// 业务层可限制 SDK 绘制点；面阵默认允许，线阵二维视图按有效区域拒绝或钳制横坐标。
+	virtual bool adjustSdkDiseasePointToValidArea(pixImagePoint& point, bool clampToArea) const;
+	virtual bool validateDiseaseGeometryWithinValidArea(const hnRoadDiseaseInfo& disease) const;
 
 	//线状病害计算里程
 	double  calculateLineDiseaseCenterMile(QVector<pixImagePoint> lineDiseasePoints);
@@ -536,10 +557,10 @@ protected:
 	// 根据单个 SDK 单图点计算其所在的 0.1m 小框格子。
 	QRect littleFrameSingleCellForPoint(const pixImagePoint& point);
 
-	// ??????? SDK ?????????2D/3D ????????????
+	// 根据指定 SDK 图片构造物理网格规格，保证 2D/3D 小框按实际比例对齐。
 	PhysicalGridSpec sdkLittleFrameGridSpecForImage(const QString& pixName) const;
 
-	// ? SDK ?????????????????????
+	// 将 SDK 网格工具返回的格子转换为应用层单图小框选择记录。
 	bool littleFrameSelectionFromGridCell(const GridCell& cell, LittleFrameSingleRectSelection& selection) const;
 
 	// 把一个单图格子加入当前 SDK 小框选区，自动过滤空格子和重复格子。
@@ -587,6 +608,8 @@ protected:
 	bool m_ignoreNextMouseMoveAfterAutoCursorMove = false;
 	pixImagePoint m_littleFrameWheelAnchorPoint;
 	bool m_hasLittleFrameWheelAnchorPoint = false;
+	// 记录滚轮发生时的视口位置。跨不同 DPI 屏幕恢复鼠标时，横向位置必须保持不变。
+	QPoint m_littleFrameWheelViewportPoint;
 	// 取消小框病害选择后，必须等下一次左键按下才允许重新追加小框轨迹。
 	bool m_waitLittleFrameLeftPressAfterCancel = false;
 	bool m_hasLastSdkStatusViewportPoint = false;
@@ -657,8 +680,11 @@ protected:
 
 	TiledGraphicsView* m_sdkImageView = nullptr;
 	TunnelViewerController* m_sdkImageController = nullptr;
+	bool m_singleFrameNavigationEnabled = false;
 	QWidget* m_sdkDiseaseOverlay = nullptr;
 	hnSdkDiseaseGraphicsLayer m_sdkDiseaseGraphicsLayer;
+	QTimer* m_sdkDiseaseRefreshTimer = nullptr;
+	QHash<QString, QByteArray> m_sdkDiseaseRenderFingerprints;
 
 	// 单张图代表多少米。默认 0 表示还没配置，配置前不做里程换算。
 	double m_imageDistanceMeters = 0.0;

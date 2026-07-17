@@ -10,6 +10,7 @@
 #include <QElapsedTimer>
 #include <QDebug>
 #include <algorithm>
+#include <limits>
 #include "../hnDiseaseService.h"
 #include "LittleFrameRenderPathBuilder.h"
 #include "hn2d3dCoordinates.h"
@@ -1152,7 +1153,33 @@ QPainterPath hn3dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease
 		return true;
 	};
 
+	if (renderDisease.nDrawType == 3)
+	{
+		QPainterPath linePath;
+		bool hasStart = false;
+		for (const hn3dRectI& rect : qAsConst(renderDisease.vec3dRect))
+		{
+			QPointF scenePoint;
+			if (!pointToScene(rect.p0, scenePoint))
+			{
+				continue;
+			}
+			if (!hasStart)
+			{
+				linePath.moveTo(scenePoint);
+				hasStart = true;
+			}
+			else
+			{
+				linePath.lineTo(scenePoint);
+			}
+		}
+		return linePath;
+	}
+
 	QPainterPath path;
+	QRectF bigFrameSceneBounds;
+	bool hasBigFrameSceneBounds = false;
 	QVector<LittleFrameRenderCell> littleFrameCells;
 	littleFrameCells.reserve(renderDisease.vec3dRect.size());
 	for (const hn3dRectI& rect : qAsConst(renderDisease.vec3dRect))
@@ -1224,17 +1251,26 @@ QPainterPath hn3dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease
 			{
 				continue;
 			}
-			path.moveTo(p0);
-			path.lineTo(p1);
-			path.lineTo(p2);
-			path.lineTo(p3);
-			path.closeSubpath();
+			const qreal left = qMin(qMin(p0.x(), p1.x()), qMin(p2.x(), p3.x()));
+			const qreal right = qMax(qMax(p0.x(), p1.x()), qMax(p2.x(), p3.x()));
+			const qreal top = qMin(qMin(p0.y(), p1.y()), qMin(p2.y(), p3.y()));
+			const qreal bottom = qMax(qMax(p0.y(), p1.y()), qMax(p2.y(), p3.y()));
+			const QRectF segmentBounds(QPointF(left, top), QPointF(right, bottom));
+			bigFrameSceneBounds = hasBigFrameSceneBounds
+				? bigFrameSceneBounds.united(segmentBounds)
+				: segmentBounds;
+			hasBigFrameSceneBounds = true;
 		}
 	}
 
 	if (!isLittleFrame)
 	{
-		return path;
+		QPainterPath outline;
+		if (hasBigFrameSceneBounds && bigFrameSceneBounds.isValid() && !bigFrameSceneBounds.isNull())
+		{
+			outline.addRect(bigFrameSceneBounds);
+		}
+		return outline;
 	}
 
 	const LittleFrameRenderResult renderResult = LittleFrameRenderPathBuilder::build(littleFrameCells);
@@ -1895,13 +1931,16 @@ void hn3dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 		//删除第一个病害
 		auto firstDisease = m_seclectedDiseases.at(0);
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease); 
-
-		//删除第二个病害
 		auto secondDisease = m_seclectedDiseases.at(1);
+		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease))
+		{
+			QMessageBox::warning(this, QStringLiteral("\u8b66\u544a"), QStringLiteral("\u5408\u5e76\u75c5\u5bb3\u5199\u5165\u5931\u8d25\uff0c\u539f\u75c5\u5bb3\u672a\u5220\u9664\u3002"), QStringLiteral("\u786e\u5b9a"));
+			m_seclectedDiseases.clear();
+			return;
+		}
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
 
-		if (hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease( newDisease)); 
 		this->update();
 
 		//清空选中的病害数组
@@ -2287,6 +2326,68 @@ hnCommon::hn3dPointWithMileI hn3dPixWidget::getHnPoint3dWithMileI(const QPoint &
 	return point3dWithMileI;
 }
 
+bool hn3dPixWidget::sdkHnMileFromPoint(const pixImagePoint& point, hnMile& mile) const
+{
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->get3DProject() || point.pixName.isEmpty())
+	{
+		return false;
+	}
+
+	QString imageName = QFileInfo(point.pixName).fileName();
+	imageName.replace("GREY", "", Qt::CaseInsensitive);
+	imageName.replace("RGB", "", Qt::CaseInsensitive);
+	const double mile3d = project->get3DProject()->getMileByImage(imageName);
+	const double target2dMile = mile3d + (project->getProjectType() == PROJECT_23D_TYPE ? project->get2d3dMileDiff() : 0.0);
+
+	bool found = false;
+	double bestDistance = std::numeric_limits<double>::max();
+	for (const hnMile& candidate : m_2dMileVector)
+	{
+		const double distance = qAbs(candidate.dEnclMile - target2dMile);
+		if (distance < bestDistance)
+		{
+			bestDistance = distance;
+			mile = candidate;
+			found = true;
+		}
+	}
+	if (!found)
+	{
+		return false;
+	}
+
+	const hnProjectSetInfo setting = project->getCurProSetInfo();
+	const bool missingRoadContext = mile.roadWidth <= 0.0;
+	if (missingRoadContext)
+	{
+		mile.roadWidth = setting.dRoadWidth;
+		mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard);
+		mile.roadType = static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType);
+	}
+	if (static_cast<int>(mile.roadStandard) < static_cast<int>(HnProjectEnums::DegreeRoad2018) ||
+		static_cast<int>(mile.roadStandard) > static_cast<int>(HnProjectEnums::RuralRoadlowLevel))
+	{
+		mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard);
+	}
+	if (static_cast<int>(mile.roadType) < 0 || static_cast<int>(mile.roadType) > 2)
+	{
+		mile.roadType = static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType);
+	}
+	if (m_frameMode == FrameMode::LITTLE_FRAME)
+	{
+		mile.drawType = hnCommon::ROAD_WORK_SMALL_RECT;
+	}
+	else if (m_frameMode == FrameMode::DESIGN_FACETS || m_frameMode == FrameMode::DESIGN_LINE)
+	{
+		mile.drawType = hnCommon::DESIGN;
+	}
+	else
+	{
+		mile.drawType = hnCommon::ROAD_WORK_LARGE_RECT;
+	}
+	return true;
+}
 hnMile hn3dPixWidget::getHnMileFromPoint(const QPoint & allImagePoint)
 {
 	QString picName;
@@ -2359,12 +2460,41 @@ QRect hn3dPixWidget::bigFrameDiseaseAutoWidth(const QRect & bigImageRect)
 vector<hn3dRectI> hn3dPixWidget::createLineDisease3dCoord(const QVector<pixImagePoint>& lineDiseasePoints)
 {
 	vector<hn3dRectI> result;
-
-	for (auto lineDiseasePoint : qAsConst(lineDiseasePoints))
+	result.reserve(lineDiseasePoints.size());
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->get3DProject())
 	{
-		QPoint bigImage = this->pixImagePointToBigImagePoint(lineDiseasePoint);
-		hn3dRectI hnRect;
-		hnRect.p0 = this->getHnPoint3dWithMileI(bigImage);
+		return result;
+	}
+
+	for (const pixImagePoint& lineDiseasePoint : qAsConst(lineDiseasePoints))
+	{
+		QString imageName = QFileInfo(lineDiseasePoint.pixName).fileName();
+		imageName.replace("GREY", "", Qt::CaseInsensitive);
+		imageName.replace("RGB", "", Qt::CaseInsensitive);
+		const double bottomMile = project->get3DProject()->getMileByImage(imageName);
+		if (bottomMile < 0.0)
+		{
+			qWarning().noquote() << "[HN_DESIGN_LINE_3D_STORE_SKIP] image=" << lineDiseasePoint.pixName;
+			continue;
+		}
+
+		int x = qBound(0, lineDiseasePoint.pixPoint.x(), qMax(0, m_pixWidth - 1));
+		int y = qBound(0, lineDiseasePoint.pixPoint.y(), qMax(0, m_pixHeight - 1));
+		if (m_isHMirrored)
+		{
+			x = m_pixWidth - 1 - x;
+		}
+		if (m_isVMirrored)
+		{
+			y = m_pixHeight - 1 - y;
+		}
+
+		hn3dRectI hnRect = {};
+		hnRect.p0.x = x;
+		hnRect.p0.y = y;
+		hnRect.p0.z = 0;
+		hnRect.p0.bottomEncoderMile = qRound(bottomMile);
 		result.push_back(hnRect);
 	}
 
@@ -2378,7 +2508,7 @@ vector<hn2dRectI> hn3dPixWidget::createLineDisease2dCoord(const QVector<pixImage
 	for (auto lineDiseasePoint : qAsConst(lineDiseasePoints))
 	{
 		QPoint bigImage = this->pixImagePointToBigImagePoint(lineDiseasePoint);
-		hn2dRectI hnRect;
+		hn2dRectI hnRect = {};
 		hnRect.p0 = this->getHnPoint2dWithMileI(bigImage);
 		if (hnRect.p0.m_dmi < 0)
 		{
@@ -2928,7 +3058,7 @@ bool hn3dPixWidget::drawBigFrameProcess()
 
 	//获取第一个点的hnMile
 
-	hnMile mile = this->getHnMileFromPoint(diseaseRect.topLeft());
+	hnMile mile = hasSdkImageView() ? m_firstHnMile : this->getHnMileFromPoint(diseaseRect.topLeft());
 
 
 	hnProjectSetInfo setting = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
@@ -2963,6 +3093,14 @@ bool hn3dPixWidget::drawBigFrameProcess()
 		diseaseNameAndKey.append(qMakePair(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName), QString(diseseSetInfo.nShortcutKey)));
 
 		diseaseTypeList.append(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName));
+	}
+	if (diseaseSetInfos.isEmpty())
+	{
+		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
+			QString::fromLocal8Bit("当前位置没有匹配的病害类型，请检查路面标准、路面材质和作业模式设置。"),
+			QString::fromLocal8Bit("确定"));
+		resetSdkDiseaseDrawingState(true, false);
+		return false;
 	}
 
 	//弹出添加病害窗口
@@ -3441,6 +3579,14 @@ bool hn3dPixWidget::littleFrameProcess()
 		diseaseTypeList.append(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName));
 	}
 	logLittleFramePerf("prepareDiseaseDialog");
+	if (diseaseSetInfos.isEmpty())
+	{
+		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
+			QString::fromLocal8Bit("当前位置没有匹配的病害类型，请检查路面标准、路面材质和作业模式设置。"),
+			QString::fromLocal8Bit("确定"));
+		resetSdkDiseaseDrawingState(true, false);
+		return false;
+	}
 
 	//弹出添加病害窗口
 	addDiseaseDialog dialog(diseaseNameAndKey, false);
@@ -3770,12 +3916,14 @@ void hn3dPixWidget::littleFrameMergeDiseases(const QPoint & screenPoint)
 		//删除第一个病害
 		auto firstDisease = m_seclectedDiseases.at(0);
 		auto secondDisease = m_seclectedDiseases.at(1);
+		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease))
+		{
+			QMessageBox::warning(this, QStringLiteral("\u8b66\u544a"), QStringLiteral("\u5408\u5e76\u75c5\u5bb3\u5199\u5165\u5931\u8d25\uff0c\u539f\u75c5\u5bb3\u672a\u5220\u9664\u3002"), QStringLiteral("\u786e\u5b9a"));
+			m_seclectedDiseases.clear();
+			return;
+		}
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
-	 
-		//新病害写入数据库
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease( newDisease);
- 
 
 		this->update();
 

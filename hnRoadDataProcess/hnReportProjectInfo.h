@@ -136,7 +136,7 @@ namespace hnReportProjectInfo
 		Data data;
 		if (project)
 		{
-			data.roadWidth = project->getCurProSetInfo().dRoadWidth;
+			data.roadWidth = project->effectiveRoadWidth();
 		}
 		return data;
 	}
@@ -180,7 +180,7 @@ namespace hnReportProjectInfo
 		const QMap<QString, QString> values = readValues(configPath(project));
 		bool widthOk = false;
 		const double savedWidth = values.value(roadWidthKey()).toDouble(&widthOk);
-		if (widthOk && savedWidth > 0.0)
+		if ((!project || !project->isLineCameraProject()) && widthOk && savedWidth > 0.0)
 		{
 			data.roadWidth = savedWidth;
 		}
@@ -190,6 +190,17 @@ namespace hnReportProjectInfo
 		data.inspectionCount = values.value(inspectionCountKey(), data.inspectionCount);
 		data.regionCode = values.value(regionCodeKey(), data.regionCode);
 		return data;
+	}
+
+	inline bool hasSavedRoadWidth(hnPro::hnProject* project)
+	{
+		if (project && project->isLineCameraProject())
+		{
+			return false;
+		}
+		bool widthOk = false;
+		const double savedWidth = readValues(configPath(project)).value(roadWidthKey()).toDouble(&widthOk);
+		return widthOk && savedWidth > 0.0;
 	}
 
 	inline QString valueLine(const QString& key, const QString& value)
@@ -301,6 +312,10 @@ namespace hnReportProjectInfo
 
 	inline double roadWidth(hnPro::hnProject* project)
 	{
+		if (project && project->isLineCameraProject())
+		{
+			return project->effectiveRoadWidth();
+		}
 		const QString path = configPath(project);
 		const QFileInfo fileInfo(path);
 		const auto cached = widthCache().constFind(path);

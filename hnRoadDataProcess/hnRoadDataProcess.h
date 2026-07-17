@@ -21,7 +21,6 @@
 #include "../hnApplication/hnStreetCameraView.h"
 #include "hnImportAidcDiseases.h"
 #include "hnOriginalScalePixShowWidget.h"
-#include "adjustImageWidget.h"
 #include "hnRegionJumpDlg.h"
 #include "hnProjectConfig.h"
 #include "hnDxfCaculateDialog.h"
@@ -61,6 +60,7 @@ class hnOutputExcelDialog;
 class hnOutExcelMileManage;
 class hnAboutInfoWidgets;
 class hnCenterToast;
+class hnGeometryCalculationThread;
 namespace hn
 {
 	class CDockManager;
@@ -82,7 +82,6 @@ class hnRoadDataProcess : public hnRibbonMainWindow
 public:
 	hnRoadDataProcess(QWidget *parent = Q_NULLPTR);
 	~hnRoadDataProcess();
-	static bool progressCallback(float fval, const char* qstrName, bool bCancle);
 public:
 	//单例  全局设置
 	HnXRSettings* m_xrSetting;
@@ -197,6 +196,7 @@ private slots:
 
 	//输出报表 
 	void slot_outputExcel();
+	void slot_adjustLineCameraArea();
 
 
 	//输出结果数据
@@ -325,6 +325,7 @@ private slots:
 private:
 	//更新所有视图
 	void updateAllWidget();
+	void updateLineCameraAreaActionState();
 
 	void updatePixWidget();
 
@@ -398,6 +399,8 @@ private:
 
 	//修改工程有效桩号(绘制病害，出表桩号)
 	QAction* m_changeProjectOutMileAct;
+
+	QAction* m_adjustLineCameraAreaAct;
 
 	// 影像生成
 	QAction* m_createImageAct;
@@ -502,6 +505,7 @@ private:
 	QAction *m_exportHighAccuracyDiseaseDxfAction;
 
 	QAction * m_ComputeGeoaligAction;
+	hnGeometryCalculationThread* m_geometryCalculationThread = nullptr;
 
 	// 导入控制点
 	QAction *m_importCtrlPointsAction;
@@ -574,8 +578,6 @@ private:
 	hn::CDockWidget* m_pDocStreetImageViewDock;
 
 	//调整图片视图
-	adjustImageWidget *m_adjustImageWidget;
-	hn::CDockWidget* m_padjustImageDock;
 
 
 

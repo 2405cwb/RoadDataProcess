@@ -94,6 +94,13 @@
             </property>
            </widget>
           </item>
+          <item row="1" column="0" colspan="2">
+           <widget class="QCheckBox" name="wheelScrollOneImageCheckBox">
+            <property name="text">
+             <string>滚轮或方向键每次跳转一张图片（普通图片/Pack）</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

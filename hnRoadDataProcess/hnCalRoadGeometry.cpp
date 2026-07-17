@@ -360,7 +360,7 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 	}
 	for (int i = 0; i < vecGeoParam.size(); i++)
 	{
-		if (i * 10  >= scanLength)
+		if (vecGeoParam[i].dMileage >= scanLength)
 		{
 			continue;
 		}
@@ -389,7 +389,11 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 			subRrame = sumFrame - (mainFrame * 40);
 
 			// 获取点云
-			camReader->getSubFramePoints(mainFrame, subRrame, 0, pionts, return_pt_count);
+			if (!camReader->getSubFramePoints(mainFrame, subRrame, 0, pionts, return_pt_count)
+				|| return_pt_count <= 0)
+			{
+				continue;
+			}
 
 			vecPt.resize(return_pt_count);
 
@@ -430,6 +434,10 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 				nValitCnt++;
 			}
 
+			if (nValitCnt == 0)
+			{
+				continue;
+			}
 			ptSlope.z = ptSlope.z / nValitCnt;
 			
 			ptSlope.x = j * 0.1;
@@ -461,7 +469,11 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 		//
 		dMinValue = 10000.0;
 		
-		camReader->getSubFramePoints(mainFrame, subRrame, 0, pionts, return_pt_count);
+		if (!camReader->getSubFramePoints(mainFrame, subRrame, 0, pionts, return_pt_count)
+			|| return_pt_count <= 0)
+		{
+			continue;
+		}
 
 		vecPt.resize(return_pt_count); 
 		int midIndex = 0; 
@@ -517,6 +529,10 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 			zValues.append(vecPt[startIdx].z);
 		}
 		std::sort(zValues.begin(), zValues.end());
+		if (zValues.isEmpty())
+		{
+			continue;
+		}
 		double stableZ = zValues[zValues.size() / 2];
 		QVector<double> realZValues;
 		for (int tempZIdx = 10; tempZIdx < zValues.size() -10 ; ++ tempZIdx)
@@ -525,7 +541,14 @@ bool hnCalRoadGeometry::calRoadGeometeryNew1(vector<hnRoadGeoParam>& vecGeoParam
 		} 
 		vecGeoParam[i].pt = ptCenter;
 
-		vecGeoParam[i].pt.z = std::accumulate(realZValues.begin(), realZValues.end(), 0.0) / realZValues.size(); 
+		if (realZValues.isEmpty())
+		{
+			vecGeoParam[i].pt.z = stableZ;
+		}
+		else
+		{
+			vecGeoParam[i].pt.z = std::accumulate(realZValues.begin(), realZValues.end(), 0.0) / realZValues.size();
+		}
 
 		int pointSize = vecPt.size();
 		
@@ -895,13 +918,13 @@ bool hnCalRoadGeometry::calculateLaneCrossSlop(const QVector<hnPoint3d> & points
 
 		QVector <hnPoint3d> currentInLiers; 
 		//点到直线的垂直计算公式分母
-		double denominator = std::sqrt(k * k * 1.0);
+		double denominator = std::sqrt(k * k + 1.0);
 
 		for (const hnPoint3d & p : points)
 		{
 			double distance = std::abs(k*p.x - p.z + b) / denominator;
 			//如果距离小于设定的误差阈值，则认为是真正的路面点
-			if (distance>distanceThreshold)
+			if (distance <= distanceThreshold)
 			{
 				currentInLiers.append(p);
 			}
@@ -923,7 +946,7 @@ bool hnCalRoadGeometry::calculateLaneCrossSlop(const QVector<hnPoint3d> & points
 		crossSlopPercent = std::abs(finalK) * 100.0;
 		return true;
 	}
-	return true;
+	return false;
 }
 
 void hnCalRoadGeometry::MidianAverageFileter(float* x, int ns, int ne, int flen, float* y)

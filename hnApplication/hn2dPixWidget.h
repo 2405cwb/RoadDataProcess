@@ -11,6 +11,12 @@
 #include "hn2d3dCoordinates.h"
 #include "hn2d3dPixBaseWidget.h"
 #include "../HighAccConvertPlane/HighAccuracyPositioning.h"
+class hnLineCameraBoundaryItem;
+class QGraphicsRectItem;
+class QGraphicsLineItem;
+class QFrame;
+class QLabel;
+class QLineEdit;
  using namespace hnApp;
 
 //作者 陈智超 
@@ -26,6 +32,13 @@ public:
 public:
 	//加载路面影像
 	void loadRoadPicture();
+	void clearSdkView();
+
+	bool startLineCameraAreaAdjustment();
+	bool isLineCameraAreaAdjusting() const { return m_lineCameraAreaAdjusting; }
+
+signals:
+	void signal_lineCameraAreaAdjustmentStateChanged(bool active);
 
 protected:
 	//重载函数，绘图，往窗口上画东西
@@ -134,6 +147,11 @@ private:
 
 	//输入一个针对于一个大image的点，输出hnmile
 	hnMile getHnMileFromPoint(const QPoint &allImagePoint);
+
+	// 按 SDK 当前图片直接获取道路属性，路线开头不依赖旧临时大图坐标。
+	bool sdkHnMileFromPoint(const pixImagePoint& point, hnMile& mile) const override;
+	bool adjustSdkDiseasePointToValidArea(pixImagePoint& point, bool clampToArea) const override;
+	bool validateDiseaseGeometryWithinValidArea(const hnRoadDiseaseInfo& disease) const override;
 
 	//根据病害矩形（Qt）获取病害中心里程（编码器里程）
 	double calculateBigFrameCenterMile(const QRect & rect);
@@ -282,5 +300,30 @@ private:
 	QString m_latitude = "";
 	QString m_longitude = "";
 	QString m_centerH = "";
+
+	void updateLineCameraAreaOverlay();
+	void refreshLineCameraAreaGuide();
+	void clearLineCameraAreaGuide();
+	void setLineCameraAdjustmentBounds(int leftPixel, int rightPixel);
+	bool applyLineCameraPixelInputs();
+	bool applyLineCameraRoadWidthInput();
+	bool applyLineCameraPendingInput();
+	void finishLineCameraAreaAdjustment(bool saveChanges);
+	int diseasesOutsideLineCameraArea(int leftPixel, int rightPixel) const;
+	bool m_lineCameraAreaAdjusting = false;
+	hnLineCameraBoundaryItem* m_lineCameraLeftBoundary = nullptr;
+	hnLineCameraBoundaryItem* m_lineCameraRightBoundary = nullptr;
+	QGraphicsRectItem* m_lineCameraLeftShade = nullptr;
+	QGraphicsRectItem* m_lineCameraRightShade = nullptr;
+	QGraphicsRectItem* m_lineCameraPersistentLeftShade = nullptr;
+	QGraphicsRectItem* m_lineCameraPersistentRightShade = nullptr;
+	QGraphicsLineItem* m_lineCameraPersistentLeftBoundary = nullptr;
+	QGraphicsLineItem* m_lineCameraPersistentRightBoundary = nullptr;
+	QFrame* m_lineCameraAreaPanel = nullptr;
+	QLabel* m_lineCameraAreaSummary = nullptr;
+	QLineEdit* m_lineCameraLeftPixelEdit = nullptr;
+	QLineEdit* m_lineCameraRightPixelEdit = nullptr;
+	QLineEdit* m_lineCameraRoadWidthEdit = nullptr;
+	int m_lineCameraPendingInputMode = 0;
 
 };

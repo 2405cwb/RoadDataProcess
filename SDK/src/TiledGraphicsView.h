@@ -6,6 +6,10 @@
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QHash>
+#include <QCache>
+#include <QSet>
+#include <QSharedPointer>
+#include <QThreadPool>
 #include <vector>
 #include "TunnelSectionItem.h"
 #include "TunnelGlobal.h" 
@@ -15,6 +19,10 @@
 using namespace std;
 
 class DefectDrawTool; // Forward declaration
+class ISequenceFrameSource;
+class ImageSequenceModel;
+class SequenceChunkItem;
+struct SequenceFrameDescriptor;
 
 // Bottom anchor used by application code to map SDK pixels to business mileage.
 struct TiledViewAnchor
@@ -105,6 +113,20 @@ public:
      */
     void addLayer(AbstractTileSource* source);
 
+    // Ordinary-image and Pack content use a virtualized sequence. Database
+    // routes continue to use addLayer() and TunnelSectionItem unchanged.
+    bool loadVirtualSequence(const QSharedPointer<ISequenceFrameSource>& source,
+        const SequenceLoadOptions& options, LayoutOrientation orientation,
+        bool horizontalMirror, bool verticalMirror);
+    ContentMode contentMode() const { return m_contentMode; }
+    int imageCount() const;
+    SequenceFrameDescriptor imageDescriptor(int sourceIndex) const;
+
+    // Called by SequenceChunkItem while painting.
+    QImage sequenceImageForPaint(int sourceIndex, bool highResolution);
+    bool sequenceHorizontalMirror() const { return m_sequenceHorizontalMirror; }
+    bool sequenceVerticalMirror() const { return m_sequenceVerticalMirror; }
+
     /**
      * @brief       
      * @param mode Mode_Browse(  )   Mode_Draw(  )
@@ -124,6 +146,13 @@ public:
 
     // Allow application code to enable or disable built-in keyboard navigation.
     void setKeyboardNavigationEnabled(bool enable) { m_enableKeyNav = enable; }
+
+    // In virtual image/Pack mode, make wheel and primary-axis navigation keys
+    // advance exactly one frame. Database tile mode keeps its original behavior.
+    void setSingleFrameNavigationEnabled(bool enable) { m_singleFrameNavigationEnabled = enable; }
+    bool singleFrameNavigationEnabled() const { return m_singleFrameNavigationEnabled; }
+	// Move one frame in visual order; return false at either end or without content.
+	bool stepSingleFrame(int visualDelta);
 
 	// Render backend. Raster is the default stable mode for complex QWidget UIs.
 	void setRenderBackend(RenderBackend backend);
@@ -210,6 +239,11 @@ public slots:
     // ?? 1.                        
     void resetToFit();
 	void updateHUD();
+	// Adjust the SDK-rendered image brightness. The value is a channel offset
+	// in the range [-100, 100]. It applies to both DB tiles and virtual sequences.
+	void setImageBrightness(int value);
+	void onSequenceImageDecoded(int sourceIndex, bool highResolution, int generation,
+		int requestSerial, QImage image);
 signals:
     // ==========================================
     //        (     UI   )
@@ -262,6 +296,7 @@ protected:
     // ??      
     // ==========================================
     void resizeEvent(QResizeEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
 
 
@@ -283,6 +318,13 @@ private:
   void  setupGraphicsView();
 
   void setupConnections();
+
+  void clearVirtualSequence();
+  bool stepVirtualSequenceFrame(int visualDelta);
+  void requestSequenceImage(int sourceIndex, bool highResolution, int priority = 0);
+  void requestSequenceRange(const QRectF& sceneRect, bool highResolution, int priority);
+  QString sequenceCacheKey(int sourceIndex, bool highResolution) const;
+  QImage renderVirtualSequenceRegion(const QRectF& sceneRect, ExportQuality quality, bool drawDefects);
 
   //        viewport        new QOpenGLWidget 
   void applyRenderBackend();
@@ -343,6 +385,25 @@ private:
 
     //        item           /              m_items 
     mutable QHash<QString, TunnelSectionItem*> m_imageItemCache;
+
+    ContentMode m_contentMode = ContentMode::DatabaseTiles;
+    QSharedPointer<ISequenceFrameSource> m_sequenceSource;
+    QSharedPointer<ImageSequenceModel> m_sequenceModel;
+    QList<SequenceChunkItem*> m_sequenceChunks;
+    QCache<QString, QImage> m_sequenceImageCache;
+    // The value is the viewport request serial that owns this pending key.
+    // Running work from an older viewport cannot remove a newer request.
+    QHash<QString, int> m_sequencePendingRequests;
+    QThreadPool m_sequenceDecodePool;
+    SequenceLoadOptions m_sequenceOptions;
+    int m_sequenceGeneration = 0;
+    int m_sequenceRequestSerial = 0;
+	QElapsedTimer m_sequenceTraceClock;
+	QHash<QString, qint64> m_sequenceLastTraceMs;
+	qint64 m_sequenceLastViewportTraceMs = -1000;
+    int m_imageBrightness = 0;
+    bool m_sequenceHorizontalMirror = false;
+    bool m_sequenceVerticalMirror = false;
     QString DrawModelStr;
     //     
     double m_currentScale = 1.0;
@@ -363,6 +424,7 @@ private:
     //      (  / )
     int m_scrollSpeed  ;
     bool m_enableKeyNav = true; //     
+    bool m_singleFrameNavigationEnabled = false;
     bool m_isFastScrolling = false; // ??            
 
     //     1.0 (     3)

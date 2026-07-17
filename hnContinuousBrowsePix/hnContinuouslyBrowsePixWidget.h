@@ -40,6 +40,8 @@
 #include <QPushButton>
 #include "..\hnConfigService\HnXRSettings.h"
 #include <QCheckBox>
+#include <QSlider>
+#include <QTimer>
 #include <thread>
 #include <chrono>
 using namespace std;
@@ -80,11 +82,18 @@ private:
 	//信号槽初始化
 	void initSigSlot();
 
+	// 在二维、三维工具栏中创建统一的自动播放按钮。
+	void addAutoPlayControl(QHBoxLayout* layout);
+	void toggleAutoPlay();
+	void updateAutoPlayButton();
+
 
 //信号
 signals:
 	//信号：发送等比例显示窗口image
 	void sig_mousePosImageChanged(QImage image);
+	// Embedded per-view brightness control, replacing the old popup pane.
+	void signal_imageBrightnessChanged(int value);
 
 //槽函数
 public slots:
@@ -92,6 +101,9 @@ public slots:
 	void slot_setSelectedDiseaseId(int id);
 
 	void slot_updateBrowser();
+
+	// 停止播放并恢复按钮状态，切换工程或到达序列末尾时调用。
+	void stopAutoPlay();
 
 	
 	virtual void slot_BlockValueChanged(int value) = 0;
@@ -113,13 +125,14 @@ protected:
 	//进入事件
 	void enterEvent(QEvent *event) override;
 
-	void playThePicture();
-
 	int getBrowStep(bool is3d ) const;
 
 	virtual int browseStep() const = 0;
 
 	virtual bool is2DView()  const = 0;
+
+	// 按当前显示顺序向前移动一张；到达末尾时返回 false。
+	virtual bool stepOneImage() = 0;
 
 signals:
 	void signal_enterWidget();
@@ -137,13 +150,7 @@ protected:
 	QPushButton*  jumpBtn;
 
 	//播放按钮
-	QPushButton * playBtn;
-
-	//加速按钮
-	QPushButton * addSpeedBtn;
-
-	//减速按钮
-	QPushButton * subBtn;
+	QPushButton * playBtn = nullptr;
 
 	//开启备注
 	QPushButton * markBtn;
@@ -169,8 +176,8 @@ public:
 	// 自动滚动标志
 	bool m_autoPlay;
 
-	//控制播放速度
-	int m_playSpeed;
+	// 自动播放定时器，固定每秒前进一张图片。
+	QTimer* m_autoPlayTimer = nullptr;
 
 	protected:
 	

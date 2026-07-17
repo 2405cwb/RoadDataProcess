@@ -91,6 +91,21 @@ namespace hnPro
 			THROW_RUNTIME(QString::fromLocal8Bit("未检测到任何二维或三维工程。")); 
 		}
 
+		m_lineCameraInfo = bExist2D ? hnLineCameraConfig::load(m_str2DProPath) : hnLineCameraInfo();
+		if (m_lineCameraInfo.isLineCamera)
+		{
+			if (!m_lineCameraInfo.cameraConfigValid)
+			{
+				THROW_RUNTIME(m_lineCameraInfo.errorMessage);
+			}
+			if (!m_lineCameraInfo.validAreaConfigured)
+			{
+				THROW_RUNTIME(QStringLiteral("线阵工程尚未设置有效区域，无法打开：%1").arg(m_str2DProPath));
+			}
+			curProDataInfo.proSetInfo.dRoadWidth = m_lineCameraInfo.roadWidthMeters();
+			curProDataInfo.proSetInfo.dRoadLength = m_lineCameraInfo.imageLengthMeters();
+		}
+
 		if (bExist2D && (!bExist3D))
 		{
 			m_nProjectType = PROJECT_2D_TYPE;
@@ -171,7 +186,12 @@ namespace hnPro
 					QString path = picPathList[0];
 					QFileInfo dir1(path);
 					QString path1 = dir1.absoluteDir().path();
-					getPixResoluion(path1);
+					const int resolutionResult = getPixResoluion(path1);
+					if (m_lineCameraInfo.isLineCamera && resolutionResult != 0)
+					{
+						qWarning().noquote() << "[HN_LINE_CAMERA] failed to initialize image resolution, error=" << resolutionResult;
+						return false;
+					}
 				}
 				else
 				{
@@ -899,8 +919,30 @@ namespace hnPro
 		}
 		m_projectInfo.picPixelX = image.width();
 		m_projectInfo.picPixelY = image.height();
-		m_projectInfo.dRadioX = m_projectInfo.dRoadWidth / m_projectInfo.picPixelX;
-		m_projectInfo.dRadioY = m_projectInfo.dRoadLength / m_projectInfo.picPixelY;
+		if (m_lineCameraInfo.isLineCamera && m_lineCameraInfo.cameraConfigValid && m_lineCameraInfo.validAreaConfigured)
+		{
+			if (m_lineCameraInfo.imageWidth != image.width())
+			{
+				return -4;
+			}
+			m_lineCameraInfo.imageHeight = image.height();
+			m_projectInfo.dRadioX = m_lineCameraInfo.meterPerPixelWidth();
+			m_projectInfo.dRadioY = m_lineCameraInfo.meterPerPixelHeight();
+			m_projectInfo.dRoadWidth = m_lineCameraInfo.roadWidthMeters();
+			const double configuredImageLength = m_lineCameraInfo.imageLengthMeters();
+			if (!qFuzzyCompare(m_projectInfo.dRoadLength + 1.0, configuredImageLength + 1.0))
+			{
+				qWarning().noquote() << "[HN_LINE_CAMERA] RoadDis differs from MmPerPix H; using line camera value"
+					<< "RoadDis=" << m_projectInfo.dRoadLength << "lineLength=" << configuredImageLength;
+			}
+			m_projectInfo.dRoadLength = configuredImageLength;
+			m_roadSpace = configuredImageLength;
+		}
+		else
+		{
+			m_projectInfo.dRadioX = m_projectInfo.dRoadWidth / m_projectInfo.picPixelX;
+			m_projectInfo.dRadioY = m_projectInfo.dRoadLength / m_projectInfo.picPixelY;
+		}
 		return 0;
 	}
 
@@ -908,6 +950,50 @@ namespace hnPro
 
 
 
+	bool hnProject::reloadLineCameraInfo(QString* errorMessage)
+	{
+		hnLineCameraInfo info = hnLineCameraConfig::load(m_str2DProPath);
+		if (!info.isLineCamera || !info.cameraConfigValid || !info.validAreaConfigured)
+		{
+			if (errorMessage)
+			{
+				*errorMessage = info.errorMessage.isEmpty() ? QStringLiteral("线阵相机有效区域配置不完整。") : info.errorMessage;
+			}
+			return false;
+		}
+		m_lineCameraInfo = info;
+		m_projectInfo.dRadioX = info.meterPerPixelWidth();
+		m_projectInfo.dRadioY = info.meterPerPixelHeight();
+		m_projectInfo.dRoadWidth = info.roadWidthMeters();
+		m_projectInfo.dRoadLength = info.imageLengthMeters();
+		m_roadSpace = m_projectInfo.dRoadLength;
+		if (m_pDbSqlite)
+		{
+			m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo);
+		}
+		return true;
+	}
+
+	bool hnProject::setLineCameraValidArea(int leftPixel, int rightPixel, QString* errorMessage)
+	{
+		if (!m_lineCameraInfo.isLineCamera)
+		{
+			if (errorMessage)
+			{
+				*errorMessage = QStringLiteral("当前工程不是线阵相机工程。");
+			}
+			return false;
+		}
+		hnLineCameraInfo updated = m_lineCameraInfo;
+		updated.leftPixel = leftPixel;
+		updated.rightPixel = rightPixel;
+		updated.validAreaConfigured = leftPixel >= 0 && leftPixel < rightPixel && rightPixel <= updated.imageWidth;
+		if (!hnLineCameraConfig::saveValidArea(updated, errorMessage))
+		{
+			return false;
+		}
+		return reloadLineCameraInfo(errorMessage);
+	}
 	void hnProject::read2dProjectinfo(const QString& filePath)
 	{
 		QStringList list;

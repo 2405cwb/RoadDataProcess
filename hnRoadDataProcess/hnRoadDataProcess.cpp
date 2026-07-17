@@ -36,6 +36,7 @@
 #include "..\hnIO\hnExcelIO.h"
 #include "..\hnConfigService\HnXRSettings.h"
 #include "hnOpenProjectDlg.h"
+#include "hnLineCameraValidAreaDialog.h"
 #include "calculateIrmForm.h"
 #include "statusBarWidget.h"
 #include "hnOutputExcelDialog.h"
@@ -69,6 +70,7 @@
 #include "..\hnPavementCreate3d\hnPavementCamReader.h"
 #include "..\hnPavementCreate3d\hnPavementImageInfo.h"
 #include "hnCalRoadGeometry.h"
+#include "hnGeometryCalculation.h"
 #include <QProgressDialog>
 #include "../hnApplication/hnDiseaseService.h"
 #include "../hnQtCommon/hnCenterToast.h"
@@ -76,12 +78,69 @@
 using namespace hnApp;
 using namespace hnPro;
 
-static QProgressDialog * g_pgDlg = nullptr;
+static double projectDistanceFromRightEdge(hnPro::hnProject* project, double sourcePixelX)
+{
+	if (!project)
+	{
+		return 0.0;
+	}
+	if (project->isLineCameraProject())
+	{
+		return project->getLineCameraInfo().distanceFromRight(sourcePixelX);
+	}
+	const double width = project->getCurProSetInfo().dRoadWidth;
+	return qBound(0.0, width - sourcePixelX * project->getCurProSetInfo().dRadioX, width);
+}
 
+static bool ensureLineCameraAreasForRecentProjects(std::vector<hnCommon::hnProjectDataInfo>& projects, QWidget* parent)
+{
+	QVector<hnPro::hnLineCameraInfo> pendingAreas;
+	for (hnCommon::hnProjectDataInfo& data : projects)
+	{
+		const QString root = QString::fromLocal8Bit(data.strProjectPath);
+		const QString twoDRoot = QDir(root).filePath(QString::fromLocal8Bit(data.str2DProName));
+		const QString projectRoot = hnPro::hnLineCameraConfig::isLineCameraProject(twoDRoot) ? twoDRoot : root;
+		hnPro::hnLineCameraInfo info = hnPro::hnLineCameraConfig::load(projectRoot);
+		if (!info.isLineCamera)
+		{
+			continue;
+		}
+		const QString projectName = QString::fromLocal8Bit(data.str2DProName);
+		if (!info.cameraConfigValid)
+		{
+			QMessageBox::critical(parent, QStringLiteral("线阵相机配置错误"),
+				QStringLiteral("工程【%1】：%2").arg(projectName, info.errorMessage));
+			return false;
+		}
+		if (!info.validAreaConfigured)
+		{
+			hnLineCameraValidAreaDialog dialog(info, parent);
+			if (dialog.exec() != QDialog::Accepted)
+			{
+				return false;
+			}
+			info = dialog.selectedInfo();
+			pendingAreas.append(info);
+		}
+		data.proSetInfo.dRoadWidth = info.roadWidthMeters();
+	}
+
+	// 所有最近工程的向导均确认后再统一落盘，取消任意一个不会留下前面工程的部分配置。
+	for (const hnPro::hnLineCameraInfo& info : qAsConst(pendingAreas))
+	{
+		QString errorMessage;
+		if (!hnPro::hnLineCameraConfig::saveValidArea(info, &errorMessage))
+		{
+			QMessageBox::critical(parent, QStringLiteral("保存线阵有效区域失败"), errorMessage);
+			return false;
+		}
+	}
+	return true;
+}
 hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 	: hnRibbonMainWindow(parent), m_pRel3dView(NULL), m_pHn3dView(NULL), m_DockManager(NULL), m_2dPixScrollWidget(NULL),
 	m_3dPixScrollWidget(NULL), m_diseaseListWidgetDockWidget(NULL), m_diseaseListWidget(NULL), m_pStreetViewWidget(NULL)
-	, m_projects(NULL), m_outExcelDialog(nullptr), m_projectConfgDialog(nullptr), m_projectDockWidget(NULL), m_projectWidget(NULL), m_IrmShowWidget(NULL), m_mapWidget(NULL),m_adjustImageWidget(NULL)
+	, m_projects(NULL), m_outExcelDialog(nullptr), m_projectConfgDialog(nullptr), m_projectDockWidget(NULL), m_projectWidget(NULL), m_IrmShowWidget(NULL), m_mapWidget(NULL)
 {
 	m_centerToast = new hnCenterToast(this);
 	m_DockManager = new hn::CDockManager(this);
@@ -126,25 +185,17 @@ hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 
 hnRoadDataProcess::~hnRoadDataProcess()
 {
+	if (m_geometryCalculationThread && m_geometryCalculationThread->isRunning())
+	{
+		m_geometryCalculationThread->requestCancel();
+		m_geometryCalculationThread->wait();
+	}
 	hnDataManager::destoryDataManager();
 	if (m_DockManager)
 	{
 		delete m_DockManager;
 		m_DockManager = NULL;
 	}
-}
-
-bool hnRoadDataProcess::progressCallback(float fval, const char* qstrName, bool bCancle)
-{
-	if (g_pgDlg)
-	{
-		g_pgDlg->setValue(static_cast<int>(fval * 100));
-		g_pgDlg->setLabelText(QString::fromLocal8Bit(qstrName));
-
-		QCoreApplication::processEvents();
-		return !g_pgDlg->wasCanceled();
-	}
-	return true;
 }
 
 bool hnRoadDataProcess::initProject()
@@ -361,6 +412,10 @@ void hnRoadDataProcess::createView()
 		//hnApplication::getApp()->newRaodDamageContinousBrowserPixWidget();
 		m_2dPixScrollWidget = hnApplication::getApp()->newRaodDamageContinousBrowserPixWidget();
 	}
+	if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+	{
+		m_2dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(m_xrSetting->wheelScrollOneImage);
+	}
 
 	// 停靠路面影像视图;
 	m_2dPixScrollDocWidget = new hn::CDockWidget(QStringLiteral("路面影像视图"), this);
@@ -390,6 +445,10 @@ void hnRoadDataProcess::createView()
 	if (!m_3dPixScrollWidget)
 	{
 		m_3dPixScrollWidget = hnApplication::getApp()->new3DImageViewWidget();
+	}
+	if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+	{
+		m_3dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(m_xrSetting->wheelScrollOneImage);
 	}
 
 	// 停靠点云影像视图;
@@ -516,25 +575,10 @@ void hnRoadDataProcess::createView()
 	m_DockManager->addDockWidget(hn::LeftDockWidgetArea, m_projectDockWidget);
 	m_pShowPaneMenu->addAction(m_projectDockWidget->toggleViewAction());
 	 
-	if (!m_adjustImageWidget)
-	{
-		m_adjustImageWidget = new adjustImageWidget(this);
-
-	}
-
-	m_padjustImageDock = new hn::CDockWidget(QStringLiteral("图片调整"), this);
-	m_padjustImageDock->setFeatures(tFeatures);
-	m_padjustImageDock->setWidget(m_adjustImageWidget);
-	m_adjustImageWidget->setHidden(false);
-	m_padjustImageDock->setMinimumWidth(350);
-	m_DockManager->addDockWidget(hn::LeftDockWidgetArea, m_padjustImageDock);
-	m_pShowPaneMenu->addAction(m_padjustImageDock->toggleViewAction());
-
 }
 
 void hnRoadDataProcess::initDlg()
 {
-	//m_adjustImageWidget = new adjustImageWidget(this);
 	m_regionJumpDlg = new hnRegionJumpDlg(this);
 	m_projectConfgDialog = new hnProjectConfig(this);
 	m_dxfExportDialog = new hnDxfCaculateDialog(this);
@@ -676,6 +720,27 @@ void hnRoadDataProcess::createConnect()
 
 	connect(m_HelperAct, &QAction::triggered, this, &hnRoadDataProcess::slot_oepnCourseDocument);
 	connect(m_outExcel, &QAction::triggered, this, &hnRoadDataProcess::slot_outputExcel);
+	connect(m_adjustLineCameraAreaAct, &QAction::triggered, this, &hnRoadDataProcess::slot_adjustLineCameraArea);
+	connect(m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_lineCameraAreaAdjustmentStateChanged,
+		this, [this](bool active) {
+			const bool enabled = !active;
+			m_projectListTreeWidget->setEnabled(enabled);
+			m_openProjectAct->setEnabled(enabled);
+			m_lastProjectAct->setEnabled(enabled);
+			m_addDiseaseAct->setEnabled(enabled);
+			m_deleteDiseaseAct->setEnabled(enabled);
+			m_editDiseaseAct->setEnabled(enabled);
+			m_combineDiseaseAct->setEnabled(enabled);
+			m_addFacetsDiseaseAct->setEnabled(enabled);
+			m_addLineDiseaseAct->setEnabled(enabled);
+			m_clearAllDiseasesAct->setEnabled(enabled);
+			m_updateAllDiseasesAct->setEnabled(enabled);
+			m_input2dDiseaseAct->setEnabled(enabled);
+			m_inputSmartDiseaseAct->setEnabled(enabled);
+			m_outExcel->setEnabled(enabled);
+			m_adjustLineCameraAreaAct->setEnabled(enabled && hnDataManager::getDataManager()->getCurrentProject() &&
+				hnDataManager::getDataManager()->getCurrentProject()->isLineCameraProject());
+		});
 #ifdef DEBUG
 	connect(m_allResultDatasAction, &QAction::triggered, this, &hnRoadDataProcess::slot_outAllResultDatas);
 
@@ -914,57 +979,6 @@ void hnRoadDataProcess::createConnect()
 
 
 	//二维 对话框对比度调整  对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dContrastIntensityChanged, [this](double intensity)
-	{
-		m_2dPixScrollWidget->getPixWidget()->setContrastIntensity(intensity);
-		m_2dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//二维 对比度重置 对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dResetContrastIntensity, [this]() {
-		m_2dPixScrollWidget->getPixWidget()->resetContrastIntensity();
-		m_2dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//三维 对话框对比度调整  对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dContrastIntensityChanged, [this](double intensity)
-	{
-		m_3dPixScrollWidget->getPixWidget()->setContrastIntensity(intensity);
-		m_3dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//三维 对比度重置 对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dResetContrastIntensity, [this]() {
-		m_3dPixScrollWidget->getPixWidget()->resetContrastIntensity();
-		m_3dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//二维 对话框亮度调整  对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dBrightnessIntensityChanged, [this](double intensity)
-	{
-		m_2dPixScrollWidget->getPixWidget()->setBrightness(intensity);
-		m_2dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//二维 亮度重置 对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_2dResetBrightnessIntensity, [this]() {
-		m_2dPixScrollWidget->getPixWidget()->resetBrightness();
-		m_2dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//三维 对话框亮度调整  对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dBrightnessIntensityChanged, [this](double intensity)
-	{
-		m_3dPixScrollWidget->getPixWidget()->setBrightness(intensity);
-		m_3dPixScrollWidget->getPixWidget()->update();
-	});
-
-	//三维 亮度重置 对应视图更新
-	connect(m_adjustImageWidget, &adjustImageWidget::signal_3dResetBrightnessIntensity, [this]() {
-		m_3dPixScrollWidget->getPixWidget()->resetBrightness();
-		m_3dPixScrollWidget->getPixWidget()->update();
-	});
-
 	//里程跳转对话框 发送跳转信号，二维视图跳转
 	// todo三维跳转
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_updateScrollValue,
@@ -992,6 +1006,17 @@ void hnRoadDataProcess::createConnect()
 
 	//深度计算设置
 	connect(m_projectConfgDialog, &hnProjectConfig::signal_isDepthCaculate, this, &hnRoadDataProcess::slot_setDepthCaculate);
+	connect(m_projectConfgDialog, &hnProjectConfig::signal_wheelScrollOneImageChanged, this, [this](bool enabled)
+	{
+		if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+		{
+			m_2dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
+		}
+		if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+		{
+			m_3dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
+		}
+	});
 
 #ifdef 地图
 	
@@ -1116,6 +1141,14 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 		m_changeProjectOutMileAct = new QAction(projectIcon, QStringLiteral("&多工程桩号设置"), this);
 		projectChangePanel->addLargeAction(m_changeProjectOutMileAct);
 
+	}
+	{
+		QIcon lineCameraIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+			QIcon(QStringLiteral(":/icons/icons/识别CP3.png")));
+		m_adjustLineCameraAreaAct = new QAction(lineCameraIcon, QStringLiteral("调整线阵有效区域"), this);
+		m_adjustLineCameraAreaAct->setToolTip(QStringLiteral("在线阵二维视图中拖动左右边界，调整有效道路区域"));
+		m_adjustLineCameraAreaAct->setEnabled(false);
+		projectChangePanel->addLargeAction(m_adjustLineCameraAreaAct);
 	}
 
 
@@ -1611,6 +1644,7 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 			}
 		}
 	}
+	updateLineCameraAreaActionState();
 	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 		<< "item=" << selectedItemText
@@ -1681,12 +1715,18 @@ void hnRoadDataProcess::slot_calculateIrm()
 }
 void hnRoadDataProcess::slot_compute()
 {
-
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
 	}
-	PROJECT_TYPE type = 	hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
+	if (m_geometryCalculationThread && m_geometryCalculationThread->isRunning())
+	{
+		QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("几何线型正在计算，请等待当前任务结束。"));
+		return;
+	}
+
+	auto* curProject = hnDataManager::getDataManager()->getCurrentProject();
+	PROJECT_TYPE type = curProject->getProjectType();
 	if (type != PROJECT_TYPE::PROJECT_23D_TYPE&&
 		type != PROJECT_TYPE::PROJECT_JD_3D_TYPE&&
 		type != PROJECT_TYPE::PROJECT_XD_3D_TYPE)
@@ -1695,74 +1735,105 @@ void hnRoadDataProcess::slot_compute()
 		 
 		return;
 	}
-	auto* curProject = hnDataManager::getDataManager()->getCurrentProject();
-	hnCalRoadGeometry calRoadGeo; 
-	double dBaseRoll = 0.0;
-	double dBasePitch = 0.0;
+
 	QString basePath = curProject->get3DProPath();
 	QDir dir(basePath);
 	dir.cdUp();
 	QString parentPath = dir.absolutePath();
-	QString sep = QDir::separator();
-	QString strPos = parentPath + sep + "POS" + sep + "IE" + sep ;
+	QString strPos = QDir(parentPath).filePath(QStringLiteral("POS/IE"));
 	QDir posDir(strPos);
-	QStringList filters; 
-	filters << "*.pos";
-	
-	posDir.setNameFilters(filters);
+	posDir.setNameFilters(QStringList() << QStringLiteral("*.pos"));
 	posDir.setFilter(QDir::Files | QDir::NoSymLinks);
-	QFileInfoList fileLst =  posDir.entryInfoList();
+	posDir.setSorting(QDir::Name);
+	QFileInfoList fileLst = posDir.entryInfoList();
 	if (fileLst.isEmpty())
 	{
 		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), strPos + QString::fromLocal8Bit("\nPOS文件不存在，请检查!"), QString::fromLocal8Bit("确定"));
-
 		return;
 	}
-	QFileInfo file = fileLst.first(); 
-	string tempPath = file .absoluteFilePath().toLocal8Bit();
-	calRoadGeo.setBaseParam(dBaseRoll, dBasePitch, tempPath. c_str());
-	vector<hnRoadGeoParam> vecRoadGeoParam;
-	QVector<hnMile> curMiles = 	curProject->getCurrentMileVector();
-	double  roadLength = curProject->getCurProSetInfo().dEndEnclMile;
-	int dist = 1;
-	for (int i = 0; i <= roadLength; i+= dist)
-	{
-		hnRoadGeoParam roadGeoParam;
-		roadGeoParam.dMileage = i;
-		vecRoadGeoParam.push_back(roadGeoParam);
-	} 
-	QProgressDialog pd(QString::fromLocal8Bit("正在读取空间地理信息..."), QString::fromLocal8Bit("取消"), 0, 100, this);
-	pd.setWindowModality(Qt::WindowModal);
-	pd.show();
-	g_pgDlg = &pd;
-	calRoadGeo.calRoadGeometeryNew1(vecRoadGeoParam, dist, progressCallback);
-	g_pgDlg = nullptr;
-	pd.close();
-	
-	QString outPath;
-	if (type== PROJECT_23D_TYPE )
-	{
-		outPath = QString("%1/Geoalig_%2m.txt").arg(curProject->get2DProPath()).arg(QString::number(dist));
-	}
-	else
-	{
-		outPath = QString("%1/Geoalig_%2m.txt").arg(curProject->get3DProPath()).arg(QString::number(dist));
-	}
-	QFile gps2MileFile(outPath);
 
-	if (!gps2MileFile.open(QIODevice::WriteOnly | QIODevice::Text)) return ;
-	QTextStream gps2MileOut(&gps2MileFile);
-	int  dmi = 0;
-	for (const hnRoadGeoParam& item : vecRoadGeoParam)
+	GeometryCalculationInput input;
+	for (const QFileInfo& file : fileLst)
+		input.posFiles.append(file.absoluteFilePath());
+	input.projectLength = curProject->getCurProSetInfo().dEndEnclMile;
+	input.options.sampleSpacing = 1.0;
+	input.options.outputSpacing = 10.0;
+	input.options.longitudinalWindow = 1.0;
+
+	const QString project3DRoot = QDir(curProject->get3DProPath()).filePath(curProject->get3DProName());
+	input.camPath = QDir(project3DRoot).filePath(QStringLiteral("PointCloud/1/Mms-Cam-1.cam"));
+	if (!QFileInfo::exists(input.camPath))
 	{
-		QString line = QString::number(dmi) + "," + QString::number(item.dC) + "," + QString::number(item.dVAngle) + ","
-			+ QString::number(item.dHAngle);
-			gps2MileOut << line << "\n";
-			dmi += 10;
+		input.camPath = QDir(project3DRoot).filePath(QStringLiteral("PointCloud/1/iScan-Cam-1.cam"));
 	}
-	gps2MileFile.close();
-	QMessageBox::information(this, QStringLiteral("提示窗口"), QStringLiteral("几何线型数据计算完毕，可进行报表输出！"),
-		QString::fromLocal8Bit("确定"));
+	input.scanParameterPath = QDir(project3DRoot).filePath(QStringLiteral("Mms-Para.db"));
+	const QString resultDirectory = type == PROJECT_23D_TYPE
+		? curProject->get2DProPath() : curProject->get3DProPath();
+	input.resultPath = QDir(resultDirectory).filePath(QStringLiteral("Geoalig_10m.txt"));
+
+	if (input.projectLength <= 0.0 || !QFileInfo::exists(input.camPath)
+		|| !QFileInfo::exists(input.scanParameterPath))
+	{
+		QMessageBox::critical(this, QStringLiteral("几何线型计算失败"),
+			QStringLiteral("工程长度、点云相机文件或Mms-Para.db无效，请检查三维工程数据。\n相机文件：%1\n参数文件：%2")
+			.arg(input.camPath, input.scanParameterPath));
+		return;
+	}
+
+	auto* progressDialog = new QProgressDialog(QStringLiteral("正在校验几何计算输入..."),
+		QStringLiteral("取消"), 0, 100, this);
+	progressDialog->setWindowTitle(QStringLiteral("计算路面几何状况"));
+	progressDialog->setWindowModality(Qt::WindowModal);
+	progressDialog->setMinimumDuration(0);
+	progressDialog->setAutoClose(false);
+	progressDialog->setAutoReset(false);
+
+	m_geometryCalculationThread = new hnGeometryCalculationThread(input, this);
+	m_ComputeGeoaligAction->setEnabled(false);
+	if (m_projectWidget)
+		m_projectWidget->setEnabled(false);
+
+	auto* progressTimer = new QTimer(progressDialog);
+	connect(progressTimer, &QTimer::timeout, this, [this, progressDialog]() {
+		if (!m_geometryCalculationThread)
+			return;
+		progressDialog->setValue(m_geometryCalculationThread->progressValue());
+		const QString text = m_geometryCalculationThread->progressText();
+		if (!text.isEmpty())
+			progressDialog->setLabelText(text);
+	});
+	connect(progressDialog, &QProgressDialog::canceled, this, [this, progressDialog]() {
+		if (m_geometryCalculationThread)
+			m_geometryCalculationThread->requestCancel();
+		progressDialog->setLabelText(QStringLiteral("正在安全取消，请稍候..."));
+	});
+	connect(m_geometryCalculationThread, &QThread::finished, this,
+		[this, progressDialog, progressTimer]() {
+		progressTimer->stop();
+		const GeometryCalculationResult result = m_geometryCalculationThread->result();
+		m_geometryCalculationThread->deleteLater();
+		m_geometryCalculationThread = nullptr;
+		m_ComputeGeoaligAction->setEnabled(true);
+		if (m_projectWidget)
+			m_projectWidget->setEnabled(true);
+		progressDialog->close();
+		progressDialog->deleteLater();
+
+		if (result.status == GeometryCalculationStatus::Success)
+		{
+			QMessageBox::information(this, QStringLiteral("提示窗口"),
+				QStringLiteral("几何线型数据计算完毕，共生成%1个10米结果，可进行报表输出！")
+				.arg(result.outputSamples.size()));
+		}
+		else if (result.status != GeometryCalculationStatus::Cancelled)
+		{
+			QMessageBox::critical(this, QStringLiteral("几何线型计算失败"), result.errorMessage);
+		}
+	});
+
+	progressTimer->start(100);
+	progressDialog->show();
+	m_geometryCalculationThread->start();
 }
 void hnRoadDataProcess::slot_clearIrm()
 {
@@ -1828,7 +1899,7 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 		return;
 	}
 
-	m_centerToast->showMessage(QStringLiteral("进入绘制病害模式"), QStringLiteral("左键绘制病害区域,右键退出当前绘制", 2000));
+	m_centerToast->showMessage(QStringLiteral("进入绘制病害模式"), QStringLiteral("左键绘制病害区域,右键退出当前绘制"), 2000);
 
 	//路面破损窗口设置为画病害模式
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
@@ -1852,7 +1923,7 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 {
-	m_centerToast->showMessage(QStringLiteral("进入删除病害模式"), QStringLiteral("左键点击病害删除", 2000));
+	m_centerToast->showMessage(QStringLiteral("进入删除病害模式"), QStringLiteral("左键点击病害删除"), 2000);
 
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -1875,7 +1946,7 @@ void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToEditDiseaseMode()
 {
-	m_centerToast->showMessage(QStringLiteral("进入编辑病害模式"), QStringLiteral("左键点击病害区域,右键退出当前编辑", 2000));
+	m_centerToast->showMessage(QStringLiteral("进入编辑病害模式"), QStringLiteral("左键点击病害区域,右键退出当前编辑"), 2000);
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -3279,6 +3350,7 @@ void hnRoadDataProcess::updateAllWidget()
 		this->m_3dPixScrollWidget->update();
 	}
 	this->m_diseaseListWidget->updateAllDiseases();
+	updateLineCameraAreaActionState();
 }
 void hnRoadDataProcess::updatePixWidget()
 {
@@ -3953,6 +4025,13 @@ void hnRoadDataProcess::openLastProjectSlot()
 		<< "elapsedMs=" << stepTimer.elapsed()
 		<< "projectCount=" << m_projectDataInfos.size();
 	#endif
+	if (!ensureLineCameraAreasForRecentProjects(m_projectDataInfos, this))
+	{
+		#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=lineCameraAreaNotConfigured";
+		#endif
+		return;
+	}
 
 	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
  
@@ -4460,7 +4539,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 	file.close();
 
 	QList<QString> tempStrs;
-	QSet<QString> filterSet = { "G", "g", "�" };
+	QSet<QString> filterSet = { "G", "g", "?" };
 
 	QList<QString> filteredList;
 	for (const QString &item : syntrigstrs)
@@ -5623,19 +5702,12 @@ void hnRoadDataProcess::slot_outputExcel()
 	}
 	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
 	auto allPorject = manager->getAllBaseProject();
-	auto defaultStarndar = HnProjectEnums::roadTypeQStringToEnum(allPorject.at(0)->getCurProSetInfo().strRoadStandard);
-	auto defaultDrawType = allPorject.at(0)->getCurProSetInfo().nDrawType;
-	for each (auto project in allPorject)
+	QString compatibilityError;
+	if (!hnOutputExcelDialog::validateProjectCompatibility(allPorject, compatibilityError))
 	{
-		auto starndar = HnProjectEnums::roadTypeQStringToEnum(project->getCurProSetInfo().strRoadStandard);
-		auto drawType = project->getCurProSetInfo().nDrawType;
-		if (starndar != defaultStarndar || drawType != defaultDrawType)
-		{
-			QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("多模式出表需要保证所有工程的[道路标准及绘制方式]一致,请检查数据或尝试单独导入工程出表！"),
-				QStringLiteral("确定"));
-			return;
-		}
-
+		QMessageBox::warning(this, QStringLiteral("无法进行多工程出表"), compatibilityError,
+			QStringLiteral("确定"));
+		return;
 	}
 	m_xrSetting->outExcel = false;
 	if (m_outExcelDialog == nullptr)
@@ -5725,6 +5797,33 @@ void hnRoadDataProcess::slot_outputExcel()
 	}
 #endif
 					}
+
+void hnRoadDataProcess::slot_adjustLineCameraArea()
+{
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->isLineCameraProject())
+	{
+		QMessageBox::information(this, QStringLiteral("线阵有效区域"), QStringLiteral("当前工程不是线阵相机工程。"));
+		return;
+	}
+	if (!m_2dPixScrollWidget || !m_2dPixScrollWidget->getPixWidget() ||
+		!m_2dPixScrollWidget->getPixWidget()->startLineCameraAreaAdjustment())
+	{
+		QMessageBox::warning(this, QStringLiteral("线阵有效区域"), QStringLiteral("二维视图尚未准备完成，无法调整有效区域。"));
+	}
+}
+
+void hnRoadDataProcess::updateLineCameraAreaActionState()
+{
+	if (!m_adjustLineCameraAreaAct)
+	{
+		return;
+	}
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	const bool adjusting = m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget() &&
+		m_2dPixScrollWidget->getPixWidget()->isLineCameraAreaAdjusting();
+	m_adjustLineCameraAreaAct->setEnabled(project && project->isLineCameraProject() && !adjusting);
+}
 
 void hnRoadDataProcess::slot_outAllResultDatas()
 {
@@ -6050,7 +6149,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 
 			xlsx.write(rowIndex, colIndex++, projectInfo.nDrawType);
 			xlsx.write(rowIndex, colIndex++, project->getProjectType());
-			xlsx.write(rowIndex, colIndex++, projectInfo.dRoadWidth);
+			xlsx.write(rowIndex, colIndex++, project->effectiveRoadWidth());
 #pragma endregion
 
 #pragma region 写入路面病害数据
@@ -6100,11 +6199,8 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					if (dis.vec2dRect.size() != 0)
 					{
 						auto hn2drect = dis.vec2dRect.at(0);
-						const double widthScale = project->getCurProSetInfo().dRadioX;
-						const double roadWidth = project->getCurProSetInfo().dRoadWidth;
-						//	distance = roadWidth - ((hn2drect.p0.x + hn2drect.p1.x) / 2.0) * widthScale;
-						distance = (((hn2drect.p1.x - hn2drect.p0.x) / 2.0) + hn2drect.p0.x) * widthScale;
-						distance = roadWidth - distance;
+						const double centerPixel = (hn2drect.p0.x + hn2drect.p1.x) / 2.0;
+						distance = projectDistanceFromRightEdge(project, centerPixel);
 					}
 
 					xlsx.write(QString("G%1").arg(rowCount), distance);
@@ -6221,15 +6317,12 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 					if (dis.vec2dRect.size() != 0)
 					{
 						QMap<double, double> centerMap;
-						const double widthScale = project->getCurProSetInfo().dRadioX;
-						const double roadWidth = project->getCurProSetInfo().dRoadWidth;
 						for (auto hn2drect : qAsConst(dis.vec2dRect))
 						{
 							double rectCenter = (hn2drect.p0.x + hn2drect.p1.x) / 2.0;
 							centerMap.insert(rectCenter, rectCenter);
 						}
-						distance = roadWidth - (((centerMap.first() + centerMap.last()) / 2.0)* widthScale);
-						//distance = roadWidth - distance;
+						distance = projectDistanceFromRightEdge(project, (centerMap.first() + centerMap.last()) / 2.0);
 					}
 
 					xlsx.write(QString("G%1").arg(rowCount), distance);

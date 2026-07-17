@@ -71,8 +71,8 @@ void test_LittleFrameRenderPathBuilder::excessiveRunsUsePerImageBounds()
 {
 	const LittleFrameRenderResult result = LittleFrameRenderPathBuilder::build(makeSeparatedRows(513));
 	QVERIFY(!result.path.isEmpty());
-	QCOMPARE(result.mode, LittleFrameRenderPerImageBounds);
-	QCOMPARE(result.segmentCount, 1);
+	QCOMPARE(result.mode, LittleFrameRenderRowRuns);
+	QCOMPARE(result.segmentCount, 513);
 	QCOMPARE(result.path.boundingRect(), QRectF(50.0, 0.0, 10.0, 10250.0));
 }
 

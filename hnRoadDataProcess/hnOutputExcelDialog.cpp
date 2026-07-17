@@ -22,6 +22,8 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QDoubleValidator>
+#include <QHeaderView>
+#include <QTableWidget>
 #include <QtGlobal>
 #include "hnReportProjectInfo.h"
 
@@ -42,17 +44,110 @@ namespace
 		comboBox->setCurrentIndex(index);
 	}
 
-	bool reportProjectInfoFromUi(const Ui::hnOutputExcelDialog& ui, hnReportProjectInfo::Data& data)
+	void reportCommonProjectInfoFromUi(const Ui::hnOutputExcelDialog& ui, hnReportProjectInfo::Data& data)
 	{
-		bool widthOk = false;
-		data.roadWidth = ui.lineEdit_7->text().trimmed().toDouble(&widthOk);
 		data.maintenanceUnit = ui.lineEdit_4->text().trimmed();
 		data.laneType = ui.lineEdit_6->text().trimmed();
 		data.taskYear = ui.comboBox_5->currentText().trimmed();
 		data.inspectionCount = ui.comboBox_6->currentText().trimmed();
 		data.regionCode = ui.lineEdit_8->text().trimmed();
-		return widthOk && qIsFinite(data.roadWidth) && data.roadWidth > 0.0;
 	}
+
+	QString projectDisplayName(hnPro::hnProject* project)
+	{
+		if (!project)
+		{
+			return QStringLiteral("<空工程>");
+		}
+		QString name = project->get2DProName();
+		if (name.isEmpty())
+		{
+			name = project->get3DProName();
+		}
+		return name.isEmpty() ? QStringLiteral("<未命名工程>") : name;
+	}
+
+	QString drawTypeText(int drawType)
+	{
+		switch (drawType)
+		{
+		case 0:
+			return QStringLiteral("人工模式");
+		case 1:
+			return QStringLiteral("自动化模式");
+		case 2:
+			return QStringLiteral("设计模式");
+		default:
+			return QStringLiteral("未知模式(%1)").arg(drawType);
+		}
+	}
+
+	QString projectTypeText(PROJECT_TYPE projectType)
+	{
+		switch (projectType)
+		{
+		case PROJECT_TYPE::PROJECT_2D_TYPE:
+			return QStringLiteral("二维工程");
+		case PROJECT_TYPE::PROJECT_23D_TYPE:
+			return QStringLiteral("二三维工程");
+		case PROJECT_TYPE::PROJECT_XD_3D_TYPE:
+			return QStringLiteral("三维工程");
+		default:
+			return QStringLiteral("未知工程类型(%1)").arg(static_cast<int>(projectType));
+		}
+	}
+}
+
+bool hnOutputExcelDialog::validateProjectCompatibility(const std::vector<hnPro::hnProject*>& projects, QString& errorMessage)
+{
+	errorMessage.clear();
+	if (projects.empty() || !projects.front())
+	{
+		errorMessage = QStringLiteral("当前没有可用于出表的工程。");
+		return false;
+	}
+
+	hnPro::hnProject* baseProject = projects.front();
+	const auto baseInfo = baseProject->getCurProSetInfo();
+	const PROJECT_TYPE baseProjectType = baseProject->getProjectType();
+	const QString baseStandard = QString::fromLocal8Bit(baseInfo.strRoadStandard);
+	const int baseDrawType = baseInfo.nDrawType;
+	QStringList differences;
+
+	for (hnPro::hnProject* project : projects)
+	{
+		if (!project)
+		{
+			differences.append(QStringLiteral("存在空工程对象"));
+			continue;
+		}
+		const auto info = project->getCurProSetInfo();
+		const QString name = projectDisplayName(project);
+		const QString standard = QString::fromLocal8Bit(info.strRoadStandard);
+		if (project->getProjectType() != baseProjectType)
+		{
+			differences.append(QStringLiteral("工程【%1】工程类型为%2，期望%3")
+				.arg(name, projectTypeText(project->getProjectType()), projectTypeText(baseProjectType)));
+		}
+		if (standard != baseStandard)
+		{
+			differences.append(QStringLiteral("工程【%1】道路标准为【%2】，期望【%3】")
+				.arg(name, standard, baseStandard));
+		}
+		if (info.nDrawType != baseDrawType)
+		{
+			differences.append(QStringLiteral("工程【%1】绘制方式为%2，期望%3")
+				.arg(name, drawTypeText(info.nDrawType), drawTypeText(baseDrawType)));
+		}
+	}
+
+	if (!differences.isEmpty())
+	{
+		errorMessage = QStringLiteral("同一次多工程出表要求工程类型、道路标准和绘制方式一致。\n\n%1")
+			.arg(differences.join(QStringLiteral("\n")));
+		return false;
+	}
+	return true;
 }
 
 
@@ -86,22 +181,6 @@ hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
 	preStandard = defaultStarndar;
 	m_nowProjectType = allPorject.at(0)->getProjectType();
 	preNowProjectType = m_nowProjectType;
-	//做个检查  必须保证 导入的工程 工程类型 ，道路标准是一致的才允许出表  
-	for (auto pro : allPorject)
-	{
-		auto	nowTempStarndar = HnProjectEnums::roadTypeQStringToEnum(pro->getCurProSetInfo().strRoadStandard);
-		if (nowTempStarndar != m_nowStandard)
-		{
-			QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), QString::fromLocal8Bit("请保证所有工程的道路标准一致!"));
-			return;
-		}
-		auto	 nowTempProjectType = pro->getProjectType();
-		if (nowTempProjectType != m_nowProjectType)
-		{
-			QMessageBox::critical(nullptr, QString::fromLocal8Bit("错误"), QString::fromLocal8Bit("请保证所有工程的工程类型一致!"));
-			return;
-		}
-	}
 	if (m_nowProjectType == PROJECT_TYPE::PROJECT_2D_TYPE || m_nowProjectType == PROJECT_TYPE::PROJECT_23D_TYPE)
 	{
 		//这个地方在打开工程的时候已经运行过了 
@@ -156,16 +235,112 @@ void hnOutputExcelDialog::setSettingFrom()
 	}
 	if (projects.size() > 1)
 	{
-		ui.groupBox_12->setTitle(QStringLiteral("工程信息（应用到当前全部工程）"));
+		ui.groupBox_12->setTitle(QStringLiteral("工程信息（公共信息应用到当前全部工程）"));
 	}
 
 	const hnReportProjectInfo::Data data = hnReportProjectInfo::load(projects.at(0));
-	ui.lineEdit_7->setText(QString::number(data.roadWidth, 'g', 12));
+	if (projects.size() == 1)
+	{
+		ui.lineEdit_7->setText(QString::number(data.roadWidth, 'g', 12));
+		const bool lineCamera = projects.at(0)->isLineCameraProject();
+		ui.lineEdit_7->setReadOnly(lineCamera);
+		ui.lineEdit_7->setToolTip(lineCamera
+			? QStringLiteral("线阵工程道路宽度由有效区域自动计算，不允许手工修改。")
+			: QString());
+	}
+	else
+	{
+		setupMultiProjectWidthTable(projects);
+	}
 	ui.lineEdit_4->setText(data.maintenanceUnit);
 	ui.lineEdit_6->setText(data.laneType);
 	setReportComboText(ui.comboBox_5, data.taskYear);
 	setReportComboText(ui.comboBox_6, data.inspectionCount);
 	ui.lineEdit_8->setText(data.regionCode);
+}
+
+void hnOutputExcelDialog::setupMultiProjectWidthTable(const std::vector<hnPro::hnProject*>& projects)
+{
+	m_reportProjects = projects;
+	ui.label_3->setVisible(false);
+	ui.lineEdit_7->setVisible(false);
+
+	if (!m_projectWidthTable)
+	{
+		m_projectWidthTable = new QTableWidget(ui.groupBox_12);
+		m_projectWidthTable->setColumnCount(5);
+		m_projectWidthTable->setHorizontalHeaderLabels(QStringList()
+			<< QStringLiteral("工程名称")
+			<< QStringLiteral("道路标准")
+			<< QStringLiteral("绘制方式")
+			<< QStringLiteral("检测路面宽度(m)")
+			<< QStringLiteral("宽度来源"));
+		m_projectWidthTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+		m_projectWidthTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+		m_projectWidthTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+		m_projectWidthTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+		m_projectWidthTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+		m_projectWidthTable->verticalHeader()->setVisible(false);
+		m_projectWidthTable->setAlternatingRowColors(true);
+		m_projectWidthTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+		m_projectWidthTable->setMinimumHeight(150);
+		m_projectWidthTable->setMaximumHeight(260);
+		ui.gridLayout_3->addWidget(m_projectWidthTable, 7, 0, 1, 2);
+	}
+
+	m_projectWidthTable->setRowCount(static_cast<int>(projects.size()));
+	for (int row = 0; row < static_cast<int>(projects.size()); ++row)
+	{
+		hnPro::hnProject* project = projects.at(row);
+		const auto info = project->getCurProSetInfo();
+		const hnReportProjectInfo::Data reportInfo = hnReportProjectInfo::load(project);
+		QTableWidgetItem* nameItem = new QTableWidgetItem(projectDisplayName(project));
+		QTableWidgetItem* standardItem = new QTableWidgetItem(QString::fromLocal8Bit(info.strRoadStandard));
+		QTableWidgetItem* drawTypeItem = new QTableWidgetItem(drawTypeText(info.nDrawType));
+		QTableWidgetItem* widthItem = new QTableWidgetItem(QString::number(reportInfo.roadWidth, 'g', 12));
+		const bool lineCamera = project->isLineCameraProject();
+		QTableWidgetItem* sourceItem = new QTableWidgetItem(lineCamera
+			? QStringLiteral("线阵有效区域")
+			: (hnReportProjectInfo::hasSavedRoadWidth(project)
+				? QStringLiteral("报表配置") : QStringLiteral("工程道路宽度")));
+		nameItem->setFlags(nameItem->flags() & ~Qt::ItemIsEditable);
+		standardItem->setFlags(standardItem->flags() & ~Qt::ItemIsEditable);
+		drawTypeItem->setFlags(drawTypeItem->flags() & ~Qt::ItemIsEditable);
+		sourceItem->setFlags(sourceItem->flags() & ~Qt::ItemIsEditable);
+		if (lineCamera)
+		{
+			widthItem->setFlags(widthItem->flags() & ~Qt::ItemIsEditable);
+			widthItem->setToolTip(QStringLiteral("线阵工程道路宽度由有效区域自动计算。"));
+		}
+		m_projectWidthTable->setItem(row, 0, nameItem);
+		m_projectWidthTable->setItem(row, 1, standardItem);
+		m_projectWidthTable->setItem(row, 2, drawTypeItem);
+		m_projectWidthTable->setItem(row, 3, widthItem);
+		m_projectWidthTable->setItem(row, 4, sourceItem);
+	}
+}
+
+bool hnOutputExcelDialog::projectRoadWidthsFromUi(QMap<hnPro::hnProject*, double>& widths, int& invalidRow) const
+{
+	widths.clear();
+	invalidRow = -1;
+	if (!m_projectWidthTable || m_projectWidthTable->rowCount() != static_cast<int>(m_reportProjects.size()))
+	{
+		return false;
+	}
+	for (int row = 0; row < m_projectWidthTable->rowCount(); ++row)
+	{
+		QTableWidgetItem* widthItem = m_projectWidthTable->item(row, 3);
+		bool widthOk = false;
+		const double width = widthItem ? widthItem->text().trimmed().toDouble(&widthOk) : 0.0;
+		if (!widthOk || !qIsFinite(width) || width <= 0.0)
+		{
+			invalidRow = row;
+			return false;
+		}
+		widths.insert(m_reportProjects.at(row), width);
+	}
+	return true;
 }
 
 
@@ -449,12 +624,36 @@ void hnOutputExcelDialog::onOkButton()
 {
 	m_xrSetting->ExcelErrorMessageList.clear();
 	setSetting();
-	hnReportProjectInfo::Data reportProjectInfo;
-	if (!reportProjectInfoFromUi(ui, reportProjectInfo))
+	hnReportProjectInfo::Data commonReportProjectInfo;
+	reportCommonProjectInfoFromUi(ui, commonReportProjectInfo);
+	QMap<hnPro::hnProject*, double> projectWidths;
+	int invalidWidthRow = -1;
+	if (isSingleProject)
 	{
-		QMessageBox::critical(this, QStringLiteral("参数错误"), QStringLiteral("检测路面宽度必须是大于 0 的有效数字。"));
-		ui.lineEdit_7->setFocus();
-		ui.lineEdit_7->selectAll();
+		bool widthOk = false;
+		const double width = ui.lineEdit_7->text().trimmed().toDouble(&widthOk);
+		if (!widthOk || !qIsFinite(width) || width <= 0.0)
+		{
+			QMessageBox::critical(this, QStringLiteral("参数错误"), QStringLiteral("检测路面宽度必须是大于 0 的有效数字。"));
+			ui.lineEdit_7->setFocus();
+			ui.lineEdit_7->selectAll();
+			return;
+		}
+		projectWidths.insert(m_currentPorject, width);
+	}
+	else if (!projectRoadWidthsFromUi(projectWidths, invalidWidthRow))
+	{
+		QMessageBox::critical(this, QStringLiteral("参数错误"),
+			invalidWidthRow >= 0
+			? QStringLiteral("工程【%1】的检测路面宽度必须是大于 0 的有效数字。")
+				.arg(m_projectWidthTable->item(invalidWidthRow, 0)->text())
+			: QStringLiteral("无法读取多工程检测路面宽度。"));
+		if (invalidWidthRow >= 0)
+		{
+			m_projectWidthTable->setCurrentCell(invalidWidthRow, 3);
+			m_projectWidthTable->scrollToItem(m_projectWidthTable->item(invalidWidthRow, 3));
+			m_projectWidthTable->editItem(m_projectWidthTable->item(invalidWidthRow, 3));
+		}
 		return;
 	}
 	//弹出对话框 让用户设置输出位置
@@ -489,7 +688,11 @@ void hnOutputExcelDialog::onOkButton()
 	auto allProject = manager->getAllBaseProject(); 
 	for (auto project : allProject)
 	{
-		if (!hnReportProjectInfo::save(project, reportProjectInfo))
+		hnReportProjectInfo::Data projectReportInfo = commonReportProjectInfo;
+		projectReportInfo.roadWidth = project->isLineCameraProject()
+			? project->effectiveRoadWidth()
+			: projectWidths.value(project, 0.0);
+		if (!hnReportProjectInfo::save(project, projectReportInfo))
 		{
 			QMessageBox::critical(this, QStringLiteral("保存失败"),
 				QStringLiteral("无法把工程信息写入工程配置文件：\n%1")

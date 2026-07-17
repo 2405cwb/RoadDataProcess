@@ -176,6 +176,7 @@
     <ClCompile Include="src\TiledGraphicsView.cpp" />
     <ClCompile Include="src\TunnelSectionItem.cpp" />
     <ClCompile Include="src\TunnelViewerController.cpp" />
+    <ClCompile Include="src\VirtualImageSequence.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\AbstractSourceFactory.h" />
@@ -185,6 +186,7 @@
     <ClInclude Include="include\PackImageTileSource.h" />
     <ClInclude Include="include\WholeImageSourceFactory.h" />
     <ClInclude Include="include\WholeImageTileSource.h" />
+    <ClInclude Include="include\VirtualImageSequence.h" />
     <QtMoc Include="include\items\DefectShapeItem.h" />
     <ClInclude Include="include\tools\AbstractTool.h" />
     <ClInclude Include="include\tools\DefectDrawTool.h" />

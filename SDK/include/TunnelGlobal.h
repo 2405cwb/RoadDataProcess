@@ -7,6 +7,7 @@
 #include <QString>
 #include <QtGlobal>
 #include <QVariantMap>
+#include <QSize>
 
 /* 视图模式 老项目继续用这些名字 */ enum ViewMode {
     Mode_Browse,
@@ -28,6 +29,23 @@ struct PackRouteOptions {
     bool hMirrored = false;
     bool vMirrored = false;
     bool verifyOnOpen = false;
+};
+
+// Resource limits for ordinary-image and Pack sequences.  These options tune
+// one implementation; they never select a different path based on image count.
+struct SequenceLoadOptions {
+    QSize knownFrameSize;
+    int chunkFrameCount = 512;
+    int thumbnailMaxEdge = 1024;
+    qint64 decodedCacheBytes = 256LL * 1024LL * 1024LL;
+    int maxDecodeJobs = 0; // 0 = clamp(idealThreadCount / 2, 1, 4)
+    int prefetchForwardScreens = 2;
+    int prefetchBackwardScreens = 1;
+};
+
+enum class ContentMode {
+    DatabaseTiles,
+    VirtualSequence
 };
 
 struct PackRouteFrameInfo {

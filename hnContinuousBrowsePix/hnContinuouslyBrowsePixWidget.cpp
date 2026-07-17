@@ -30,7 +30,7 @@ hnContinuouslyBrowsePixWidget::hnContinuouslyBrowsePixWidget(QWidget *parent)
 	: QWidget(parent)
 {
 	
-	this->m_playSpeed = 2; 
+
 	xrSetting = HnXRSettings::getInstance();
 }
 
@@ -40,7 +40,7 @@ hnContinuouslyBrowsePixWidget::hnContinuouslyBrowsePixWidget(hnBrowsePixWidget *
 
 	 
 	xrSetting = HnXRSettings::getInstance();
-	this->m_playSpeed = 2;
+
 	//接受传入的
 	this->m_browsePixWidget = showPixWidget;
 	
@@ -86,8 +86,20 @@ void hnContinuouslyBrowsePixWidget::init()
 {
 	this->setWindowTitle("图像显示");
 
-	// SDK owns browsing now; the old automatic page playback stays disabled.
+	// 自动播放固定为每秒前进一张图片，不再使用旧的速度加减逻辑。
 	this->m_autoPlay = false;
+	if (!m_autoPlayTimer)
+	{
+		m_autoPlayTimer = new QTimer(this);
+		m_autoPlayTimer->setInterval(1000);
+		connect(m_autoPlayTimer, &QTimer::timeout, this, [this]()
+		{
+			if (!m_autoPlay || !stepOneImage())
+			{
+				stopAutoPlay();
+			}
+		});
+	}
 	
 
 	this->m_mainLayout = new QHBoxLayout();
@@ -136,25 +148,6 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	QPushButton*  snBtn = new QPushButton(QStringLiteral("水泥"));
 	snBtn->setFixedWidth(50);
 
-	//playBtn = new QPushButton(QStringLiteral("播放"));
-	playBtn = new QPushButton;
-	QIcon m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-		  QIcon(QStringLiteral(":/new/prefix1/Icon/Media_16x16.png")));
-	  playBtn->setIcon(m_icon_temp);
-	playBtn->setFixedWidth(30);
-
-	addSpeedBtn = new QPushButton;
-	m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/new/prefix1/Icon/Add_16x16.png")));
-	addSpeedBtn->setIcon(m_icon_temp);
-	addSpeedBtn->setFixedWidth(30);
-	 
-
-	subBtn = new QPushButton;
-	m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-		QIcon(QStringLiteral(":/new/prefix1/Icon/Remove_16x16.png")));
-	subBtn->setIcon(m_icon_temp);
-	subBtn->setFixedWidth(30);
 	/*QPushButton*  ssBtnTest = new QPushButton(QStringLiteral("??"));
 	ssBtnTest ->setFixedSize(20,20);
 	QString sheet = QString("QPushButton{border - radius:25px;color:green;background - position:center;background - repeat:no - repeat;background - color:red;}");
@@ -200,11 +193,25 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	
 	toolBarLayout->addWidget(jumpBtn);
 
-	toolBarLayout->addWidget(playBtn);
-	toolBarLayout->addWidget(addSpeedBtn);
-	toolBarLayout->addWidget(subBtn);
+	addAutoPlayControl(toolBarLayout);
 	toolBarLayout->addWidget(markBtn);
 	toolBarLayout->addWidget(showGpsBtn);
+
+	auto brightnessLabel = new QLabel(QString::fromUtf8("\xE4\xBA\xAE\xE5\xBA\xA6"));
+	auto brightnessSlider = new QSlider(Qt::Horizontal);
+	brightnessSlider->setRange(-100, 100);
+	brightnessSlider->setValue(0);
+	brightnessSlider->setFixedWidth(120);
+	brightnessSlider->setToolTip(QString::fromUtf8("\xE8\xB0\x83\xE6\x95\xB4\xE5\xBD\x93\xE5\x89\x8D\xE8\xB7\xAF\xE9\x9D\xA2\xE5\xBD\xB1\xE5\x83\x8F\xE4\xBA\xAE\xE5\xBA\xA6\xEF\xBC\x8C\xE5\x8F\x8C\xE5\x87\xBB\xE5\x8F\xAF\xE6\x81\xA2\xE5\xA4\x8D\xE9\xBB\x98\xE8\xAE\xA4"));
+	auto brightnessValueLabel = new QLabel(QStringLiteral("0"));
+	brightnessValueLabel->setFixedWidth(28);
+	auto brightnessResetBtn = new QPushButton(QString::fromUtf8("\xE5\xA4\x8D\xE4\xBD\x8D"));
+	brightnessResetBtn->setFixedWidth(42);
+	toolBarLayout->addSpacing(8);
+	toolBarLayout->addWidget(brightnessLabel);
+	toolBarLayout->addWidget(brightnessSlider);
+	toolBarLayout->addWidget(brightnessValueLabel);
+	toolBarLayout->addWidget(brightnessResetBtn);
 
 //	toolBarLayout->addWidget(diseaseRectShowBtn);
 
@@ -216,6 +223,17 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	layoutUpDown->addLayout(toolBarLayout);
 	layoutUpDown->addLayout(this->m_mainLayout);
 	this->setLayout(layoutUpDown);
+
+	connect(brightnessSlider, &QSlider::valueChanged, this,
+		[this, brightnessValueLabel](int value)
+	{
+		brightnessValueLabel->setText(QString::number(value));
+		emit signal_imageBrightnessChanged(value);
+	});
+	connect(brightnessResetBtn, &QPushButton::clicked, brightnessSlider, [brightnessSlider]()
+	{
+		brightnessSlider->setValue(0);
+	});
 
 	connect(this->showGpsBtn, &QCheckBox::stateChanged, this, [&](int state)
 	{
@@ -230,35 +248,11 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 		xrSetting->writeData();
 	});
 
-	connect(this->playBtn, &QPushButton::clicked, [&]() {
-		// The SDK view owns browsing now. Keep this button from starting the old
-		// timer/thread playback path.
-		m_autoPlay = false;
-		QIcon m_icon_temp = QIcon::fromTheme(QStringLiteral(""),
-			QIcon(QStringLiteral(":/new/prefix1/Icon/Media_16x16.png")));
-		playBtn->setIcon(m_icon_temp);
-	}
-	);
-	connect(this->addSpeedBtn, &QPushButton::clicked, [&]() {
-		if (this->m_playSpeed < 10)
-		{
-			this->m_playSpeed += 1;
-
-		}
-	}
-	);
-	connect(this->subBtn, &QPushButton::clicked, [&]() {
-		if (this->m_playSpeed > 1)
-		{
-			this->m_playSpeed--;
-		}
-		else
-		{
-
-		}
-	}
-	);
-	connect(jumpBtn, &QPushButton::clicked, this, &hnContinuouslyBrowsePixWidget::slot_JumpToUserMile);
+	connect(jumpBtn, &QPushButton::clicked, this, [this]()
+	{
+		stopAutoPlay();
+		slot_JumpToUserMile();
+	});
 
 
 	connect(this->markBtn, &QPushButton::clicked, [&]() {
@@ -307,7 +301,22 @@ void hnContinuouslyBrowsePixWidget::add3dToolbar()
 	 
 	deepExampleBtn = new QPushButton(QStringLiteral("深度示例"));  
 	//deepExampleBtn->setFixedWidth(30); 
-	toolBarLayout->addWidget(deepExampleBtn); 
+	toolBarLayout->addWidget(deepExampleBtn);
+	addAutoPlayControl(toolBarLayout);
+	auto brightnessLabel = new QLabel(QString::fromUtf8("\xE4\xBA\xAE\xE5\xBA\xA6"));
+	auto brightnessSlider = new QSlider(Qt::Horizontal);
+	brightnessSlider->setRange(-100, 100);
+	brightnessSlider->setValue(0);
+	brightnessSlider->setFixedWidth(120);
+	auto brightnessValueLabel = new QLabel(QStringLiteral("0"));
+	brightnessValueLabel->setFixedWidth(28);
+	auto brightnessResetBtn = new QPushButton(QString::fromUtf8("\xE5\xA4\x8D\xE4\xBD\x8D"));
+	brightnessResetBtn->setFixedWidth(42);
+	toolBarLayout->addSpacing(8);
+	toolBarLayout->addWidget(brightnessLabel);
+	toolBarLayout->addWidget(brightnessSlider);
+	toolBarLayout->addWidget(brightnessValueLabel);
+	toolBarLayout->addWidget(brightnessResetBtn);
 	toolBarLayout->addSpacerItem(new QSpacerItem(20, 10, QSizePolicy::Fixed, QSizePolicy::Minimum));
 
 
@@ -318,6 +327,16 @@ void hnContinuouslyBrowsePixWidget::add3dToolbar()
 	this->setLayout(layoutUpDown); 
 	 
 	connect(deepExampleBtn, &QPushButton::clicked, this, &hnContinuouslyBrowsePixWidget::slot_Show3dDeepExample);
+	connect(brightnessSlider, &QSlider::valueChanged, this,
+		[this, brightnessValueLabel](int value)
+	{
+		brightnessValueLabel->setText(QString::number(value));
+		emit signal_imageBrightnessChanged(value);
+	});
+	connect(brightnessResetBtn, &QPushButton::clicked, brightnessSlider, [brightnessSlider]()
+	{
+		brightnessSlider->setValue(0);
+	});
 
 }
 
@@ -353,21 +372,25 @@ void hnContinuouslyBrowsePixWidget::slot_updateDmiLable(int value)
 
 void hnContinuouslyBrowsePixWidget::loadPix(const QString & pixDirName)
 {
+	stopAutoPlay();
 	this->m_browsePixWidget->loadPix(pixDirName);
 }
 
 void hnContinuouslyBrowsePixWidget::loadPix(const QStringList & pixNames)
 {
+	stopAutoPlay();
 	this->m_browsePixWidget->loadPix(pixNames);
 }
 
 void hnContinuouslyBrowsePixWidget::wheelEvent(QWheelEvent * event)
 {
+	stopAutoPlay();
 	QWidget::wheelEvent(event);
 }
 
 void hnContinuouslyBrowsePixWidget::keyPressEvent(QKeyEvent *event)
 {
+	stopAutoPlay();
 	QWidget::keyPressEvent(event);
 
 }
@@ -377,9 +400,51 @@ void hnContinuouslyBrowsePixWidget::enterEvent(QEvent * event)
 	emit signal_enterWidget();
 }
 
-void hnContinuouslyBrowsePixWidget::playThePicture()
+void hnContinuouslyBrowsePixWidget::addAutoPlayControl(QHBoxLayout* layout)
+{
+	playBtn = new QPushButton(QStringLiteral("自动播放"), this);
+	playBtn->setFixedWidth(72);
+	playBtn->setToolTip(QStringLiteral("每秒自动前进一张图片"));
+	layout->addWidget(playBtn);
+	connect(playBtn, &QPushButton::clicked, this, &hnContinuouslyBrowsePixWidget::toggleAutoPlay);
+}
+
+void hnContinuouslyBrowsePixWidget::toggleAutoPlay()
+{
+	if (m_autoPlay)
+	{
+		stopAutoPlay();
+		return;
+	}
+	if (!stepOneImage())
+	{
+		stopAutoPlay();
+		return;
+	}
+	m_autoPlay = true;
+	updateAutoPlayButton();
+	if (m_autoPlayTimer)
+	{
+		m_autoPlayTimer->start();
+	}
+}
+
+void hnContinuouslyBrowsePixWidget::stopAutoPlay()
 {
 	m_autoPlay = false;
+	if (m_autoPlayTimer)
+	{
+		m_autoPlayTimer->stop();
+	}
+	updateAutoPlayButton();
+}
+
+void hnContinuouslyBrowsePixWidget::updateAutoPlayButton()
+{
+	if (playBtn)
+	{
+		playBtn->setText(m_autoPlay ? QStringLiteral("停止播放") : QStringLiteral("自动播放"));
+	}
 }
 
 int hnContinuouslyBrowsePixWidget::getBrowStep(bool is3d) const

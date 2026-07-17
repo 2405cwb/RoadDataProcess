@@ -2,6 +2,7 @@
 
 #include "hnapplication_global.h"
 #include <QList>
+#include <QHash>
 #include <QColor>
 #include <QPainterPath>
 #include <QPen>
@@ -56,6 +57,11 @@ public:
 	void addDiseasePath(const QString& diseaseKey, const QPainterPath& path, const QString& label,
 		const QColor& color, int width, Qt::PenStyle style);
 
+	// Incremental disease-layer operations used by virtual image sequences.
+	bool containsDisease(const QString& diseaseKey) const;
+	QStringList diseaseKeys() const;
+	bool removeDisease(const QString& diseaseKey);
+
 	// 设置当前选中的病害 key，用于命中、标签字号和高亮状态判断。
 	void setSelectedDiseaseKey(const QString& diseaseKey);
 
@@ -97,6 +103,7 @@ private:
 	QList<QGraphicsItem*> m_temporaryItems;
 	QList<QGraphicsItem*> m_committedItems;
 	QList<QGraphicsItem*> m_diseaseItems;
+	QHash<QString, QGraphicsItem*> m_diseaseItemByKey;
 	QList<QGraphicsItem*> m_materialMarkItems;
 	QString m_selectedDiseaseKey;
 	QColor m_selectedDiseaseColor = Qt::red;

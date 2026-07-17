@@ -9,6 +9,7 @@
 #include "../hnQtCommon/MyCommonMethods.h"
 #include "hnDiseaseService.h"
 #include "LittleFrameRenderPathBuilder.h"
+#include "../SDK/src/TiledGraphicsView.h"
 #include <QMessageBox>
 #include <QTime>
 #include <QSet>
@@ -21,9 +22,101 @@
 #include <QDebug>
 #include <algorithm>
 #include<QProgressDialog>
- 
+#include <QGraphicsLineItem>
+#include <QGraphicsRectItem>
+#include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
+#include <QKeyEvent>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLineEdit>
+#include <QIntValidator>
+#include <QDoubleValidator>
+#include <QPushButton>
+#include <QToolTip>
+#include <functional>
 
+class hnLineCameraBoundaryItem : public QGraphicsLineItem
+{
+public:
+	explicit hnLineCameraBoundaryItem(const QColor& color)
+	{
+		QPen pen(color, 4.0);
+		pen.setCosmetic(true);
+		setPen(pen);
+		setFlags(QGraphicsItem::ItemIsMovable | QGraphicsItem::ItemSendsGeometryChanges | QGraphicsItem::ItemIsFocusable);
+		setCursor(Qt::SizeHorCursor);
+		setZValue(100000.0);
+	}
 
+	void setHorizontalRange(qreal minimum, qreal maximum)
+	{
+		m_minimum = minimum;
+		m_maximum = qMax(minimum, maximum);
+	}
+
+	std::function<void()> moved;
+
+protected:
+	void keyPressEvent(QKeyEvent* event) override
+	{
+		if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right)
+		{
+			const int step = (event->modifiers() & Qt::ShiftModifier) ? 10 : 1;
+			setPos(pos().x() + (event->key() == Qt::Key_Left ? -step : step), 0.0);
+			event->accept();
+			return;
+		}
+		QGraphicsLineItem::keyPressEvent(event);
+	}
+
+	QVariant itemChange(GraphicsItemChange change, const QVariant& value) override
+	{
+		if (change == QGraphicsItem::ItemPositionChange)
+		{
+			QPointF position = value.toPointF();
+			position.setX(qBound(m_minimum, position.x(), m_maximum));
+			position.setY(0.0);
+			return position;
+		}
+		if (change == QGraphicsItem::ItemPositionHasChanged && moved)
+		{
+			moved();
+		}
+		return QGraphicsLineItem::itemChange(change, value);
+	}
+
+private:
+	qreal m_minimum = 0.0;
+	qreal m_maximum = 0.0;
+};
+static bool validateLineCameraDiseaseGeometry(const hnRoadDiseaseInfo& disease, QWidget* parent)
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->isLineCameraProject())
+	{
+		return true;
+	}
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	for (const hn2dRectI& rect : disease.vec2dRect)
+	{
+		const int xs[] = { rect.p0.x, rect.p1.x, rect.p2.x, rect.p3.x };
+		const int pointCount = disease.nDrawType == 3 ? 1 : 4;
+		for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+		{
+			const int x = xs[pointIndex];
+			if (!info.containsPixelX(x))
+			{
+				QMessageBox::warning(parent, QStringLiteral("病害超出线阵有效区域"),
+					QStringLiteral("病害几何中存在横向像素 %1，不在有效区域 [%2, %3] 内，已取消提交。")
+						.arg(x).arg(info.leftPixel).arg(info.rightPixel));
+				return false;
+			}
+		}
+	}
+	return true;
+}
 hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 //: hnBrowsePixWidget(parent)
 {
@@ -61,6 +154,12 @@ hn2dPixWidget::hn2dPixWidget(QWidget *parent)
 		SIGNAL(diseaseChanged()), this, SLOT(slotDiseaseChanged()));
 
  
+}
+
+void hn2dPixWidget::clearSdkView()
+{
+	clearLineCameraAreaGuide();
+	hn2d3dPixBaseWidget::clearSdkView();
 }
 
 void hn2dPixWidget::loadRoadPicture()
@@ -112,8 +211,10 @@ void hn2dPixWidget::loadRoadPicture()
 	// RoadDis is the physical distance represented by one 2D road image.
 	const double roadImageDistanceMeters = hnApp::hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_RoadImgDis;
 	this->setImageDistanceMeters(roadImageDistanceMeters);
+	clearLineCameraAreaGuide();
 	this->loadPix(pixNames);
 	this->loadSdkVerticalImageSequence(pixNames);
+	refreshLineCameraAreaGuide();
 
 	//获取自动化模式数组
 	this->m_singleImageLittleFrameRects = this->createSingleImageLittleFrameRect();
@@ -1226,6 +1327,14 @@ bool hn2dPixWidget::drawBigFrameProcess()
 			QString::fromLocal8Bit("确定"));
 		return false;
 	}
+	if (diseaseSetInfos.isEmpty())
+	{
+		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
+			QString::fromLocal8Bit("当前位置没有匹配的病害类型，请检查路面标准、路面材质和作业模式设置。"),
+			QString::fromLocal8Bit("确定"));
+		resetSdkDiseaseDrawingState(true, false);
+		return false;
+	}
 
 
 	//弹出添加病害窗口
@@ -1284,6 +1393,11 @@ bool hn2dPixWidget::drawBigFrameProcess()
 		diseaseInfo.nID = hnApp::hnDataManager::getDataManager()->getCurrentProject()
 			->getDB()->getDiseaseTable()->getMaxID(diseaseTableName.toLocal8Bit().data());
 		
+
+		if (!validateLineCameraDiseaseGeometry(diseaseInfo, this))
+		{
+			return false;
+		}
 
 		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo))
 		{
@@ -1500,15 +1614,25 @@ void hn2dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 
 
+		if (!validateLineCameraDiseaseGeometry(newDisease, this))
+		{
+			return;
+		}
+
 		//删除第一个病害
 		auto firstDisease = m_seclectedDiseases.at(0); 
 
 		//删除第二个病害
 		auto secondDisease = m_seclectedDiseases.at(1); 
 
+		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease))
+		{
+			QMessageBox::warning(this, QStringLiteral("\u8b66\u544a"), QStringLiteral("\u5408\u5e76\u75c5\u5bb3\u5199\u5165\u5931\u8d25\uff0c\u539f\u75c5\u5bb3\u672a\u5220\u9664\u3002"), QStringLiteral("\u786e\u5b9a"));
+			m_seclectedDiseases.clear();
+			return;
+		}
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease); 
 		 
 		this->update();
 		 
@@ -1549,7 +1673,7 @@ QPainterPath hn2dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease
 		QVector<double> mileCandidates;
 		auto appendMile = [&mileCandidates](double mile)
 		{
-			if (mile > 0.0 && !mileCandidates.contains(mile))
+			if (mile >= 0.0 && !mileCandidates.contains(mile))
 			{
 				mileCandidates.append(mile);
 			}
@@ -1599,7 +1723,33 @@ QPainterPath hn2dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease
 		return true;
 	};
 
+	if (disease.nDrawType == 3)
+	{
+		QPainterPath linePath;
+		bool hasStart = false;
+		for (const hn2dRectI& rect : qAsConst(disease.vec2dRect))
+		{
+			QPointF scenePoint;
+			if (!pointToScene(rect.p0, scenePoint))
+			{
+				continue;
+			}
+			if (!hasStart)
+			{
+				linePath.moveTo(scenePoint);
+				hasStart = true;
+			}
+			else
+			{
+				linePath.lineTo(scenePoint);
+			}
+		}
+		return linePath;
+	}
+
 	QPainterPath path;
+	QRectF bigFrameSceneBounds;
+	bool hasBigFrameSceneBounds = false;
 	QVector<LittleFrameRenderCell> littleFrameCells;
 	littleFrameCells.reserve(disease.vec2dRect.size());
 	for (const hn2dRectI& rect : qAsConst(disease.vec2dRect))
@@ -1646,17 +1796,26 @@ QPainterPath hn2dPixWidget::sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease
 			{
 				continue;
 			}
-			path.moveTo(p0);
-			path.lineTo(p1);
-			path.lineTo(p2);
-			path.lineTo(p3);
-			path.closeSubpath();
+			const qreal left = qMin(qMin(p0.x(), p1.x()), qMin(p2.x(), p3.x()));
+			const qreal right = qMax(qMax(p0.x(), p1.x()), qMax(p2.x(), p3.x()));
+			const qreal top = qMin(qMin(p0.y(), p1.y()), qMin(p2.y(), p3.y()));
+			const qreal bottom = qMax(qMax(p0.y(), p1.y()), qMax(p2.y(), p3.y()));
+			const QRectF segmentBounds(QPointF(left, top), QPointF(right, bottom));
+			bigFrameSceneBounds = hasBigFrameSceneBounds
+				? bigFrameSceneBounds.united(segmentBounds)
+				: segmentBounds;
+			hasBigFrameSceneBounds = true;
 		}
 	}
 
 	if (!isLittleFrame)
 	{
-		return path;
+		QPainterPath outline;
+		if (hasBigFrameSceneBounds && bigFrameSceneBounds.isValid() && !bigFrameSceneBounds.isNull())
+		{
+			outline.addRect(bigFrameSceneBounds);
+		}
+		return outline;
 	}
 
 	const LittleFrameRenderResult renderResult = LittleFrameRenderPathBuilder::build(littleFrameCells);
@@ -1753,7 +1912,7 @@ bool hn2dPixWidget::sdkLittleFrameCellSceneRect(const hnRoadDiseaseInfo& disease
 		QVector<double> mileCandidates;
 		auto appendMile = [&mileCandidates](double mile)
 		{
-			if (mile > 0.0 && !mileCandidates.contains(mile))
+			if (mile >= 0.0 && !mileCandidates.contains(mile))
 			{
 				mileCandidates.append(mile);
 			}
@@ -2211,6 +2370,10 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	auto markStd = mark8Bit.toStdString();
 	strcpy(disease.strRemark, markStd.c_str());
 
+	if (!validateLineCameraDiseaseGeometry(disease, this))
+	{
+		return;
+	}
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(disease);
 	 
 	 
@@ -2265,6 +2428,10 @@ void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 
 	// todo 经过测试主要耗时是读写数据库耗时，除非将病害变为临时病害，在鼠标释放事件写入数据库，才会流畅一些
 	//写入数据库
+	if (!validateLineCameraDiseaseGeometry(disease, this))
+	{
+		return;
+	}
 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
 
 	 
@@ -2321,8 +2488,11 @@ QString hn2dPixWidget::generateStatusInfo(const QPoint & eventPos)
     hnMile currentPointMile = this->getHnMileFromPoint(bigImagePoint);
     const double trueMile = caculateTrueMile(bigImagePoint);
     const double encoderMile = calculateEncoderMile(bigImagePoint);
-    const double roadWidth = qMax(0.0, m_pixWidth * m_widthScale);
-    const double rawXMile = singleImagePoint.x() * m_widthScale;
+    auto statusProject = hnDataManager::getDataManager()->getCurrentProject();
+    const double roadWidth = statusProject ? statusProject->effectiveRoadWidth() : qMax(0.0, m_pixWidth * m_widthScale);
+    const double rawXMile = statusProject && statusProject->isLineCameraProject()
+        ? statusProject->getLineCameraInfo().roadXFromPixel(statusSingleImagePoint.x())
+        : singleImagePoint.x() * m_widthScale;
     const double xMile = roadWidth > 0.0 ? qBound(0.0, rawXMile, roadWidth) : qMax(0.0, rawXMile);
     const QString mileText = QString::fromLocal8Bit("(X:%1,Y:%2)").arg(xMile, 0, 'f', 3).arg(encoderMile, 0, 'f', 3);
     QString streetPixName;
@@ -2430,11 +2600,49 @@ vector<hn2dRectI> hn2dPixWidget::generateLargeFrameHn2dRectVector(const QRect & 
 vector<hn2dRectI> hn2dPixWidget::createLineDisease2dCoordVec(QVector<pixImagePoint> lineDiseasePoints)
 {
 	vector<hn2dRectI> result;
-	for (auto lineDiseasePoint : qAsConst(lineDiseasePoints))
+	result.reserve(lineDiseasePoints.size());
+	for (const pixImagePoint& lineDiseasePoint : qAsConst(lineDiseasePoints))
 	{
-		QPoint bigImagePoint = this->singleImagePointToBigImagePoint(lineDiseasePoint.pixPoint, lineDiseasePoint.pixName);
-		hn2dRectI hnRect;
-		hnRect.p0 = getHnPoint2dWithMileI(bigImagePoint);
+		QString projectImageName;
+		if (!resolveSdkImageName(lineDiseasePoint.pixName, projectImageName))
+		{
+			projectImageName = lineDiseasePoint.pixName;
+		}
+
+		auto mileIter = m_pixNameHnMileMap.constFind(projectImageName);
+		if (mileIter == m_pixNameHnMileMap.constEnd())
+		{
+			const QString fileName = QFileInfo(projectImageName).fileName();
+			for (auto it = m_pixNameHnMileMap.constBegin(); it != m_pixNameHnMileMap.constEnd(); ++it)
+			{
+				if (QFileInfo(it.key()).fileName().compare(fileName, Qt::CaseInsensitive) == 0)
+				{
+					mileIter = it;
+					break;
+				}
+			}
+		}
+		if (mileIter == m_pixNameHnMileMap.constEnd())
+		{
+			qWarning().noquote() << "[HN_DESIGN_LINE_STORE_SKIP] image=" << lineDiseasePoint.pixName;
+			continue;
+		}
+
+		int x = qBound(0, lineDiseasePoint.pixPoint.x(), qMax(0, m_pixWidth - 1));
+		int y = qBound(0, lineDiseasePoint.pixPoint.y(), qMax(0, m_pixHeight - 1));
+		if (m_isHMirrored)
+		{
+			x = m_pixWidth - 1 - x;
+		}
+		if (m_isVMirrored)
+		{
+			y = m_pixHeight - 1 - y;
+		}
+
+		hn2dRectI hnRect = {};
+		hnRect.p0.x = x;
+		hnRect.p0.y = y;
+		hnRect.p0.m_dmi = mileIter.value().dEnclMile;
 		result.push_back(hnRect);
 	}
 
@@ -2447,7 +2655,7 @@ vector<hn3dRectI> hn2dPixWidget::createLineDisease3dCoordVec(QVector<pixImagePoi
 	for (auto lineDiseasePoint : qAsConst(lineDiseasePoints))
 	{
 		QPoint bigImagePoint = this->singleImagePointToBigImagePoint(lineDiseasePoint.pixPoint, lineDiseasePoint.pixName);
-		hn3dRectI hnRect;
+		hn3dRectI hnRect = {};
 		hnRect.p0 = getHnPoint3dWithMileI(bigImagePoint);
 		if (hnRect.p0.bottomEncoderMile < 0)
 		{
@@ -2526,6 +2734,69 @@ hnCommon::hn2dPointWithMileI hn2dPixWidget::getHnPoint2dWithMileI(const QPoint &
 //	return point2dWithMileI;
 //}
 
+bool hn2dPixWidget::sdkHnMileFromPoint(const pixImagePoint& point, hnMile& mile) const
+{
+	if (point.pixName.isEmpty())
+	{
+		return false;
+	}
+
+	auto iter = m_pixNameHnMileMap.constFind(point.pixName);
+	if (iter == m_pixNameHnMileMap.constEnd())
+	{
+		const QString fileName = QFileInfo(point.pixName).fileName();
+		for (auto candidate = m_pixNameHnMileMap.constBegin(); candidate != m_pixNameHnMileMap.constEnd(); ++candidate)
+		{
+			if (QFileInfo(candidate.key()).fileName().compare(fileName, Qt::CaseInsensitive) == 0)
+			{
+				iter = candidate;
+				break;
+			}
+		}
+	}
+	if (iter == m_pixNameHnMileMap.constEnd())
+	{
+		return false;
+	}
+
+	mile = iter.value();
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return true;
+	}
+	const hnProjectSetInfo setting = project->getCurProSetInfo();
+	const bool missingRoadContext = mile.roadWidth <= 0.0;
+	if (missingRoadContext)
+	{
+		mile.roadWidth = project->effectiveRoadWidth();
+		mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard);
+		mile.roadType = static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType);
+	}
+	if (static_cast<int>(mile.roadStandard) < static_cast<int>(HnProjectEnums::DegreeRoad2018) ||
+		static_cast<int>(mile.roadStandard) > static_cast<int>(HnProjectEnums::RuralRoadlowLevel))
+	{
+		mile.roadStandard = HnProjectEnums::roadTypeQStringToEnum(setting.strRoadStandard);
+	}
+	if (static_cast<int>(mile.roadType) < 0 || static_cast<int>(mile.roadType) > 2)
+	{
+		mile.roadType = static_cast<hnCommon::ROAD_SURFACE_TYPE>(setting.nRSurfaceType);
+	}
+	// 病害类型严格跟随当前绘制工具，避免首帧尚未初始化的 drawType 造成空选择框。
+	if (m_frameMode == FrameMode::LITTLE_FRAME)
+	{
+		mile.drawType = hnCommon::ROAD_WORK_SMALL_RECT;
+	}
+	else if (m_frameMode == FrameMode::DESIGN_FACETS || m_frameMode == FrameMode::DESIGN_LINE)
+	{
+		mile.drawType = hnCommon::DESIGN;
+	}
+	else
+	{
+		mile.drawType = hnCommon::ROAD_WORK_LARGE_RECT;
+	}
+	return true;
+}
 hnMile hn2dPixWidget::getHnMileFromPoint(const QPoint & allImagePoint)
 {
 	QString picName;
@@ -3000,13 +3271,22 @@ hnRoadDiseaseInfo hn2dPixWidget::caculateBigFrameDiseaseAttribute(const QRect & 
 	hnRoadDiseaseInfo disease;
 
 	hnCommon::hnProjectSetInfo projectSetInfo = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
-	disease.dWidth =std::round(  diseaseRect.width()* projectSetInfo.dRadioX *100)/100;		//病害宽度std::round(dis.dReaWidth*100.0) / 100.0;
-	disease.dLength = std::round(diseaseRect.height()* projectSetInfo.dRadioY*100)/100;		//病害长度
-	disease.nPixelWid = diseaseRect.width();							//病害像素宽度
-	disease.nPixelLen = diseaseRect.height();							//病害像素长度
-	disease.dArea = disease.dReaWidth * disease.dRealLen;				//病害面积
+	disease.dWidth =std::round(  diseaseRect.width()* projectSetInfo.dRadioX *100)/100;
+	disease.dLength = std::round(diseaseRect.height()* projectSetInfo.dRadioY*100)/100;
+	disease.nPixelWid = diseaseRect.width();
+	disease.nPixelLen = diseaseRect.height();
+	if (hasSdkImageView())
+	{
+		const double startEncoderMile = sdkPixPointToEncoderMile(m_diseaseStartPoint);
+		const double endEncoderMile = sdkPixPointToEncoderMile(m_diseaseEndPoint);
+		disease.dLength = std::round(qAbs(endEncoderMile - startEncoderMile) * 100.0) / 100.0;
+		disease.nPixelLen = projectSetInfo.dRadioY > 0.0
+			? qRound(disease.dLength / projectSetInfo.dRadioY) : diseaseRect.height();
+		disease.nPixelWid = qAbs(m_diseaseEndPoint.pixPoint.x() - m_diseaseStartPoint.pixPoint.x());
+		disease.dWidth = std::round(disease.nPixelWid * projectSetInfo.dRadioX * 100.0) / 100.0;
+	}
+	disease.dArea = disease.dReaWidth * disease.dRealLen;
 
-	//计算2d的坐标信息
 	vector<hn2dRectI> disease2dPointVector = this->generateLargeFrameHn2dRectVector(diseaseRect);
 	disease.vec2dRect = disease2dPointVector;
 
@@ -3037,12 +3317,20 @@ hnRoadDiseaseInfo hn2dPixWidget::caculateBigFrameDiseaseAttribute(const QRect & 
 
 	strcpy(disease.strRoadStandard, HnProjectEnums::roadTypeEnumToQString(firstHnMile.roadStandard).toLocal8Bit().data());
 
-	//中心里程
-	disease.dMileage = this->calculateBigFrameCenterMile(diseaseRect);
-	//开始里程
-	disease.dDmiStart = this->calculateBigFrameBeginMile(diseaseRect);
-	//结束里程
-	disease.dDmiEnd = this->calculateBigFrameEndMile(diseaseRect);
+	if (hasSdkImageView())
+	{
+		const double startEncoderMile = sdkPixPointToEncoderMile(m_diseaseStartPoint);
+		const double endEncoderMile = sdkPixPointToEncoderMile(m_diseaseEndPoint);
+		disease.dDmiStart = qMin(startEncoderMile, endEncoderMile);
+		disease.dDmiEnd = qMax(startEncoderMile, endEncoderMile);
+		disease.dMileage = (disease.dDmiStart + disease.dDmiEnd) * 0.5;
+	}
+	else
+	{
+		disease.dMileage = this->calculateBigFrameCenterMile(diseaseRect);
+		disease.dDmiStart = this->calculateBigFrameBeginMile(diseaseRect);
+		disease.dDmiEnd = this->calculateBigFrameEndMile(diseaseRect);
+	}
 
 	strcpy(disease.strDiseaseTableName, diseaseSetInfo.strDBTableName);
 	strcpy(disease.strDisName, diseaseSetInfo.strDiseaseTypeName);
@@ -3200,6 +3488,14 @@ bool hn2dPixWidget::littleFrameProcess()
 		diseaseTypeList.append(QString::fromLocal8Bit(diseseSetInfo.strDiseaseTypeName));
 	}
 	logLittleFramePerf("prepareDiseaseDialog");
+	if (diseaseSetInfos.isEmpty())
+	{
+		QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"),
+			QString::fromLocal8Bit("当前位置没有匹配的病害类型，请检查路面标准、路面材质和作业模式设置。"),
+			QString::fromLocal8Bit("确定"));
+		resetSdkDiseaseDrawingState(true, false);
+		return false;
+	}
 
 	//弹出添加病害窗口
 	addDiseaseDialog dialog(diseaseNameAndKey, false);
@@ -3284,6 +3580,11 @@ bool hn2dPixWidget::littleFrameProcess()
 		return false;
 	}
 	logLittleFramePerf("isTmpDiseaseAreaValid");
+
+	if (!validateLineCameraDiseaseGeometry(diseaseInfo, this))
+	{
+		return false;
+	}
 
 	if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(diseaseInfo))
 	{
@@ -3652,14 +3953,24 @@ void hn2dPixWidget::littleFrameMergeDiseases(const QPoint & screenPoint)
 		
 	
 
+		if (!validateLineCameraDiseaseGeometry(newDisease, this))
+		{
+			return;
+		}
+
 		//删除第一个病害
 		auto firstDisease = m_seclectedDiseases.at(0); 
 
 		//删除第二个病害
 		auto secondDisease = m_seclectedDiseases.at(1); 
+		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease))
+		{
+			QMessageBox::warning(this, QStringLiteral("\u8b66\u544a"), QStringLiteral("\u5408\u5e76\u75c5\u5bb3\u5199\u5165\u5931\u8d25\uff0c\u539f\u75c5\u5bb3\u672a\u5220\u9664\u3002"), QStringLiteral("\u786e\u5b9a"));
+			m_seclectedDiseases.clear();
+			return;
+		}
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(firstDisease);
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease); 
-		hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(newDisease);
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(secondDisease);
 		 
 		this->update();
 
@@ -4610,6 +4921,467 @@ void hn2dPixWidget::mouseDoubleClickEvent(QMouseEvent *event)
 	}
 }
 
+bool hn2dPixWidget::adjustSdkDiseasePointToValidArea(pixImagePoint& point, bool clampToArea) const
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->isLineCameraProject())
+	{
+		return true;
+	}
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	if (!info.validAreaConfigured || info.imageWidth <= 0)
+	{
+		return false;
+	}
+	const int displayedX = qBound(0, point.pixPoint.x(), info.imageWidth);
+	const int sourceX = m_isHMirrored ? info.imageWidth - displayedX : displayedX;
+	if (sourceX >= info.leftPixel && sourceX <= info.rightPixel)
+	{
+		return true;
+	}
+	if (!clampToArea)
+	{
+		QToolTip::showText(QCursor::pos(), QStringLiteral("线阵病害只能在有效道路区域内绘制。"));
+		return false;
+	}
+	const int clampedSourceX = qBound(info.leftPixel, sourceX, info.rightPixel);
+	point.pixPoint.setX(m_isHMirrored ? info.imageWidth - clampedSourceX : clampedSourceX);
+	return true;
+}
+
+bool hn2dPixWidget::validateDiseaseGeometryWithinValidArea(const hnRoadDiseaseInfo& disease) const
+{
+	return validateLineCameraDiseaseGeometry(disease, const_cast<hn2dPixWidget*>(this));
+}
+void hn2dPixWidget::clearLineCameraAreaGuide()
+{
+	QGraphicsScene* scene = m_sdkImageView ? m_sdkImageView->scene() : nullptr;
+	auto removeItem = [scene](QGraphicsItem*& item)
+	{
+		if (!item) return;
+		if (scene && item->scene() == scene) scene->removeItem(item);
+		delete item;
+		item = nullptr;
+	};
+
+	QGraphicsItem* leftShade = m_lineCameraPersistentLeftShade;
+	QGraphicsItem* rightShade = m_lineCameraPersistentRightShade;
+	QGraphicsItem* leftBoundary = m_lineCameraPersistentLeftBoundary;
+	QGraphicsItem* rightBoundary = m_lineCameraPersistentRightBoundary;
+	removeItem(leftShade);
+	removeItem(rightShade);
+	removeItem(leftBoundary);
+	removeItem(rightBoundary);
+	m_lineCameraPersistentLeftShade = nullptr;
+	m_lineCameraPersistentRightShade = nullptr;
+	m_lineCameraPersistentLeftBoundary = nullptr;
+	m_lineCameraPersistentRightBoundary = nullptr;
+}
+
+void hn2dPixWidget::refreshLineCameraAreaGuide()
+{
+	clearLineCameraAreaGuide();
+	if (m_lineCameraAreaAdjusting || !m_sdkImageView || !m_sdkImageView->scene()) return;
+
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !project->isLineCameraProject()) return;
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	if (!info.validAreaConfigured || info.imageWidth <= 0) return;
+
+	QGraphicsScene* scene = m_sdkImageView->scene();
+	const QRectF sceneRect = scene->sceneRect();
+	if (sceneRect.isEmpty()) return;
+
+	const qreal sourceLeft = m_isHMirrored ? info.imageWidth - info.leftPixel : info.leftPixel;
+	const qreal sourceRight = m_isHMirrored ? info.imageWidth - info.rightPixel : info.rightPixel;
+	const qreal validLeft = qMin(sourceLeft, sourceRight);
+	const qreal validRight = qMax(sourceLeft, sourceRight);
+	const QBrush invalidAreaBrush(QColor(12, 18, 26, 135));
+
+	m_lineCameraPersistentLeftShade = scene->addRect(
+		QRectF(sceneRect.left(), sceneRect.top(), qMax(0.0, validLeft - sceneRect.left()), sceneRect.height()),
+		Qt::NoPen, invalidAreaBrush);
+	m_lineCameraPersistentRightShade = scene->addRect(
+		QRectF(validRight, sceneRect.top(), qMax(0.0, sceneRect.right() - validRight), sceneRect.height()),
+		Qt::NoPen, invalidAreaBrush);
+
+	QPen leftPen(QColor(0, 235, 255, 235), 2.5, Qt::DashLine);
+	QPen rightPen(QColor(255, 205, 45, 235), 2.5, Qt::DashLine);
+	leftPen.setCosmetic(true);
+	rightPen.setCosmetic(true);
+	m_lineCameraPersistentLeftBoundary = scene->addLine(
+		QLineF(validLeft, sceneRect.top(), validLeft, sceneRect.bottom()), leftPen);
+	m_lineCameraPersistentRightBoundary = scene->addLine(
+		QLineF(validRight, sceneRect.top(), validRight, sceneRect.bottom()), rightPen);
+
+	QGraphicsItem* items[] = {
+		m_lineCameraPersistentLeftShade, m_lineCameraPersistentRightShade,
+		m_lineCameraPersistentLeftBoundary, m_lineCameraPersistentRightBoundary
+	};
+	for (QGraphicsItem* item : items)
+	{
+		item->setAcceptedMouseButtons(Qt::NoButton);
+		item->setZValue(item == m_lineCameraPersistentLeftShade || item == m_lineCameraPersistentRightShade
+			? 10000.0 : 10001.0);
+	}
+}
+
+bool hn2dPixWidget::startLineCameraAreaAdjustment()
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (m_lineCameraAreaAdjusting || !project || !project->isLineCameraProject() ||
+		!m_sdkImageView || !m_sdkImageView->scene())
+	{
+		return false;
+	}
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	if (!info.validAreaConfigured || info.imageWidth <= 0)
+	{
+		return false;
+	}
+
+	slot_cancelDrawDiseases();
+	resetSdkDiseaseDrawingState(true, true);
+	m_workMode = WorkMode::NO_MODE;
+	m_lineCameraAreaAdjusting = true;
+	if (m_lineCameraPersistentLeftShade) m_lineCameraPersistentLeftShade->setVisible(false);
+	if (m_lineCameraPersistentRightShade) m_lineCameraPersistentRightShade->setVisible(false);
+	if (m_lineCameraPersistentLeftBoundary) m_lineCameraPersistentLeftBoundary->setVisible(false);
+	if (m_lineCameraPersistentRightBoundary) m_lineCameraPersistentRightBoundary->setVisible(false);
+
+	QGraphicsScene* scene = m_sdkImageView->scene();
+	const QRectF sceneRect = scene->sceneRect();
+	const qreal visualLeft = m_isHMirrored ? info.imageWidth - info.leftPixel : info.leftPixel;
+	const qreal visualRight = m_isHMirrored ? info.imageWidth - info.rightPixel : info.rightPixel;
+
+	m_lineCameraLeftShade = scene->addRect(QRectF(), Qt::NoPen, QColor(0, 0, 0, 145));
+	m_lineCameraRightShade = scene->addRect(QRectF(), Qt::NoPen, QColor(0, 0, 0, 145));
+	m_lineCameraLeftShade->setZValue(99998.0);
+	m_lineCameraRightShade->setZValue(99998.0);
+	m_lineCameraLeftBoundary = new hnLineCameraBoundaryItem(QColor(0, 255, 255));
+	m_lineCameraRightBoundary = new hnLineCameraBoundaryItem(QColor(255, 215, 0));
+	scene->addItem(m_lineCameraLeftBoundary);
+	scene->addItem(m_lineCameraRightBoundary);
+	m_lineCameraLeftBoundary->setLine(0.0, sceneRect.top(), 0.0, sceneRect.bottom());
+	m_lineCameraRightBoundary->setLine(0.0, sceneRect.top(), 0.0, sceneRect.bottom());
+	if (m_isHMirrored)
+	{
+		m_lineCameraLeftBoundary->setHorizontalRange(visualRight + 1.0, info.imageWidth);
+		m_lineCameraRightBoundary->setHorizontalRange(0.0, visualLeft - 1.0);
+	}
+	else
+	{
+		m_lineCameraLeftBoundary->setHorizontalRange(0.0, visualRight - 1.0);
+		m_lineCameraRightBoundary->setHorizontalRange(visualLeft + 1.0, info.imageWidth);
+	}
+	m_lineCameraLeftBoundary->setPos(visualLeft, 0.0);
+	m_lineCameraRightBoundary->setPos(visualRight, 0.0);
+	m_lineCameraLeftBoundary->moved = [this]() { updateLineCameraAreaOverlay(); };
+	m_lineCameraRightBoundary->moved = [this]() { updateLineCameraAreaOverlay(); };
+
+	m_lineCameraAreaPanel = new QFrame(this);
+	m_lineCameraAreaPanel->setStyleSheet(QStringLiteral(
+		"QFrame{background:rgba(25,25,25,225);border:1px solid #aaaaaa;border-radius:5px;}"
+		"QLabel{color:white;} QLineEdit{background:white;color:#202020;border:1px solid #888;padding:3px;}"));
+	QVBoxLayout* panelLayout = new QVBoxLayout(m_lineCameraAreaPanel);
+	panelLayout->setContentsMargins(10, 7, 10, 7);
+	panelLayout->setSpacing(6);
+	m_lineCameraAreaSummary = new QLabel(m_lineCameraAreaPanel);
+	panelLayout->addWidget(m_lineCameraAreaSummary);
+
+	m_lineCameraLeftPixelEdit = new QLineEdit(m_lineCameraAreaPanel);
+	m_lineCameraRightPixelEdit = new QLineEdit(m_lineCameraAreaPanel);
+	m_lineCameraRoadWidthEdit = new QLineEdit(m_lineCameraAreaPanel);
+	m_lineCameraLeftPixelEdit->setValidator(new QIntValidator(0, info.imageWidth, m_lineCameraLeftPixelEdit));
+	m_lineCameraRightPixelEdit->setValidator(new QIntValidator(0, info.imageWidth, m_lineCameraRightPixelEdit));
+	QDoubleValidator* widthValidator = new QDoubleValidator(0.0,
+		info.imageWidth * info.meterPerPixelWidth(), 6, m_lineCameraRoadWidthEdit);
+	widthValidator->setNotation(QDoubleValidator::StandardNotation);
+	m_lineCameraRoadWidthEdit->setValidator(widthValidator);
+	m_lineCameraLeftPixelEdit->setFixedWidth(90);
+	m_lineCameraRightPixelEdit->setFixedWidth(90);
+	m_lineCameraRoadWidthEdit->setFixedWidth(105);
+	connect(m_lineCameraLeftPixelEdit, &QLineEdit::textEdited, this,
+		[this]() { m_lineCameraPendingInputMode = 1; });
+	connect(m_lineCameraRightPixelEdit, &QLineEdit::textEdited, this,
+		[this]() { m_lineCameraPendingInputMode = 1; });
+	connect(m_lineCameraRoadWidthEdit, &QLineEdit::textEdited, this,
+		[this]() { m_lineCameraPendingInputMode = 2; });
+	connect(m_lineCameraLeftPixelEdit, &QLineEdit::returnPressed, this,
+		[this]() { applyLineCameraPixelInputs(); });
+	connect(m_lineCameraRightPixelEdit, &QLineEdit::returnPressed, this,
+		[this]() { applyLineCameraPixelInputs(); });
+	connect(m_lineCameraRoadWidthEdit, &QLineEdit::returnPressed, this,
+		[this]() { applyLineCameraRoadWidthInput(); });
+
+	QPushButton* applyPixelsButton = new QPushButton(QStringLiteral("\u5e94\u7528\u50cf\u7d20\u8fb9\u754c"), m_lineCameraAreaPanel);
+	QPushButton* applyWidthButton = new QPushButton(QStringLiteral("\u6309\u5bbd\u5ea6\u5c45\u4e2d"), m_lineCameraAreaPanel);
+	connect(applyPixelsButton, &QPushButton::clicked, this, [this]() { applyLineCameraPixelInputs(); });
+	connect(applyWidthButton, &QPushButton::clicked, this, [this]() { applyLineCameraRoadWidthInput(); });
+	QHBoxLayout* inputLayout = new QHBoxLayout();
+	inputLayout->addWidget(new QLabel(QStringLiteral("\u5de6(px)"), m_lineCameraAreaPanel));
+	inputLayout->addWidget(m_lineCameraLeftPixelEdit);
+	inputLayout->addWidget(new QLabel(QStringLiteral("\u53f3(px)"), m_lineCameraAreaPanel));
+	inputLayout->addWidget(m_lineCameraRightPixelEdit);
+	inputLayout->addWidget(applyPixelsButton);
+	inputLayout->addSpacing(12);
+	inputLayout->addWidget(new QLabel(QStringLiteral("\u9053\u8def\u5bbd\u5ea6(m)"), m_lineCameraAreaPanel));
+	inputLayout->addWidget(m_lineCameraRoadWidthEdit);
+	inputLayout->addWidget(applyWidthButton);
+	panelLayout->addLayout(inputLayout);
+
+	QPushButton* resetButton = new QPushButton(QStringLiteral("\u6062\u590d\u6574\u56fe"), m_lineCameraAreaPanel);
+	QPushButton* saveButton = new QPushButton(QStringLiteral("\u4fdd\u5b58"), m_lineCameraAreaPanel);
+	QPushButton* cancelButton = new QPushButton(QStringLiteral("\u53d6\u6d88"), m_lineCameraAreaPanel);
+	QHBoxLayout* actionLayout = new QHBoxLayout();
+	actionLayout->addStretch();
+	actionLayout->addWidget(resetButton);
+	actionLayout->addWidget(saveButton);
+	actionLayout->addWidget(cancelButton);
+	panelLayout->addLayout(actionLayout);
+	connect(resetButton, &QPushButton::clicked, this,
+		[this, info]() { setLineCameraAdjustmentBounds(0, info.imageWidth); });
+	connect(saveButton, &QPushButton::clicked, this, [this]()
+	{
+		if (applyLineCameraPendingInput()) finishLineCameraAreaAdjustment(true);
+	});
+	connect(cancelButton, &QPushButton::clicked, this, [this]() { finishLineCameraAreaAdjustment(false); });
+	m_lineCameraAreaPanel->adjustSize();
+	m_lineCameraAreaPanel->move(qMax(8, width() - m_lineCameraAreaPanel->width() - 12), 12);
+	m_lineCameraAreaPanel->show();
+	m_lineCameraAreaPanel->raise();
+	updateLineCameraAreaOverlay();
+	emit signal_lineCameraAreaAdjustmentStateChanged(true);
+	return true;
+}
+
+void hn2dPixWidget::setLineCameraAdjustmentBounds(int leftPixel, int rightPixel)
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || !m_lineCameraLeftBoundary || !m_lineCameraRightBoundary) return;
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	if (leftPixel < 0 || leftPixel >= rightPixel || rightPixel > info.imageWidth) return;
+
+	m_lineCameraLeftBoundary->setHorizontalRange(0.0, info.imageWidth);
+	m_lineCameraRightBoundary->setHorizontalRange(0.0, info.imageWidth);
+	m_lineCameraLeftBoundary->setPos(m_isHMirrored ? info.imageWidth - leftPixel : leftPixel, 0.0);
+	m_lineCameraRightBoundary->setPos(m_isHMirrored ? info.imageWidth - rightPixel : rightPixel, 0.0);
+	m_lineCameraPendingInputMode = 0;
+	updateLineCameraAreaOverlay();
+}
+
+bool hn2dPixWidget::applyLineCameraPixelInputs()
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project) return false;
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	bool leftOk = false;
+	bool rightOk = false;
+	const int left = m_lineCameraLeftPixelEdit
+		? m_lineCameraLeftPixelEdit->text().trimmed().toInt(&leftOk) : -1;
+	const int right = m_lineCameraRightPixelEdit
+		? m_lineCameraRightPixelEdit->text().trimmed().toInt(&rightOk) : -1;
+	if (!leftOk || !rightOk || left < 0 || left >= right || right > info.imageWidth)
+	{
+		QMessageBox::warning(this, QStringLiteral("\u8f93\u5165\u65e0\u6548"),
+			QStringLiteral("\u50cf\u7d20\u8fb9\u754c\u5fc5\u987b\u6ee1\u8db3\uff1a0 <= \u5de6\u8fb9\u754c < \u53f3\u8fb9\u754c <= %1\u3002")
+			.arg(info.imageWidth));
+		return false;
+	}
+	setLineCameraAdjustmentBounds(left, right);
+	return true;
+}
+
+bool hn2dPixWidget::applyLineCameraRoadWidthInput()
+{
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project) return false;
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	bool widthOk = false;
+	const double requestedWidth = m_lineCameraRoadWidthEdit
+		? m_lineCameraRoadWidthEdit->text().trimmed().toDouble(&widthOk) : 0.0;
+	const double metersPerPixel = info.meterPerPixelWidth();
+	const double fullImageWidth = info.imageWidth * metersPerPixel;
+	if (!widthOk || requestedWidth <= 0.0 || metersPerPixel <= 0.0 || requestedWidth > fullImageWidth + 1e-9)
+	{
+		QMessageBox::warning(this, QStringLiteral("\u8f93\u5165\u65e0\u6548"),
+			QStringLiteral("\u9053\u8def\u5bbd\u5ea6\u5fc5\u987b\u5927\u4e8e 0\uff0c\u4e14\u4e0d\u80fd\u8d85\u8fc7\u6574\u5e45\u56fe\u50cf\u53ef\u8868\u793a\u7684 %1 m\u3002")
+			.arg(fullImageWidth, 0, 'f', 5));
+		return false;
+	}
+	int left = 0;
+	int right = 0;
+	if (!info.centeredBoundsForRoadWidth(requestedWidth, left, right))
+	{
+		QMessageBox::warning(this, QStringLiteral("\u8f93\u5165\u65e0\u6548"),
+			QStringLiteral("\u8be5\u5bbd\u5ea6\u65e0\u6cd5\u6362\u7b97\u4e3a\u5408\u6cd5\u7684\u5c45\u4e2d\u50cf\u7d20\u8fb9\u754c\u3002"));
+		return false;
+	}
+	setLineCameraAdjustmentBounds(left, right);
+	return true;
+}
+
+bool hn2dPixWidget::applyLineCameraPendingInput()
+{
+	if (m_lineCameraPendingInputMode == 1) return applyLineCameraPixelInputs();
+	if (m_lineCameraPendingInputMode == 2) return applyLineCameraRoadWidthInput();
+	return true;
+}
+
+void hn2dPixWidget::updateLineCameraAreaOverlay()
+{
+	if (!m_lineCameraAreaAdjusting || !m_lineCameraLeftBoundary || !m_lineCameraRightBoundary ||
+		!m_sdkImageView || !m_sdkImageView->scene())
+	{
+		return;
+	}
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (!project)
+	{
+		return;
+	}
+	const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+	const int left = qBound(0, qRound(m_isHMirrored
+		? info.imageWidth - m_lineCameraLeftBoundary->pos().x()
+		: m_lineCameraLeftBoundary->pos().x()), info.imageWidth);
+	const int right = qBound(0, qRound(m_isHMirrored
+		? info.imageWidth - m_lineCameraRightBoundary->pos().x()
+		: m_lineCameraRightBoundary->pos().x()), info.imageWidth);
+	const qreal leftVisual = m_lineCameraLeftBoundary->pos().x();
+	const qreal rightVisual = m_lineCameraRightBoundary->pos().x();
+	if (m_isHMirrored)
+	{
+		m_lineCameraLeftBoundary->setHorizontalRange(rightVisual + 1.0, info.imageWidth);
+		m_lineCameraRightBoundary->setHorizontalRange(0.0, leftVisual - 1.0);
+	}
+	else
+	{
+		m_lineCameraLeftBoundary->setHorizontalRange(0.0, rightVisual - 1.0);
+		m_lineCameraRightBoundary->setHorizontalRange(leftVisual + 1.0, info.imageWidth);
+	}
+	const QRectF sceneRect = m_sdkImageView->scene()->sceneRect();
+	const qreal validVisualLeft = qMin(leftVisual, rightVisual);
+	const qreal validVisualRight = qMax(leftVisual, rightVisual);
+	m_lineCameraLeftShade->setRect(sceneRect.left(), sceneRect.top(),
+		qMax(0.0, validVisualLeft - sceneRect.left()), sceneRect.height());
+	m_lineCameraRightShade->setRect(validVisualRight, sceneRect.top(),
+		qMax(0.0, sceneRect.right() - validVisualRight), sceneRect.height());
+	const int validWidth = qMax(0, right - left);
+	const double roadWidth = validWidth * info.meterPerPixelWidth();
+	m_lineCameraPendingInputMode = 0;
+	if (m_lineCameraLeftPixelEdit && !m_lineCameraLeftPixelEdit->hasFocus())
+		m_lineCameraLeftPixelEdit->setText(QString::number(left));
+	if (m_lineCameraRightPixelEdit && !m_lineCameraRightPixelEdit->hasFocus())
+		m_lineCameraRightPixelEdit->setText(QString::number(right));
+	if (m_lineCameraRoadWidthEdit && !m_lineCameraRoadWidthEdit->hasFocus())
+		m_lineCameraRoadWidthEdit->setText(QString::number(roadWidth, 'f', 5));
+	if (m_lineCameraAreaSummary)
+	{
+		m_lineCameraAreaSummary->setText(QStringLiteral("左 %1 px  右 %2 px  有效 %3 px  道路 %4 m")
+			.arg(left).arg(right).arg(validWidth)
+			.arg(validWidth * info.meterPerPixelWidth(), 0, 'f', 5));
+	}
+}
+
+int hn2dPixWidget::diseasesOutsideLineCameraArea(int leftPixel, int rightPixel) const
+{
+	int affected = 0;
+	auto service = hnApp::hnDataManager::getDataManager()->getDiseaseService();
+	if (!service)
+	{
+		return affected;
+	}
+	const QVector<hnCommon::hnRoadDiseaseInfo> diseases = service->getAllRoadDiseases();
+	for (const hnCommon::hnRoadDiseaseInfo& disease : diseases)
+	{
+		bool outside = false;
+		for (const hn2dRectI& rect : disease.vec2dRect)
+		{
+			const int xs[] = { rect.p0.x, rect.p1.x, rect.p2.x, rect.p3.x };
+			const int pointCount = disease.nDrawType == 3 ? 1 : 4;
+			for (int pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+			{
+				const int x = xs[pointIndex];
+				if (x < leftPixel || x > rightPixel)
+				{
+					outside = true;
+					break;
+				}
+			}
+			if (outside) break;
+		}
+		if (outside) ++affected;
+	}	return affected;
+}
+
+void hn2dPixWidget::finishLineCameraAreaAdjustment(bool saveChanges)
+{
+	if (!m_lineCameraAreaAdjusting)
+	{
+		return;
+	}
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (saveChanges && project && m_lineCameraLeftBoundary && m_lineCameraRightBoundary)
+	{
+		const hnPro::hnLineCameraInfo& info = project->getLineCameraInfo();
+		const int left = qBound(0, qRound(m_isHMirrored
+			? info.imageWidth - m_lineCameraLeftBoundary->pos().x()
+			: m_lineCameraLeftBoundary->pos().x()), info.imageWidth);
+		const int right = qBound(0, qRound(m_isHMirrored
+			? info.imageWidth - m_lineCameraRightBoundary->pos().x()
+			: m_lineCameraRightBoundary->pos().x()), info.imageWidth);
+		const int affected = diseasesOutsideLineCameraArea(left, right);
+		if (affected > 0)
+		{
+			QMessageBox::warning(this, QStringLiteral("无法保存有效区域"),
+				QStringLiteral("新边界会排除 %1 个已有病害。请扩大边界，或先处理这些病害。 ").arg(affected));
+			return;
+		}
+		QString errorMessage;
+		if (!project->setLineCameraValidArea(left, right, &errorMessage))
+		{
+			QMessageBox::critical(this, QStringLiteral("保存失败"), errorMessage);
+			return;
+		}
+	}
+
+	QGraphicsScene* scene = m_sdkImageView ? m_sdkImageView->scene() : nullptr;
+	auto removeItem = [scene](QGraphicsItem*& item)
+	{
+		if (!item) return;
+		if (scene) scene->removeItem(item);
+		delete item;
+		item = nullptr;
+	};
+	QGraphicsItem* leftBoundary = m_lineCameraLeftBoundary;
+	QGraphicsItem* rightBoundary = m_lineCameraRightBoundary;
+	QGraphicsItem* leftShade = m_lineCameraLeftShade;
+	QGraphicsItem* rightShade = m_lineCameraRightShade;
+	removeItem(leftBoundary);
+	removeItem(rightBoundary);
+	removeItem(leftShade);
+	removeItem(rightShade);
+	m_lineCameraLeftBoundary = nullptr;
+	m_lineCameraRightBoundary = nullptr;
+	m_lineCameraLeftShade = nullptr;
+	m_lineCameraRightShade = nullptr;
+	delete m_lineCameraAreaPanel;
+	m_lineCameraAreaPanel = nullptr;
+	m_lineCameraAreaSummary = nullptr;
+	m_lineCameraLeftPixelEdit = nullptr;
+	m_lineCameraRightPixelEdit = nullptr;
+	m_lineCameraRoadWidthEdit = nullptr;
+	m_lineCameraPendingInputMode = 0;
+	m_lineCameraAreaAdjusting = false;
+	refreshLineCameraAreaGuide();
+	if (saveChanges)
+	{
+		m_widthScale = project->getCurProSetInfo().dRadioX;
+		refreshSdkDiseaseLayer();
+		update();
+	}
+	emit signal_lineCameraAreaAdjustmentStateChanged(false);
+}
 bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 {
 
@@ -4623,6 +5395,19 @@ bool hn2dPixWidget::isValidArea(QMouseEvent * event)
 		return false;
 	}
 	QPoint bigImagePoint = this->screenPointToBigImagePoint(event->pos());
+	auto currentProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (currentProject && currentProject->isLineCameraProject() &&
+		(m_workMode == WorkMode::ADD_MODE || m_workMode == WorkMode::EDIT_MODE || m_workMode == WorkMode::MOVE))
+	{
+		const hnPro::hnLineCameraInfo& info = currentProject->getLineCameraInfo();
+		const int displayedX = qBound(0, bigImagePoint.x(), info.imageWidth);
+		const int sourceX = m_isHMirrored ? info.imageWidth - displayedX : displayedX;
+		if (!info.containsPixelX(sourceX))
+		{
+			QToolTip::showText(event->globalPos(), QStringLiteral("线阵病害只能在有效道路区域内操作。"));
+			return false;
+		}
+	}
 	this->m_firstHnMile = this->getHnMileFromPoint(bigImagePoint);
 
 	//判断当前桩号 是否在用户规定区间内
@@ -4709,9 +5494,11 @@ QString hn2dPixWidget::sdkStatusInfoFromContext(const hn2d3dPixBaseWidget::SdkSt
 	const double bottomEncoderMile = currentPointMile.dEnclMile;
 	const double encoderMile = bottomEncoderMile + (m_pixHeight - localY) * projectSetInfo.dRadioY;
 	const double trueMile = hnDataManager::getDataManager()->getCurrentProject()->enclToTrueMile(encoderMile);
-
-    const double roadWidth = qMax(0.0, projectSetInfo.dRoadWidth);
-    const double rawXMile = context.routeImagePoint.x() * projectSetInfo.dRadioX;
+    auto statusProject = hnDataManager::getDataManager()->getCurrentProject();
+    const double roadWidth = statusProject ? statusProject->effectiveRoadWidth() : qMax(0.0, projectSetInfo.dRoadWidth);
+    const double rawXMile = statusProject && statusProject->isLineCameraProject()
+        ? statusProject->getLineCameraInfo().roadXFromPixel(context.singleImagePoint.x())
+        : context.routeImagePoint.x() * projectSetInfo.dRadioX;
     const double xMile = roadWidth > 0.0 ? qBound(0.0, rawXMile, roadWidth) : qMax(0.0, rawXMile);
     const QString mileText = QString::fromLocal8Bit("(X:%1,Y:%2)").arg(xMile, 0, 'f', 3).arg(encoderMile, 0, 'f', 3);
 
@@ -4752,7 +5539,7 @@ QString hn2dPixWidget::sdkStatusInfoFromContext(const hn2d3dPixBaseWidget::SdkSt
 
 hn2dPixWidget::~hn2dPixWidget()
 {
-	 
+	clearLineCameraAreaGuide();
 }
 
 void hn2dPixWidget::slotDiseaseChanged()

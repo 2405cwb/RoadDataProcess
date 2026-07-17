@@ -16,7 +16,10 @@ typedef   struct _HN_MILE_
 		dGpsTimer = 0.0;
 		dTrueMile = 0.0;
 		roadGrad = -1;
-		roadWidth = -1;  
+		roadWidth = -1;
+		drawType = hnCommon::ROAD_WORK_LARGE_RECT;
+		roadType = hnCommon::ROAD_LQ_SURFACE;
+		roadStandard = HnProjectEnums::None;
 	}
 	
 	operator QString()const

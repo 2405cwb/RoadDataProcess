@@ -22,6 +22,7 @@ protected:
 	int browseStep()   const;
 
 	bool is2DView() const;
+	bool stepOneImage() override;
 public slots:
        void slot_BlockValueChanged(int) override;
 

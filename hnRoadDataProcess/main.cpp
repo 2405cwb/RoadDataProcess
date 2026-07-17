@@ -25,6 +25,36 @@
 
 namespace
 {
+	// Qt 5.8 必须在 QApplication 创建前把进程设为逐显示器 DPI 感知。
+	// 原来的 SetProcessDPIAware 只按主屏缩放工作，跨 150%/100% 屏幕后会产生全局鼠标坐标偏移。
+	bool hnEnablePerMonitorDpiAwareness()
+	{
+		typedef HRESULT(WINAPI* SetProcessDpiAwarenessFn)(int);
+		HMODULE shcore = ::LoadLibraryW(L"shcore.dll");
+		if (shcore)
+		{
+			SetProcessDpiAwarenessFn setProcessDpiAwareness =
+				reinterpret_cast<SetProcessDpiAwarenessFn>(::GetProcAddress(shcore, "SetProcessDpiAwareness"));
+			if (setProcessDpiAwareness)
+			{
+				// PROCESS_PER_MONITOR_DPI_AWARE = 2
+				const HRESULT result = setProcessDpiAwareness(2);
+				::FreeLibrary(shcore);
+				if (SUCCEEDED(result) || result == E_ACCESSDENIED)
+				{
+					return true;
+				}
+			}
+			else
+			{
+				::FreeLibrary(shcore);
+			}
+		}
+
+		// Windows 7 等不支持逐显示器 DPI 的系统保留旧兜底。
+		return ::SetProcessDPIAware() != FALSE;
+	}
+
 	QString hnEventTypeName(QEvent::Type type)
 	{
 		switch (type)
@@ -190,7 +220,7 @@ void logOutput(QtMsgType type, const QMessageLogContext &context, const QString 
 
 int main(int argc, char *argv[])
 {
-	SetProcessDPIAware();
+	hnEnablePerMonitorDpiAwareness();
 	QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 	//开启qt的高
 	//安装消息过滤器  记录日志用

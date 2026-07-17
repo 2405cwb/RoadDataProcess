@@ -4,6 +4,7 @@
 #include "TiledGraphicsView.h" 
 #include "AbstractSourceFactory.h"
 #include "PackImageTileSource.h"
+#include "VirtualImageSequence.h"
 #include "PackReaderQt.h"
 #include "./items/DefectShapeItem.h"   
 #include <QDebug> 
@@ -177,6 +178,11 @@ bool TunnelViewerController::loadRoute(const QString& rootPath)
 
 bool TunnelViewerController::loadImages(const QStringList& imagePaths)
 {
+	return loadImages(imagePaths, SequenceLoadOptions());
+}
+
+bool TunnelViewerController::loadImages(const QStringList& imagePaths, const SequenceLoadOptions& options)
+{
 	if (!m_view || !m_factory) {
 		qWarning() << QString::fromLocal8Bit("Controller未初始化 View 或 Factory");
 		return false;
@@ -192,12 +198,26 @@ bool TunnelViewerController::loadImages(const QStringList& imagePaths)
 		qWarning() << "No valid images for SDK view.";
 		return false;
 	}
-	if (validPaths.size() > m_maxRouteSections) {
-		qWarning() << "Image count exceeds safety limit:"
-			<< validPaths.size() << "limit:" << m_maxRouteSections;
+	QStringList skippedPaths;
+	QSharedPointer<FileSequenceFrameSource> sequenceSource =
+		FileSequenceFrameSource::create(validPaths, options.knownFrameSize, &skippedPaths);
+	if (sequenceSource.isNull() || sequenceSource->frameCount() == 0) {
+		qWarning() << "SDK image sequence contains no readable frames.";
 		return false;
 	}
+	m_packFrameInfos.clear();
+	m_curTunnelNames.clear();
+	for (quint64 i = 0; i < sequenceSource->frameCount(); ++i)
+		m_curTunnelNames.append(sequenceSource->descriptor(i).imageName);
+	m_view->set_scrollSpeed(m_factory->scrollSpeed());
+	const bool sequenceLoaded = m_view->loadVirtualSequence(sequenceSource, options,
+		m_factory->layoutOrientation(), m_factory->horizontalMirror(), m_factory->verticalMirror());
+	qDebug() << "[HN_SDK_VIRTUAL_IMAGE_LOAD] loaded=" << sequenceSource->frameCount()
+		<< "skipped=" << skippedPaths.size()
+		<< "chunks=" << (sequenceSource->frameCount() + qMax(1, options.chunkFrameCount) - 1) / qMax(1, options.chunkFrameCount);
+	return sequenceLoaded;
 
+#if 0 // Legacy per-image implementation retained temporarily for source comparison only.
 	m_view->setLayoutOrientation(m_factory->layoutOrientation());
 	m_view->set_scrollSpeed(m_factory->scrollSpeed());
 	m_packFrameInfos.clear();
@@ -209,11 +229,35 @@ bool TunnelViewerController::loadImages(const QStringList& imagePaths)
 		m_view->scene()->blockSignals(true);
 	}
 
-	for (const QString& imagePath : qAsConst(validPaths)) {
+	const int totalCount = validPaths.size();
+	QProgressDialog progress(
+		QStringLiteral("正在加载二维路面影像..."),
+		QStringLiteral("取消"),
+		0,
+		totalCount,
+		m_view);
+	progress.setWindowTitle(QStringLiteral("加载工程"));
+	progress.setWindowModality(Qt::WindowModal);
+	progress.setMinimumDuration(500);
+	progress.setAutoClose(true);
+	progress.setValue(0);
+
+	int loadedCount = 0;
+	for (int index = 0; index < totalCount; ++index) {
+		progress.setValue(index);
+		if (progress.wasCanceled()) {
+			clear();
+			restoreViewUpdates(false);
+			qWarning() << "SDK image loading canceled:" << index << "/" << totalCount;
+			return false;
+		}
+
+		const QString& imagePath = validPaths.at(index);
 		AbstractTileSource* source = m_factory->create(imagePath);
 		if (source && source->isValid()) {
 			m_view->addLayer(source);
 			m_curTunnelNames.append(source->oriImageName());
+			++loadedCount;
 		}
 		else {
 			if (source) delete source;
@@ -221,12 +265,17 @@ bool TunnelViewerController::loadImages(const QStringList& imagePaths)
 		}
 	}
 
-	if (m_view->scene()) {
-		m_view->scene()->blockSignals(false);
+	progress.setValue(totalCount);
+	restoreViewUpdates(false);
+	if (loadedCount == 0) {
+		clear();
+		qWarning() << "SDK image loading produced no valid layers.";
+		return false;
 	}
-	m_view->setUpdatesEnabled(true);
 	m_view->resetToFit();
-	return !m_curTunnelNames.isEmpty();
+	qDebug() << "[HN_SDK_IMAGE_LOAD_OK] loaded=" << loadedCount << "requested=" << totalCount;
+	return true;
+#endif
 }
 
 bool TunnelViewerController::loadPackRoute(const QString& packRoot, const PackRouteOptions& options)
@@ -256,12 +305,6 @@ bool TunnelViewerController::loadPackRoute(const QString& packRoot, const PackRo
 			qWarning() << "Pack has no readable frames:" << rootPath;
 			return false;
 		}
-		if (frameCount > static_cast<quint64>(m_maxRouteSections)) {
-			qWarning() << "Pack frame count exceeds safety limit:"
-				<< static_cast<qulonglong>(frameCount) << "limit:" << m_maxRouteSections;
-			return false;
-		}
-
 		QByteArray firstJpeg = reader.readJpeg(0);
 		QImage firstImage;
 		firstImage.loadFromData(firstJpeg, "JPG");
@@ -270,7 +313,35 @@ bool TunnelViewerController::loadPackRoute(const QString& packRoot, const PackRo
 			return false;
 		}
 		const QSize frameSize = firstImage.size();
+		QString sequenceError;
+		QSharedPointer<PackSequenceFrameSource> sequenceSource =
+			PackSequenceFrameSource::create(rootPath, frameSize, options.verifyOnOpen, &sequenceError);
+		if (sequenceSource.isNull() || sequenceSource->frameCount() == 0) {
+			qWarning() << "Failed to create virtual Pack sequence:" << sequenceError;
+			return false;
+		}
+		m_rootPath = rootPath;
+		m_packFrameInfos.clear();
+		m_curTunnelNames.clear();
+		for (quint64 i = 0; i < sequenceSource->frameCount(); ++i) {
+			const SequenceFrameDescriptor descriptor = sequenceSource->descriptor(i);
+			PackRouteFrameInfo info;
+			info.imageName = descriptor.imageName;
+			info.globalIndex = descriptor.globalIndex;
+			info.sourceIndex = descriptor.sourceIndex;
+			info.timeValue = descriptor.timeValue;
+			info.width = descriptor.imageSize.width();
+			info.height = descriptor.imageSize.height();
+			m_packFrameInfos.append(info);
+			m_curTunnelNames.append(info.imageName);
+		}
+		SequenceLoadOptions sequenceOptions;
+		sequenceOptions.knownFrameSize = frameSize;
+		m_view->set_scrollSpeed(options.scrollSpeed);
+		return m_view->loadVirtualSequence(sequenceSource, sequenceOptions, options.orientation,
+			options.hMirrored, options.vMirrored);
 
+#if 0 // Legacy per-frame Pack items retained temporarily for source comparison only.
 		m_rootPath = rootPath;
 		m_packFrameInfos.clear();
 		m_curTunnelNames.clear();
@@ -337,6 +408,7 @@ bool TunnelViewerController::loadPackRoute(const QString& packRoot, const PackRo
 		m_view->setUpdatesEnabled(true);
 		m_view->resetToFit();
 		return !m_packFrameInfos.isEmpty();
+#endif
 	}
 	catch (const std::exception& ex) {
 		restoreViewUpdates(false);

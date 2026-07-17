@@ -9,6 +9,9 @@
 #include "..\hnProject\hn2DProject.h"
 #include <QString>
 #include <QMessageBox>
+#include <QDir>
+#include <QMap>
+#include <QFileInfo>
 #include "..\hnApplication\hnDataManager.h"
 #include "MileAndDmi.h"
 #include "..\hnApplication\hnDiseaseService.h"
@@ -1994,132 +1997,144 @@ bool  hnOutExcelMileManage::writePbiValue(QVector<hnOutExcelMile>& miles)
 
 bool hnOutExcelMileManage::writeJHXXValue(double BaseLen)
 {
-	QString dataPath = m_project->get2DProject()->getBasePath() + "\\Geoalig_10m.txt";
+	QString resultDirectory;
+	if (m_project->getProjectType() == PROJECT_23D_TYPE && m_project->get2DProject())
+		resultDirectory = m_project->get2DProject()->getBasePath();
+	else
+		resultDirectory = m_project->get3DProPath();
+	const QString dataPath = QDir(resultDirectory).filePath(QStringLiteral("Geoalig_10m.txt"));
 	QStringList datas = MyCommonMethods::ReadAllLines(dataPath);
 
 	if (datas.size() <= 0)
 	{
-		QString message = m_project->get2DProName() + QStringLiteral("\r\n是否未计算几何线性!");
+		QString message = m_project->get2DProName() + QStringLiteral("\r\n尚未计算几何线型!");
 		string mes = message.toLocal8Bit();
 		reportExcelError(message);
 		return false;
-	} 
+	}
 
-	QVector<double> qlDatas;
-	QVector<double> zpDatas  ;
-	QVector<double> hpDatas; 
+	struct GeometryReportRow
+	{
+		double mileage = 0.0;
+		double curvature = 0.0;
+		double longitudinalSlope = 0.0;
+		double crossSlope = 0.0;
+		bool curvatureValid = true;
+		bool longitudinalValid = true;
+		bool crossValid = true;
+	};
+	QVector<GeometryReportRow> geometryRows;
 	for (int i = 0 ; i < datas.size() ;++i)
 	{
-		QString line = datas[i];
-		QStringList split =  line.split(",");
+		QStringList split = datas[i].split(',');
 		if (split.size() <4)
-		{
 			continue;
-		}
-		qlDatas.push_back(split[1].toDouble());
-		zpDatas.push_back(split[2].toDouble());
-		hpDatas.push_back(split[3].toDouble());
+		bool mileageOk = false, curvatureOk = false, longitudinalOk = false, crossOk = false;
+		GeometryReportRow row;
+		row.mileage = split[0].toDouble(&mileageOk);
+		row.curvature = split[1].toDouble(&curvatureOk);
+		row.longitudinalSlope = split[2].toDouble(&longitudinalOk);
+		row.crossSlope = split[3].toDouble(&crossOk);
+		if (mileageOk && curvatureOk && longitudinalOk && crossOk)
+			geometryRows.append(row);
 	}
-	BaseLen = 10;
-	int len = m_roadSplietVec.size();
-	int startidx = 0, endidx = 0, ValStridx = 0;
+	if (geometryRows.isEmpty())
+	{
+		reportExcelError(m_project->get2DProName() + QStringLiteral("\r\nGeoalig_10m.txt没有有效数据!"));
+		return false;
+	}
+	std::sort(geometryRows.begin(), geometryRows.end(), [](const GeometryReportRow& left, const GeometryReportRow& right) {
+		return left.mileage < right.mileage;
+	});
+
+	// 新文件使用质量侧车文件；历史四列文件没有质量文件时保持全部数值有效。
+	const QString qualityPath = QDir(resultDirectory).filePath(QStringLiteral("Geoalig_10m.quality.csv"));
+	const QStringList qualityLines = MyCommonMethods::ReadAllLines(qualityPath);
+	QMap<qint64, QVector<bool> > qualityByMileage;
+	for (int i = 1; i < qualityLines.size(); ++i)
+	{
+		const QStringList fields = qualityLines[i].split(',');
+		if (fields.size() < 4)
+			continue;
+		bool ok = false;
+		const double mileage = fields[0].toDouble(&ok);
+		if (!ok)
+			continue;
+		QVector<bool> flags;
+		flags << (fields[1].toInt() != 0) << (fields[2].toInt() != 0) << (fields[3].toInt() != 0);
+		qualityByMileage.insert(qRound64(mileage * 1000.0), flags);
+	}
+	bool qualityComplete = !qualityByMileage.isEmpty() && qualityByMileage.size() == geometryRows.size();
+	if (qualityComplete)
+	{
+		for (const GeometryReportRow& row : geometryRows)
+		{
+			if (!qualityByMileage.contains(qRound64(row.mileage * 1000.0)))
+			{
+				qualityComplete = false;
+				break;
+			}
+		}
+	}
+	if (QFileInfo::exists(qualityPath) && !qualityComplete)
+	{
+		reportExcelError(m_project->get2DProName()
+			+ QStringLiteral("\r\n几何线型质量文件与Geoalig_10m.txt不匹配，请重新计算几何线型!"));
+		return false;
+	}
+	if (qualityComplete)
+	{
+		for (GeometryReportRow& row : geometryRows)
+		{
+			const QVector<bool> flags = qualityByMileage.value(qRound64(row.mileage * 1000.0));
+			if (flags.size() == 3)
+			{
+				row.curvatureValid = flags[0];
+				row.longitudinalValid = flags[1];
+				row.crossValid = flags[2];
+			}
+		}
+	}
+
+	BaseLen = 10.0;
+	const int len = m_roadSplietVec.size();
 	QVector<double>lval(len);
 	QVector<double>rval(len);
 	QVector<double>aval(len);
 	for (int i = 0; i < len; i++)
 	{
-		double suml = 0, sumr = 0,suma = 0 ;
-		QStringList tmtd;
-		int valnum = 0;
-		auto v1 = m_roadSplietVec[i].getStartDmi();
-		auto v2 = m_roadSplietVec[i].getEndDmi();
-		startidx = (int)qRound((v1 - 0.5) / BaseLen);
-		endidx = (int)qRound(v2 / BaseLen);
-		if (startidx >= endidx)
+		double sumCurvature = 0.0, sumLongitudinal = 0.0, sumCross = 0.0;
+		int curvatureCount = 0, longitudinalCount = 0, crossCount = 0;
+		const double startMileage = m_roadSplietVec[i].getStartDmi();
+		const double endMileage = m_roadSplietVec[i].getEndDmi();
+		for (const GeometryReportRow& row : geometryRows)
 		{
-			if (startidx < qlDatas.size())
-			{ 
-				suml += qlDatas[startidx];
-				sumr += zpDatas[startidx];
-				suma += hpDatas[startidx];
-				++valnum;
-			}
+			// 每一行代表[mileage, mileage+10m)，按真实里程判断是否与报表段相交。
+			if (row.mileage >= endMileage || row.mileage + BaseLen <= startMileage)
+				continue;
+			if (row.curvatureValid) { sumCurvature += row.curvature; ++curvatureCount; }
+			if (row.longitudinalValid) { sumLongitudinal += row.longitudinalSlope; ++longitudinalCount; }
+			if (row.crossValid) { sumCross += row.crossSlope; ++crossCount; }
 		}
-		else
+		if (curvatureCount == 0 || longitudinalCount == 0 || crossCount == 0)
 		{
-			for (ValStridx = startidx; ValStridx < endidx; ValStridx++)
-			{
-				if (ValStridx < qlDatas.size())
-				{
-					suml += qlDatas[startidx];
-					sumr += zpDatas[startidx];
-					suma += hpDatas[startidx];
-					++valnum;
-				} 
-			}
+			reportExcelError(m_project->get2DProName()
+				+ QStringLiteral("\r\n几何线型在里程%1-%2内缺少有效的曲率、纵坡或横坡数据!")
+				.arg(startMileage, 0, 'f', 1).arg(endMileage, 0, 'f', 1));
+			return false;
 		}
-		if (valnum > 0)
-		{
-			suml /= valnum;
-			sumr /= valnum;
-			suma /= valnum;
-		} 
-		if (valnum > 0)
-		{
-			lval[i] = suml;
-			rval[i] = sumr;
-			aval[i] = suma;
-		} 
-		else if (i > 0)
-		{
-			lval[i] = lval[i - 1];
-			rval[i] = rval[i - 1];
-			aval[i] = aval[i - 1];
-		}
-		else
-		{
-			lval[i] = 0;
-			rval[i] = 0;
-			aval[i] = 0;
-		} 
+		lval[i] = sumCurvature / curvatureCount;
+		rval[i] = sumLongitudinal / longitudinalCount;
+		aval[i] = sumCross / crossCount;
 	}
-	if (len >= 2)
-	{
-		if (lval[0] == 0)
-		{
-			lval[0] = lval[1];
-		}
-		if (lval[len - 1] == 0)
-		{
-			lval[len - 1] = lval[len - 2];
-		}
-	 
-		if (rval[0] == 0)
-		{
-			rval[0] = rval[1];
-		}
-		if (rval[len - 1] == 0)
-		{
-			rval[len - 1] = rval[len - 2];
-		}
 
-		if (aval[0] == 0)
-		{
-			aval[0] = aval[1];
-		}
-		if (aval[len - 1] == 0)
-		{
-			aval[len - 1] = aval[len - 2];
-		}
-	}
-	  
 	for (int i = 0; i < len; ++i)
-	{ 
+	{
 		m_roadSplietVec[i].setCurvature(lval[i]);
 		m_roadSplietVec[i].setLongitudianalSlope(rval[i]);
 		m_roadSplietVec[i].setCrossSlope(aval[i]);
 	}
-	 
+
 	return true;
 }
 
@@ -3322,4 +3337,3 @@ double hnOutExcelMileManage::getCloseMile(const double& value)
 	}
 
 }
-

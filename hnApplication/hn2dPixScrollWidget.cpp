@@ -10,7 +10,7 @@ hn2dPixScrollWidget::hn2dPixScrollWidget(QWidget *parent)
 
 void hn2dPixScrollWidget::loadRoadPicture()
 {
-	 
+	stopAutoPlay();
 	this->m_roadDamageBrowserPixWidget->loadRoadPicture();
 }
 
@@ -19,6 +19,8 @@ void hn2dPixScrollWidget::initConnect()
 	connect(this, &hnContinuouslyBrowsePixWidget::signal_moveMouse, m_browsePixWidget, &hnBrowsePixWidget::slot_moveMouse);
 	connect(m_roadDamageBrowserPixWidget, &hn2dPixWidget::signal_sdkBottomEncoderMileChanged,
 		this, &hn2dPixScrollWidget::slot_sdkBottomEncoderMileChanged);
+	connect(this, &hnContinuouslyBrowsePixWidget::signal_imageBrightnessChanged,
+		m_roadDamageBrowserPixWidget, &hn2dPixWidget::setSdkImageBrightness);
 }
 
 void hn2dPixScrollWidget::keyPressEvent(QKeyEvent *event)
@@ -34,6 +36,12 @@ int hn2dPixScrollWidget::browseStep() const
 bool hn2dPixScrollWidget::is2DView() const
 {
 	return true;
+}
+
+bool hn2dPixScrollWidget::stepOneImage()
+{
+	return m_roadDamageBrowserPixWidget
+		&& m_roadDamageBrowserPixWidget->stepSingleFrame(1);
 }
 
 void hn2dPixScrollWidget::slot_BlockValueChanged(int value)

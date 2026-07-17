@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <QString>
 #include "..\hnConvert\hnDataCombineStructInfo.h"
 # include "..\hnPavementCreate3d\hn3dRoadPcdToImage.h"
 #include "..\hnPcdCoordinate\hnPcdCoordinate.h"
@@ -14,6 +15,11 @@ typedef struct _HN_ROAD_GEO_PARAM
 		dHAngle = 0.0;
 		dVAngle = 0.0;
 		dC = 0.0;
+		bHAngleValid = false;
+		bVAngleValid = false;
+		bCurvatureValid = false;
+		dFitRmse = 0.0;
+		dValidPointRatio = 0.0;
 	}
 
 	// 里程
@@ -34,7 +40,35 @@ typedef struct _HN_ROAD_GEO_PARAM
 	// 曲率
 	double dC;
 
+	// 三项几何结果是否由有效数据计算得到；无效数值不得参与报表。
+	bool bHAngleValid;
+	bool bVAngleValid;
+	bool bCurvatureValid;
+	double dFitRmse;
+	double dValidPointRatio;
+
 }hnRoadGeoParam;
+
+struct GeometryCalculationOptions
+{
+	GeometryCalculationOptions()
+		: sampleSpacing(1.0), outputSpacing(10.0), longitudinalWindow(1.0)
+	{
+	}
+	double sampleSpacing;
+	double outputSpacing;
+	double longitudinalWindow;
+};
+
+enum class GeometryCalculationStatus
+{
+	Success,
+	Cancelled,
+	InvalidInput,
+	ReadFailed,
+	InsufficientData,
+	WriteFailed
+};
 
 // POS数据结构
 typedef struct HN_POS_STRUCT_INFO

@@ -463,7 +463,7 @@ bool hnImportAidcDiseases::load2dDb()
 
 	QString standard = QString::fromLocal8Bit(hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().strRoadStandard);
 
-	double roadWidth = hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRoadWidth;
+	double roadWidth = hnDataManager::getDataManager()->getCurrentProject()->effectiveRoadWidth();
 	//公路等级转枚举
 	HnProjectEnums::StandardParmTypeEnum roadLevelEnum = HnProjectEnums::roadTypeQStringToEnum(standard);
 

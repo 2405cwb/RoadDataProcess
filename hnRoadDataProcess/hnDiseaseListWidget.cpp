@@ -606,7 +606,47 @@ void hnDiseaseListWidget::road2dDiseaseJump(const double encoderMile, const hnRo
 		return;
 	}
 
-	emit this->signal_road2dFrameIdxChanged(encoderMile);
+	double jumpEncoderMile = encoderMile;
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	if (project && project->get2DProject() && !disease.vec2dRect.empty())
+	{
+		const hnProjectSetInfo setting = project->getCurProSetInfo();
+		const bool verticalMirrored = project->get2DProject()->getIsVMirrored();
+		bool hasGeometryMile = false;
+		double minGeometryMile = 0.0;
+		double maxGeometryMile = 0.0;
+		if (setting.picPixelY > 0 && setting.dRadioY > 0.0)
+		{
+			for (const hn2dRectI& rect : disease.vec2dRect)
+			{
+				const hn2dPointWithMileI points[] = { rect.p0, rect.p1, rect.p2, rect.p3 };
+				for (const hn2dPointWithMileI& point : points)
+				{
+					if (point.m_dmi < 0.0) continue;
+					const int displayY = verticalMirrored
+						? setting.picPixelY - 1 - point.y : point.y;
+					const double pointMile = point.m_dmi +
+						(setting.picPixelY - qBound(0, displayY, setting.picPixelY)) * setting.dRadioY;
+					if (!hasGeometryMile)
+					{
+						minGeometryMile = maxGeometryMile = pointMile;
+						hasGeometryMile = true;
+					}
+					else
+					{
+						minGeometryMile = qMin(minGeometryMile, pointMile);
+						maxGeometryMile = qMax(maxGeometryMile, pointMile);
+					}
+				}
+			}
+		}
+		if (hasGeometryMile)
+		{
+			jumpEncoderMile = (minGeometryMile + maxGeometryMile) * 0.5;
+		}
+	}
+
+	emit this->signal_road2dFrameIdxChanged(jumpEncoderMile);
 	emit this->signal_setDiseaseIsChecked(disease);
 }
 

@@ -52,12 +52,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>qt5.8.0</QtInstall>
-    <QtModules>core;gui;testlib</QtModules>
+    <QtModules>core;gui;widgets;sql;concurrent;testlib</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>qt5.8.0</QtInstall>
-    <QtModules>core;gui;testlib</QtModules>
+    <QtModules>core;gui;widgets;sql;concurrent;testlib</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.props')">
@@ -65,6 +65,7 @@
   </ImportGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ClCompile>
+      <AdditionalIncludeDirectories>..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -78,6 +79,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
     <ClCompile>
+      <AdditionalIncludeDirectories>..\3rd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -94,10 +96,14 @@
     <ClCompile Include="..\hnRoadDataProcess\mergeTwoDiseases.cpp" />
     <ClCompile Include="..\hnRoadDataProcess\VMirror2dRectI.cpp" />
     <ClCompile Include="..\hnApplication\LittleFrameRenderPathBuilder.cpp" />
+    <ClCompile Include="..\hnRoadDataProcess\hnGeometryCalculation.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="test_LittleFrameRenderPathBuilder.cpp" />
     <ClCompile Include="test_DrPciCalculator.cpp" />
     <ClCompile Include="test_isMergeableDisease.cpp" />
+	<ClCompile Include="test_LineCameraConfig.cpp" />
+    <ClCompile Include="test_VirtualImageSequence.cpp" />
+    <ClCompile Include="test_GeometryCalculation.cpp" />
     <ClCompile Include="test_mergeAidcDiseases.cpp" />
     <ClCompile Include="test_mergeTwoDiseases.cpp" />
     <ClCompile Include="test_VMirror2dRectI.cpp" />
@@ -121,9 +127,26 @@
     <QtMoc Include="test_VMirror2dRectI.h" />
     <QtMoc Include="test_LittleFrameRenderPathBuilder.h" />
     <QtMoc Include="test_DrPciCalculator.h" />
+	<QtMoc Include="test_LineCameraConfig.h" />
+    <QtMoc Include="test_VirtualImageSequence.h" />
+    <QtMoc Include="test_GeometryCalculation.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\hnRoadDataProcess\VMirror2dRectI.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SDK\TunnelViewerSDK.vcxproj">
+      <Project>{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\hnProject\hnProject.vcxproj">
+      <Project>{8BEF236F-3DFB-4C87-AA52-957D85EFCC8D}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\hnPavementCreate3d\hnPavementCreate3d.vcxproj">
+      <Project>{C288DA04-68A2-4C79-9F81-33684979B856}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\hnPcdCoordinate\hnPcdCoordinate.vcxproj">
+      <Project>{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

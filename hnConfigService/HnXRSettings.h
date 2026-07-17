@@ -189,6 +189,7 @@ public:
 
 	   //校桩选择整数
 	   bool mile2dmiToInt;
+	   bool wheelScrollOneImage = false;
 
 	   //记录最近的五条备注信息
 	   QString diseaseMarkTxts;

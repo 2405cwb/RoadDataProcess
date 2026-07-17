@@ -22,9 +22,15 @@
     <ClInclude Include="hnproject_global.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="hnLineCameraConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClCompile Include="hnProject.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+	<ClCompile Include="hnLineCameraConfig.cpp">
+	  <Filter>Source Files</Filter>
+	</ClCompile>
     <ClInclude Include="hnProjectManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>

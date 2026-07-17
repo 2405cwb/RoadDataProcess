@@ -2,6 +2,7 @@
 #include <QOpenGLWidget>
 #include <QScrollBar>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QDebug>
 #include <QApplication>
 #include <QFileInfo>
@@ -9,9 +10,89 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSurfaceFormat>
+#include <QPointer>
+#include <QRunnable>
+#include <QThread>
+#include <QMetaObject>
 
 #include "./tools/DefectDrawTool.h"
 #include "./items/DefectShapeItem.h"
+#include "VirtualImageSequence.h"
+#include "AsyncImageLoader.h"
+
+namespace {
+bool sequenceTraceEnabled()
+{
+	static const bool enabled = qgetenv("HN_SEQUENCE_TRACE") == QByteArrayLiteral("1");
+	return enabled;
+}
+
+class SequenceDecodeTask : public QRunnable
+{
+public:
+    SequenceDecodeTask(TiledGraphicsView* view, const QSharedPointer<ISequenceFrameSource>& source,
+        int sourceIndex, bool highResolution, int generation, int requestSerial,
+		int thumbnailMaxEdge, int brightness)
+        : m_view(view), m_source(source), m_sourceIndex(sourceIndex),
+		  m_highResolution(highResolution), m_generation(generation), m_requestSerial(requestSerial),
+		  m_thumbnailMaxEdge(thumbnailMaxEdge),
+          m_brightness(brightness)
+    {
+        setAutoDelete(true);
+    }
+
+    void run() override
+    {
+		QElapsedTimer decodeTimer;
+		decodeTimer.start();
+		if (sequenceTraceEnabled())
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][DECODE_BEGIN]"
+				<< "index=" << m_sourceIndex << "high=" << m_highResolution
+				<< "layoutGen=" << m_generation << "request=" << m_requestSerial;
+        QImage image;
+        if (!m_source.isNull()) {
+            image = m_highResolution
+                ? m_source->decodeFullImage(static_cast<quint64>(m_sourceIndex))
+                : m_source->decodeThumbnail(static_cast<quint64>(m_sourceIndex), QSize(m_thumbnailMaxEdge, m_thumbnailMaxEdge));
+        }
+		if (!image.isNull() && m_brightness != 0) {
+			if (image.format() != QImage::Format_RGB888)
+				image = image.convertToFormat(QImage::Format_RGB888);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+			const int totalBytes = static_cast<int>(image.sizeInBytes());
+#else
+			const int totalBytes = image.byteCount();
+#endif
+			uchar* bits = image.bits();
+			for (int i = 0; i < totalBytes; ++i) {
+				const int adjusted = bits[i] + m_brightness;
+				bits[i] = static_cast<uchar>(qBound(0, adjusted, 255));
+			}
+		}
+		if (sequenceTraceEnabled())
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][DECODE_END]"
+				<< "index=" << m_sourceIndex << "high=" << m_highResolution
+				<< "layoutGen=" << m_generation << "request=" << m_requestSerial
+				<< "null=" << image.isNull() << "size=" << image.size()
+				<< "elapsedMs=" << decodeTimer.elapsed();
+        if (!m_view.isNull()) {
+            QMetaObject::invokeMethod(m_view.data(), "onSequenceImageDecoded", Qt::QueuedConnection,
+                Q_ARG(int, m_sourceIndex), Q_ARG(bool, m_highResolution),
+				Q_ARG(int, m_generation), Q_ARG(int, m_requestSerial), Q_ARG(QImage, image));
+        }
+    }
+
+private:
+    QPointer<TiledGraphicsView> m_view;
+    QSharedPointer<ISequenceFrameSource> m_source;
+    int m_sourceIndex = -1;
+    bool m_highResolution = false;
+    int m_generation = 0;
+	int m_requestSerial = 0;
+    int m_thumbnailMaxEdge = 1024;
+	int m_brightness = 0;
+};
+}
 
 static bool isSameImageNameForSdkView(const QString& itemName, const QString& queryName)
 {
@@ -72,6 +153,8 @@ static void drawSdkTileImage(QPainter& painter, const QRectF& itemSceneRect, con
 
 TiledGraphicsView::TiledGraphicsView(QWidget* parent) : QGraphicsView(parent),m_scrollSpeed(50), m_orientation(LayoutOrientation::Vertical)
 { 
+	m_sequenceImageCache.setMaxCost(256 * 1024);
+	m_sequenceTraceClock.start();
 	m_curDrawShape = Shape_Line;
 
     // ?? 看门狗： 
@@ -79,15 +162,15 @@ TiledGraphicsView::TiledGraphicsView(QWidget* parent) : QGraphicsView(parent),m_
         if (!QCoreApplication::testAttribute(Qt::AA_EnableHighDpiScaling)) {
             qCritical() << "High DPI scaling is not enabled.";
             qCritical() << "Please enable QApplication::setAttribute(Qt::AA_EnableHighDpiScaling) before QApplication is created.";
-            // 这里仅仅打印日志，不弹窗也不崩溃，起到提示作用即�?
+            // 这里仅仅打印日志，不弹窗也不崩溃，起到提示作用即?
         }
     }
-    // 配置 GraphicsView (硬件加速、事件拦�?
+    // 配置 GraphicsView (硬件加速、事件拦?
     setupGraphicsView();
     // 绑定信号槽、快捷键、定时器
     setupConnections();
 	setViewMode(Mode_Browse);
-	// ?? 挂载万能绘制工具，并告诉它画什么形�?
+	// ?? 挂载万能绘制工具，并告诉它画什么形?
 	m_currentTool = new DefectDrawTool(m_curDrawShape);
 	m_currentTool->setView(this);
 }
@@ -95,6 +178,7 @@ TiledGraphicsView::TiledGraphicsView(QWidget* parent) : QGraphicsView(parent),m_
 TiledGraphicsView::~TiledGraphicsView()
 { 
     clear();
+	m_sequenceDecodePool.waitForDone();
 	delete m_currentTool;
 	m_currentTool = nullptr;
 }
@@ -113,6 +197,14 @@ QString TiledGraphicsView::getViewName()
 
 QPointF TiledGraphicsView::mapToGlobalScene(const QString & imageName, qreal localX, qreal localY)
 {
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull())
+	{
+		const int sourceIndex = m_sequenceModel->sourceIndexForName(imageName);
+		if (sourceIndex < 0) return QPointF();
+		const QRectF frameRect = m_sequenceModel->frameRect(sourceIndex);
+		return QPointF(frameRect.left() + qBound<qreal>(0.0, localX, frameRect.width()),
+			frameRect.top() + qBound<qreal>(0.0, localY, frameRect.height()));
+	}
 	if (!imageName.isEmpty())
 	{
 		TunnelSectionItem* cachedItem = m_imageItemCache.value(imageName, nullptr);
@@ -185,7 +277,7 @@ void TiledGraphicsView::clearImageItemLookupCache()
 
 void TiledGraphicsView::focusOnPosition(const QPointF& scenePos, double targetScale)
 {
-    // 1. 如果指定了缩放级别，先应用缩�?
+    // 1. 如果指定了缩放级别，先应用缩?
     if (targetScale > 0) {
         // [限制上下限逻辑] 保持和你 wheelEvent 里一样的逻辑
         double minScale = getFitScale();
@@ -202,12 +294,23 @@ void TiledGraphicsView::focusOnPosition(const QPointF& scenePos, double targetSc
     centerOn(scenePos);
 
 
-	// ??直接�?Scene 谁在这个点上，不用自己遍�?list
-	// items() 返回的是 Z 值从上到下的列表，第一个通常就是最上面�?
+	// ??直接?Scene 谁在这个点上，不用自己遍?list
+	// items() 返回的是 Z 值从上到下的列表，第一个通常就是最上面?
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull())
+	{
+		QString imageName;
+		int x = 0, y = 0;
+		if (GlobalSceneToMap(scenePos, imageName, x, y)) emit sigCursorInfoChanged(imageName, x, y);
+		else emit sigCursorInfoChanged("", 0, 0);
+		updateVisibleTiles();
+		emitViewCenterChanged();
+		return;
+	}
+
 	QList<QGraphicsItem*> items = m_scene->items(scenePos);
 	TunnelSectionItem* hoverItem = nullptr;
 	for (auto item : items) {
-		// 使用 dynamic_cast 确认是不是我们要找的切片�?
+		// 使用 dynamic_cast 确认是不是我们要找的切片?
 		hoverItem = dynamic_cast<TunnelSectionItem*>(item);
 		if (hoverItem) break;
 	}
@@ -232,7 +335,7 @@ void TiledGraphicsView::focusOnPosition(const QPointF& scenePos, double targetSc
 
 QPointF TiledGraphicsView::currentCenterScenePos() const
 {
-	// �?viewport 的几何中心反�?scene 坐标，比读滚动条更稳，缩放后也不会跑偏�?
+	// ?viewport 的几何中心反?scene 坐标，比读滚动条更稳，缩放后也不会跑偏?
 	if (!viewport())
 	{
 		return QPointF();
@@ -243,13 +346,13 @@ QPointF TiledGraphicsView::currentCenterScenePos() const
 
 double TiledGraphicsView::currentCenterSceneY() const
 {
-	// 纵向长图联动只关�?Y，这里单独给一个入口，调用侧代码会更直白�?
+	// 纵向长图联动只关?Y，这里单独给一个入口，调用侧代码会更直白?
 	return currentCenterScenePos().y();
 }
 
 QPointF TiledGraphicsView::currentBottomCenterScenePos() const
 {
-	// 用视口底边中点做锚点，用户看到的底部位置就是业务联动的当前位置�?
+	// 用视口底边中点做锚点，用户看到的底部位置就是业务联动的当前位置?
 	if (!viewport())
 	{
 		return QPointF();
@@ -272,6 +375,27 @@ QPointF TiledGraphicsView::currentBottomCenterScenePos() const
 TiledViewAnchor TiledGraphicsView::currentBottomAnchor() const
 {
 	TiledViewAnchor anchor;
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull() && !m_sequenceModel->isEmpty())
+	{
+		QPointF scenePos = currentBottomCenterScenePos();
+		int sourceIndex = m_sequenceModel->sourceIndexAt(scenePos);
+		if (sourceIndex < 0)
+		{
+			const QRectF sceneBounds = m_sequenceModel->sceneRect();
+			scenePos.setX(qBound(sceneBounds.left(), scenePos.x(), sceneBounds.right()));
+			scenePos.setY(qBound(sceneBounds.top(), scenePos.y(), sceneBounds.bottom() - 0.001));
+			sourceIndex = m_sequenceModel->sourceIndexAt(scenePos);
+		}
+		if (sourceIndex < 0) return anchor;
+		const QRectF frameRect = m_sequenceModel->frameRect(sourceIndex);
+		anchor.valid = true;
+		anchor.imageName = m_sequenceModel->descriptor(sourceIndex).imageName;
+		anchor.imageIndex = m_sequenceModel->visualIndexForSourceIndex(sourceIndex);
+		anchor.scenePos = scenePos;
+		anchor.imagePixelPos = QPointF(qBound<qreal>(0.0, scenePos.x() - frameRect.left(), frameRect.width()),
+			qBound<qreal>(0.0, scenePos.y() - frameRect.top(), frameRect.height()));
+		return anchor;
+	}
 	if (m_items.isEmpty())
 	{
 		return anchor;
@@ -296,7 +420,7 @@ TiledViewAnchor TiledGraphicsView::currentBottomAnchor() const
 
 	if (!matchedItem)
 	{
-		// 滚到场景边界时，底边可能正好落在最后一张图外一点点，按最近一张兜底�?
+		// 滚到场景边界时，底边可能正好落在最后一张图外一点点，按最近一张兜底?
 		const QRectF firstRect = m_items.first()->sceneBoundingRect();
 		const QRectF lastRect = m_items.last()->sceneBoundingRect();
 		if (scenePos.y() < firstRect.top())
@@ -339,7 +463,7 @@ void TiledGraphicsView::scrollToSceneY(double sceneY)
 		sceneY = qBound(sceneRect.top(), sceneY, sceneRect.bottom());
 	}
 
-	// 只换 Y，不主动�?X，避免用户横向查看某一车道时被联动逻辑拉回中间�?
+	// 只换 Y，不主动?X，避免用户横向查看某一车道时被联动逻辑拉回中间?
 	QPointF centerPos = currentCenterScenePos();
 	if (centerPos.isNull() && !sceneRect.isEmpty())
 	{
@@ -353,6 +477,19 @@ void TiledGraphicsView::scrollToSceneY(double sceneY)
 
 void TiledGraphicsView::scrollToImagePixel(int imageIndex, double pixelY, bool anchorBottom)
 {
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull())
+	{
+		const int sourceIndex = m_sequenceModel->sourceIndexForVisualIndex(imageIndex);
+		if (sourceIndex < 0) return;
+		const QRectF frameRect = m_sequenceModel->frameRect(sourceIndex);
+		pixelY = qBound<qreal>(0.0, pixelY, frameRect.height());
+		QPointF target(frameRect.center().x(), frameRect.top() + pixelY);
+		QPointF center = currentCenterScenePos();
+		center.setX(target.x());
+		center.setY(anchorBottom && viewport()
+			? target.y() - mapToScene(viewport()->rect()).boundingRect().height() / 2.0 : target.y());
+		centerOn(center); updateVisibleTiles(); emitViewCenterChanged(); return;
+	}
 	if (!m_scene || imageIndex < 0 || imageIndex >= m_items.size())
 	{
 		return;
@@ -385,6 +522,13 @@ void TiledGraphicsView::scrollToImagePixel(const QString& imageName, double pixe
 {
 	if (!m_scene || imageName.isEmpty())
 	{
+		return;
+	}
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull())
+	{
+		const int sourceIndex = m_sequenceModel->sourceIndexForName(imageName);
+		if (sourceIndex < 0) return;
+		scrollToImagePixel(m_sequenceModel->visualIndexForSourceIndex(sourceIndex), pixelY, anchorBottom);
 		return;
 	}
 
@@ -426,13 +570,212 @@ void TiledGraphicsView::scrollToImagePixel(const QString& imageName, double pixe
 	emitViewCenterChanged();
 }
 
+bool TiledGraphicsView::loadVirtualSequence(const QSharedPointer<ISequenceFrameSource>& source,
+	const SequenceLoadOptions& options, LayoutOrientation orientation,
+	bool horizontalMirror, bool verticalMirror)
+{
+	if (source.isNull() || source->frameCount() == 0) return false;
+	clear();
+	m_contentMode = ContentMode::VirtualSequence;
+	m_orientation = orientation;
+	m_sequenceSource = source;
+	m_sequenceOptions = options;
+	m_sequenceOptions.chunkFrameCount = qMax(1, options.chunkFrameCount);
+	m_sequenceOptions.thumbnailMaxEdge = qMax(64, options.thumbnailMaxEdge);
+	m_sequenceOptions.decodedCacheBytes = qMax<qint64>(16LL * 1024LL * 1024LL, options.decodedCacheBytes);
+	m_sequenceHorizontalMirror = horizontalMirror;
+	m_sequenceVerticalMirror = verticalMirror;
+	m_sequenceModel.reset(new ImageSequenceModel());
+	if (!m_sequenceModel->build(source, orientation))
+	{
+		clear();
+		return false;
+	}
+
+	const int idealJobs = qBound(1, QThread::idealThreadCount() / 2, 4);
+	m_sequenceDecodePool.setMaxThreadCount(options.maxDecodeJobs > 0 ? options.maxDecodeJobs : idealJobs);
+	m_sequenceImageCache.setMaxCost(static_cast<int>(qMin<qint64>(INT_MAX,
+		m_sequenceOptions.decodedCacheBytes / 1024LL)));
+
+	const int count = m_sequenceModel->count();
+	for (int first = 0; first < count; first += m_sequenceOptions.chunkFrameCount)
+	{
+		const int last = qMin(count - 1, first + m_sequenceOptions.chunkFrameCount - 1);
+		SequenceChunkItem* chunk = new SequenceChunkItem(this, m_sequenceModel, first, last);
+		m_scene->addItem(chunk);
+		m_sequenceChunks.append(chunk);
+	}
+	m_scene->setSceneRect(m_sequenceModel->sceneRect());
+	resetToFit();
+	return true;
+}
+
+int TiledGraphicsView::imageCount() const
+{
+	return m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull()
+		? m_sequenceModel->count() : m_items.size();
+}
+
+SequenceFrameDescriptor TiledGraphicsView::imageDescriptor(int sourceIndex) const
+{
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull()
+		&& sourceIndex >= 0 && sourceIndex < m_sequenceModel->count())
+	{
+		return m_sequenceModel->descriptor(sourceIndex);
+	}
+	return SequenceFrameDescriptor();
+}
+
+QString TiledGraphicsView::sequenceCacheKey(int sourceIndex, bool highResolution) const
+{
+	return QString::number(sourceIndex) + (highResolution ? QStringLiteral(":H") : QStringLiteral(":T"));
+}
+
+void TiledGraphicsView::requestSequenceImage(int sourceIndex, bool highResolution, int priority)
+{
+	if (m_contentMode != ContentMode::VirtualSequence || m_sequenceSource.isNull()
+		|| sourceIndex < 0 || sourceIndex >= imageCount()) return;
+	const QString key = sequenceCacheKey(sourceIndex, highResolution);
+	if (m_sequenceImageCache.contains(key)
+		|| m_sequencePendingRequests.value(key, -1) == m_sequenceRequestSerial) return;
+	m_sequencePendingRequests.insert(key, m_sequenceRequestSerial);
+	if (sequenceTraceEnabled())
+	{
+		const SequenceFrameDescriptor descriptor = imageDescriptor(sourceIndex);
+		qInfo().noquote() << "[HN_SEQUENCE_TRACE][REQUEST]"
+			<< "index=" << sourceIndex << "high=" << highResolution
+			<< "name=" << descriptor.imageName
+			<< "request=" << m_sequenceRequestSerial << "priority=" << priority
+			<< "active=" << m_sequenceDecodePool.activeThreadCount();
+	}
+	m_sequenceDecodePool.start(new SequenceDecodeTask(this, m_sequenceSource, sourceIndex,
+		highResolution, m_sequenceGeneration, m_sequenceRequestSerial,
+		m_sequenceOptions.thumbnailMaxEdge, m_imageBrightness), priority);
+}
+
+QImage TiledGraphicsView::sequenceImageForPaint(int sourceIndex, bool highResolution)
+{
+	if (m_contentMode != ContentMode::VirtualSequence) return QImage();
+	// During active scrolling, thumbnails are both sufficient and much cheaper.
+	// Do not let paint() enqueue full decodes behind updateVisibleTiles().
+	highResolution = highResolution && !m_isFastScrolling;
+	if (highResolution)
+	{
+		const QString fullKey = sequenceCacheKey(sourceIndex, true);
+		if (QImage* full = m_sequenceImageCache.object(fullKey)) return *full;
+		requestSequenceImage(sourceIndex, true, 2);
+	}
+	const QString thumbKey = sequenceCacheKey(sourceIndex, false);
+	if (QImage* thumb = m_sequenceImageCache.object(thumbKey)) return *thumb;
+	if (sequenceTraceEnabled())
+	{
+		const qint64 now = m_sequenceTraceClock.elapsed();
+		const QString traceKey = QString::number(sourceIndex) + QStringLiteral(":MISS");
+		if (now - m_sequenceLastTraceMs.value(traceKey, -1000) >= 250)
+		{
+			m_sequenceLastTraceMs.insert(traceKey, now);
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][PAINT_MISS]"
+				<< "index=" << sourceIndex << "request=" << m_sequenceRequestSerial
+				<< "name=" << imageDescriptor(sourceIndex).imageName
+				<< "wantHigh=" << highResolution
+				<< "pendingH=" << m_sequencePendingRequests.value(sequenceCacheKey(sourceIndex, true), -1)
+				<< "pendingT=" << m_sequencePendingRequests.value(thumbKey, -1)
+				<< "cacheKiB=" << m_sequenceImageCache.totalCost()
+				<< "active=" << m_sequenceDecodePool.activeThreadCount();
+		}
+	}
+	requestSequenceImage(sourceIndex, false, 1);
+	return QImage();
+}
+
+void TiledGraphicsView::onSequenceImageDecoded(int sourceIndex, bool highResolution, int generation,
+	int requestSerial, QImage image)
+{
+	// A result from a cleared/reloaded sequence must not remove the pending flag
+	// of a newer request that happens to use the same frame index.
+	if (generation != m_sequenceGeneration || m_contentMode != ContentMode::VirtualSequence)
+	{
+		if (sequenceTraceEnabled())
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][CALLBACK_DROP_LAYOUT]"
+				<< "index=" << sourceIndex << "high=" << highResolution
+				<< "layoutGen=" << generation << "current=" << m_sequenceGeneration;
+		return;
+	}
+	const QString key = sequenceCacheKey(sourceIndex, highResolution);
+	if (m_sequencePendingRequests.value(key, -1) != requestSerial)
+	{
+		if (sequenceTraceEnabled())
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][CALLBACK_DROP_REQUEST]"
+				<< "index=" << sourceIndex << "high=" << highResolution
+				<< "request=" << requestSerial
+				<< "currentOwner=" << m_sequencePendingRequests.value(key, -1);
+		return;
+	}
+	m_sequencePendingRequests.remove(key);
+	if (image.isNull())
+	{
+		const SequenceFrameDescriptor descriptor = imageDescriptor(sourceIndex);
+		qWarning().noquote() << "[HN_SEQUENCE_DECODE_FAIL]"
+			<< "index=" << sourceIndex << "high=" << highResolution
+			<< "name=" << descriptor.imageName << "path=" << descriptor.filePath;
+		return;
+	}
+	const qint64 byteCost = qMax<qint64>(1, static_cast<qint64>(image.bytesPerLine()) * image.height());
+	m_sequenceImageCache.insert(key, new QImage(image),
+		static_cast<int>(qMin<qint64>(INT_MAX, (byteCost + 1023) / 1024)));
+	const int chunkIndex = m_sequenceOptions.chunkFrameCount > 0
+		? m_sequenceModel->visualIndexForSourceIndex(sourceIndex) / m_sequenceOptions.chunkFrameCount : 0;
+	const bool validChunk = chunkIndex >= 0 && chunkIndex < m_sequenceChunks.size()
+		&& m_sequenceChunks.at(chunkIndex);
+	if (validChunk) m_sequenceChunks.at(chunkIndex)->update();
+	const QRectF visibleSceneRect = viewport()
+		? mapToScene(viewport()->rect()).boundingRect() : QRectF();
+	const bool visible = !m_sequenceModel.isNull()
+		&& m_sequenceModel->frameRect(sourceIndex).intersects(visibleSceneRect);
+	// A decoded visible frame must repaint the viewport even if Qt loses or
+	// coalesces the chunk's local dirty region. This is the same repaint that a
+	// minimize/restore was previously forcing externally.
+	if (visible && viewport()) viewport()->update();
+	if (sequenceTraceEnabled())
+		qInfo().noquote() << "[HN_SEQUENCE_TRACE][CACHE_INSERT]"
+			<< "index=" << sourceIndex << "high=" << highResolution
+			<< "request=" << requestSerial << "chunk=" << chunkIndex
+			<< "validChunk=" << validChunk << "visible=" << visible
+			<< "cacheKiB=" << m_sequenceImageCache.totalCost();
+}
+
+void TiledGraphicsView::requestSequenceRange(const QRectF& sceneRect, bool highResolution, int priority)
+{
+	if (m_sequenceModel.isNull() || sceneRect.isEmpty()) return;
+	int first = m_sequenceModel->firstVisualIndexIntersecting(sceneRect);
+	int last = m_sequenceModel->lastVisualIndexIntersecting(sceneRect);
+	if (first < 0 || last < 0) return;
+	for (int visual = first; visual <= last; ++visual)
+		requestSequenceImage(m_sequenceModel->sourceIndexForVisualIndex(visual), highResolution, priority);
+}
+
+void TiledGraphicsView::clearVirtualSequence()
+{
+	++m_sequenceGeneration;
+	++m_sequenceRequestSerial;
+	m_sequenceDecodePool.clear();
+	m_sequencePendingRequests.clear();
+	m_sequenceImageCache.clear();
+	m_sequenceChunks.clear();
+	m_sequenceModel.clear();
+	m_sequenceSource.clear();
+	m_sequenceHorizontalMirror = false;
+	m_sequenceVerticalMirror = false;
+}
+
 void TiledGraphicsView::addLayer(AbstractTileSource* source)
 {
+	m_contentMode = ContentMode::DatabaseTiles;
     TunnelSectionItem* item = new TunnelSectionItem(source);
 	connect(item, &TunnelSectionItem::sigTilesUpdated, this, &TiledGraphicsView::updateHUD);
     m_scene->addItem(item);
 
-    // 自动拼接逻辑：方向由 LayoutOrientation 决定，不再默认所有项目都从左到右拼�?
+    // 自动拼接逻辑：方向由 LayoutOrientation 决定，不再默认所有项目都从左到右拼?
 	QPointF itemPos(0, 0);
 	if (!m_items.isEmpty()) {
 		if (isReverseLayout(m_orientation)) {
@@ -482,6 +825,7 @@ void TiledGraphicsView::addLayer(AbstractTileSource* source)
 
 void TiledGraphicsView::clear()
 {
+	clearVirtualSequence();
 	if (m_vecCp3Manager) m_vecCp3Manager->clearDefects();
 	if (m_vecPlatformManager) m_vecPlatformManager->clearDefects();
 	if (m_vecChainManager) m_vecChainManager->clearDefects();
@@ -497,10 +841,11 @@ void TiledGraphicsView::clear()
 	m_imageItemCache.clear();
 	m_exportBoxItem = nullptr;
     m_scene->setSceneRect(0, 0, 0, 0);
+	m_contentMode = ContentMode::DatabaseTiles;
 }
 
 
-// ?? 1. 实现公开的重置接�?
+// ?? 1. 实现公开的重置接?
 void TiledGraphicsView::resetToFit()
 { 
     double s = getFitScale();
@@ -553,7 +898,7 @@ void TiledGraphicsView::setViewMode(ViewMode mode)
     else if (mode == Mode_Draw)
     {
 		setDragMode(QGraphicsView::NoDrag);
-		setCursor(Qt::CrossCursor); // 绘图模式用十字光�?
+		setCursor(Qt::CrossCursor); // 绘图模式用十字光?
 		DrawModelStr = QString::fromLocal8Bit("绘图模式");
 
 		startDrawingDefect(m_curDrawShape);
@@ -577,7 +922,7 @@ void TiledGraphicsView::setViewMode(ViewMode mode)
      
     }
 
-    // 可以在这里触�?updateVisibleTiles 以刷新可能的 UI 状�?
+    // 可以在这里触?updateVisibleTiles 以刷新可能的 UI 状?
 	updateVisibleTiles();
 }
 
@@ -614,6 +959,145 @@ void TiledGraphicsView::resizeEvent(QResizeEvent* event)
 	emitViewCenterChanged();
 }
 
+void TiledGraphicsView::paintEvent(QPaintEvent* event)
+{
+	QElapsedTimer paintTimer;
+	if (sequenceTraceEnabled()) paintTimer.start();
+	QGraphicsView::paintEvent(event);
+	if (sequenceTraceEnabled() && m_contentMode == ContentMode::VirtualSequence)
+	{
+		const qint64 now = m_sequenceTraceClock.elapsed();
+		if (now - m_sequenceLastTraceMs.value(QStringLiteral("VIEW_PAINT"), -1000) >= 100)
+		{
+			m_sequenceLastTraceMs.insert(QStringLiteral("VIEW_PAINT"), now);
+			qInfo().noquote() << "[HN_SEQUENCE_TRACE][VIEW_PAINT]"
+				<< "request=" << m_sequenceRequestSerial
+				<< "visibleScene=" << mapToScene(viewport()->rect()).boundingRect()
+				<< "dirty=" << (event ? event->region().boundingRect() : QRect())
+				<< "cacheKiB=" << m_sequenceImageCache.totalCost()
+				<< "pending=" << m_sequencePendingRequests.size()
+				<< "elapsedMs=" << paintTimer.elapsed();
+		}
+	}
+}
+
+bool TiledGraphicsView::stepVirtualSequenceFrame(int visualDelta)
+{
+	if (m_contentMode != ContentMode::VirtualSequence || m_sequenceModel.isNull()
+		|| m_sequenceModel->isEmpty() || visualDelta == 0)
+	{
+		return false;
+	}
+
+	QPointF center = currentCenterScenePos();
+	const QRectF sceneBounds = m_sequenceModel->sceneRect();
+	center.setX(qBound(sceneBounds.left(), center.x(), sceneBounds.right() - 0.001));
+	center.setY(qBound(sceneBounds.top(), center.y(), sceneBounds.bottom() - 0.001));
+
+	const int currentVisual = m_sequenceModel->firstVisualIndexIntersecting(
+		QRectF(center, QSizeF(0.001, 0.001)));
+	const int sourceIndex = m_sequenceModel->sourceIndexForVisualIndex(currentVisual);
+	if (currentVisual < 0 || sourceIndex < 0)
+	{
+		return false;
+	}
+
+	const int targetVisual = qBound(0, currentVisual + visualDelta, m_sequenceModel->count() - 1);
+	if (targetVisual == currentVisual)
+	{
+		return false;
+	}
+	const int targetSource = m_sequenceModel->sourceIndexForVisualIndex(targetVisual);
+	if (targetSource < 0)
+	{
+		return false;
+	}
+
+	const QRectF currentRect = m_sequenceModel->frameRect(sourceIndex);
+	const QRectF targetRect = m_sequenceModel->frameRect(targetSource);
+	if (isVerticalLayout(m_orientation))
+	{
+		const qreal ratio = currentRect.height() > 0.0
+			? qBound<qreal>(0.0, (center.y() - currentRect.top()) / currentRect.height(), 1.0) : 0.5;
+		center.setY(targetRect.top() + ratio * targetRect.height());
+	}
+	else
+	{
+		const qreal ratio = currentRect.width() > 0.0
+			? qBound<qreal>(0.0, (center.x() - currentRect.left()) / currentRect.width(), 1.0) : 0.5;
+		center.setX(targetRect.left() + ratio * targetRect.width());
+	}
+
+	centerOn(center);
+	updateVisibleTiles();
+	emitViewCenterChanged();
+	emitUserViewBottomAnchorChanged();
+	return true;
+}
+
+bool TiledGraphicsView::stepSingleFrame(int visualDelta)
+{
+	if (visualDelta == 0)
+	{
+		return false;
+	}
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		return stepVirtualSequenceFrame(visualDelta);
+	}
+	if (m_items.isEmpty())
+	{
+		return false;
+	}
+
+	const QPointF center = currentCenterScenePos();
+	int currentIndex = -1;
+	for (int i = 0; i < m_items.size(); ++i)
+	{
+		const QRectF rect = m_items.at(i)->sceneBoundingRect();
+		const bool onPrimaryAxis = isVerticalLayout(m_orientation)
+			? center.y() >= rect.top() && center.y() <= rect.bottom()
+			: center.x() >= rect.left() && center.x() <= rect.right();
+		if (onPrimaryAxis)
+		{
+			currentIndex = i;
+			break;
+		}
+	}
+	if (currentIndex < 0)
+	{
+		currentIndex = isVerticalLayout(m_orientation)
+			? (center.y() < m_items.first()->sceneBoundingRect().top() ? 0 : m_items.size() - 1)
+			: (center.x() < m_items.first()->sceneBoundingRect().left() ? 0 : m_items.size() - 1);
+	}
+
+	const int targetIndex = qBound(0, currentIndex + visualDelta, m_items.size() - 1);
+	if (targetIndex == currentIndex)
+	{
+		return false;
+	}
+	const QRectF currentRect = m_items.at(currentIndex)->sceneBoundingRect();
+	const QRectF targetRect = m_items.at(targetIndex)->sceneBoundingRect();
+	QPointF targetCenter = center;
+	if (isVerticalLayout(m_orientation))
+	{
+		const qreal ratio = currentRect.height() > 0.0
+			? qBound<qreal>(0.0, (center.y() - currentRect.top()) / currentRect.height(), 1.0) : 0.5;
+		targetCenter.setY(targetRect.top() + ratio * targetRect.height());
+	}
+	else
+	{
+		const qreal ratio = currentRect.width() > 0.0
+			? qBound<qreal>(0.0, (center.x() - currentRect.left()) / currentRect.width(), 1.0) : 0.5;
+		targetCenter.setX(targetRect.left() + ratio * targetRect.width());
+	}
+	centerOn(targetCenter);
+	updateVisibleTiles();
+	emitViewCenterChanged();
+	emitUserViewBottomAnchorChanged();
+	return true;
+}
+
 void TiledGraphicsView::wheelEvent(QWheelEvent* event) {
     // ---------------------------------------------------------
      // ?? 1. 缩放逻辑 (Ctrl + 滚轮)
@@ -625,29 +1109,29 @@ void TiledGraphicsView::wheelEvent(QWheelEvent* event) {
 		const QPoint viewportPoint = event->pos();
 		const QPointF scenePointUnderMouseBeforeZoom = mapToScene(viewportPoint);
 
-        // 1. 获取当前缩放系数 (m11 �?x 轴缩放，通常 xy 一�?
+        // 1. 获取当前缩放系数 (m11 ?x 轴缩放，通常 xy 一?
         double currentScale = transform().m11();
 
-        // 2. 计算缩放因子 (滚轮向上放大 1.1 倍，向下缩小 0.9 �?
+        // 2. 计算缩放因子 (滚轮向上放大 1.1 倍，向下缩小 0.9 ?
         double scaleFactor = (angle > 0) ? 1.15 : (1.0 / 1.15);
 
-        // 3. 预测下一次的缩放�?
+        // 3. 预测下一次的缩放?
         double nextScale = currentScale * scaleFactor;
 
         // =====================================================
-        // ?? 核心修改：动态计算边�?
+        // ?? 核心修改：动态计算边?
         // =====================================================
 
-        // [下限]：不允许缩得比“适应窗口”还�?
+        // [下限]：不允许缩得比“适应窗口”还?
         // 这样用户狂滚滚轮，最后一定会停在刚好铺满屏幕的状态，非常舒服
         double minScale = getFitScale();
 
-        // [上限]：最大允许放大到 5.0 �?(�?1 个像素变 5 个像素大)
+        // [上限]：最大允许放大到 5.0 ?(?1 个像素变 5 个像素大)
         // 隧道病害一般看清裂缝即可，5.0 足够了，太大全是锯齿
         double maxScale = 20.0;
 
       
-        // 如果下一次缩放会超出边界，就只缩放到边界�?
+        // 如果下一次缩放会超出边界，就只缩放到边界?
         if (nextScale < minScale) {
             scaleFactor = minScale / currentScale;
             nextScale = minScale;
@@ -683,28 +1167,35 @@ void TiledGraphicsView::wheelEvent(QWheelEvent* event) {
     int delta = event->angleDelta().y();
     if (delta == 0) return;
 
-    // 获取 Shift 键状�?
+    // 获取 Shift 键状?
     bool isShiftPressed = (event->modifiers() & Qt::ShiftModifier);
+	if (m_singleFrameNavigationEnabled && !isShiftPressed
+		&& m_contentMode == ContentMode::VirtualSequence
+		&& stepVirtualSequenceFrame(delta > 0 ? -1 : 1))
+	{
+		event->accept();
+		return;
+	}
 
     if (isVerticalLayout(m_orientation)) {
         // === 纵向模式 (地铁) ===
         if (isShiftPressed) {
-            // Shift: 滚水平条 (左右�?
+            // Shift: 滚水平条 (左右?
             horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta);
         }
         else {
-            // 普�? 滚垂直条 (上下跑里�?
+            // 普? 滚垂直条 (上下跑里?
             verticalScrollBar()->setValue(verticalScrollBar()->value() - delta);
         }
     }
     else {
         // === 横向模式 (公路) ===
         if (isShiftPressed) {
-            // ?? 修复点：Shift -> 滚垂直条 (上下看墙�?
+            // ?? 修复点：Shift -> 滚垂直条 (上下看墙?
             verticalScrollBar()->setValue(verticalScrollBar()->value() - delta);
         }
         else {
-            // 普�? 滚水平条 (左右跑里�?
+            // 普? 滚水平条 (左右跑里?
             horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta);
         }
     } 
@@ -714,12 +1205,31 @@ void TiledGraphicsView::wheelEvent(QWheelEvent* event) {
 
 void TiledGraphicsView::keyPressEvent(QKeyEvent* event) {
 
-    // 如果外部禁用了导航（比如正在输入文字，或处于编辑模式），直接透传给父�?
+    // 如果外部禁用了导航（比如正在输入文字，或处于编辑模式），直接透传给父?
     if (!m_enableKeyNav) {
         QGraphicsView::keyPressEvent(event);
         return;
     }
-    // 小优化：处理 Shift 加�?
+	if (m_singleFrameNavigationEnabled && m_contentMode == ContentMode::VirtualSequence)
+	{
+		int visualDelta = 0;
+		if (isVerticalLayout(m_orientation))
+		{
+			if (event->key() == Qt::Key_W || event->key() == Qt::Key_Up) visualDelta = -1;
+			else if (event->key() == Qt::Key_S || event->key() == Qt::Key_Down) visualDelta = 1;
+		}
+		else
+		{
+			if (event->key() == Qt::Key_A || event->key() == Qt::Key_Left) visualDelta = -1;
+			else if (event->key() == Qt::Key_D || event->key() == Qt::Key_Right) visualDelta = 1;
+		}
+		if (visualDelta != 0 && stepVirtualSequenceFrame(visualDelta))
+		{
+			event->accept();
+			return;
+		}
+	}
+    // 小优化：处理 Shift 加?
     int speed = m_scrollSpeed;
     bool isShift = (event->modifiers() & Qt::ShiftModifier);
     if (isShift) {
@@ -730,7 +1240,7 @@ void TiledGraphicsView::keyPressEvent(QKeyEvent* event) {
 
     switch (event->key()) {
     case Qt::Key_Space:
-        resetToFit();   // 调用之前封装好的公有槽函�?
+        resetToFit();   // 调用之前封装好的公有槽函?
         event->accept(); // 标记事件已处理，防止传递给父类导致冲突
         break;
     case Qt::Key_W:
@@ -775,7 +1285,7 @@ void TiledGraphicsView::keyPressEvent(QKeyEvent* event) {
 
     //  如果是快速滚动，不要立即触发重绘逻辑，或者只做轻量级更新
     if (!isShift) {
-        // 普通移动已经改过滚动条了，这里只收下事件，避免父类再处理一遍快捷键�?
+        // 普通移动已经改过滚动条了，这里只收下事件，避免父类再处理一遍快捷键?
         event->accept();
     }
     else {
@@ -789,7 +1299,7 @@ void TiledGraphicsView::keyReleaseEvent(QKeyEvent* event)
     if (event->key() == Qt::Key_Shift) {
         m_isFastScrolling = false; // ?? 飙车结束
 
-        // 立即触发一次全量加载，把高清图刷出�?
+        // 立即触发一次全量加载，把高清图刷出?
         updateVisibleTiles();
 		emitViewCenterChanged();
     }
@@ -809,11 +1319,11 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 	}
 	// ?? 1. 处理中键拖拽
 	if (m_isPanning) {
-		// 计算鼠标移动的差�?
+		// 计算鼠标移动的差?
 		int dx = event->pos().x() - m_lastMousePos.x();
 		int dy = event->pos().y() - m_lastMousePos.y();
 
-		// 拨动滚动�?(方向相反，鼠标往右划，内容往右走，滚动条其实是往左减)
+		// 拨动滚动?(方向相反，鼠标往右划，内容往右走，滚动条其实是往左减)
 		horizontalScrollBar()->setValue(horizontalScrollBar()->value() - dx);
 		verticalScrollBar()->setValue(verticalScrollBar()->value() - dy); 
 		emitUserViewBottomAnchorChanged();
@@ -823,12 +1333,12 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 		return;  
 	}
 
-	// ?? 绘图模式拦截：让工具画出跟随的虚�?
+	// ?? 绘图模式拦截：让工具画出跟随的虚?
 	if (m_currentMode == Mode_Draw && m_currentTool) {
 		QPointF scenePos = mapToScene(event->pos());
 		m_currentTool->handleMouseMove(scenePos);
 	}
-	// ?? 3. 核心引擎：自定义病害集群精准拖拽�?
+	// ?? 3. 核心引擎：自定义病害集群精准拖拽?
 	// ==========================================
 	// 如果左键按下并处于拖拽状态，接管坐标换算
 	if (m_isDraggingDefects) {
@@ -836,7 +1346,7 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 		// 计算鼠标在真实的物理世界里移动了多少距离
 		QPointF delta = currentScenePos - m_lastDragScenePos;
 
-		// 让所有被选中的病害跟着走，指哪打哪，绝对不乱飘�?
+		// 让所有被选中的病害跟着走，指哪打哪，绝对不乱飘?
 		for (QGraphicsItem* item : m_scene->selectedItems()) {
 			if (DefectShapeItem* defect = dynamic_cast<DefectShapeItem*>(item)) {
 				defect->setPos(defect->pos() + delta);
@@ -848,7 +1358,7 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 		return; //  
 	}
 	// ==========================================
-	// ?? 4. 浏览模式下的光标“雷达反馈�?
+	// ?? 4. 浏览模式下的光标“雷达反馈?
 	// ==========================================
 	// 只有在没按任何鼠标键（纯移动探测）时，才触发嗅探
 	if (m_currentMode == Mode_Browse && event->buttons() == Qt::NoButton) {
@@ -864,7 +1374,7 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 			}
 		}
 
-		// ?? 动态切换光标：碰到病害变“点击小�??”，离开变“普通箭头↖�?
+		// ?? 动态切换光标：碰到病害变“点击小??”，离开变“普通箭头↖?
 		if (hoverOnDefect) {
 			setCursor(Qt::PointingHandCursor);
 		}
@@ -878,15 +1388,25 @@ void TiledGraphicsView::mouseMoveEvent(QMouseEvent* event)
 
     QGraphicsView::mouseMoveEvent(event);
 
-    // 1. 获取鼠标�?Scene 中的坐标
+    // 1. 获取鼠标?Scene 中的坐标
     QPointF scenePos = mapToScene(event->pos());
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		QString imageName;
+		int localX = 0, localY = 0;
+		if (GlobalSceneToMap(scenePos, imageName, localX, localY))
+			emit sigCursorInfoChanged(imageName, localX, localY);
+		else
+			emit sigCursorInfoChanged("", 0, 0);
+		return;
+	}
 
-    // ??直接�?Scene 谁在这个点上，不用自己遍�?list
-    // items() 返回的是 Z 值从上到下的列表，第一个通常就是最上面�?
+    // ??直接?Scene 谁在这个点上，不用自己遍?list
+    // items() 返回的是 Z 值从上到下的列表，第一个通常就是最上面?
     QList<QGraphicsItem*> items = m_scene->items(scenePos);
     TunnelSectionItem* hoverItem = nullptr;
     for (auto item : items) {
-        // 使用 dynamic_cast 确认是不是我们要找的切片�?
+        // 使用 dynamic_cast 确认是不是我们要找的切片?
         hoverItem = dynamic_cast<TunnelSectionItem*>(item);
         if (hoverItem) break;
     }
@@ -966,7 +1486,7 @@ void TiledGraphicsView::mousePressEvent(QMouseEvent* event)
 					m_scene->clearSelection();
 					hitDefect->setSelected(true);
 				}
-				// ?? 核心开启：激活我们自己的上帝拖拽引擎�?
+				// ?? 核心开启：激活我们自己的上帝拖拽引擎?
 				m_isDraggingDefects = true;
 				m_lastDragScenePos = mapToScene(event->pos());
 				event->accept();
@@ -1023,7 +1543,7 @@ void TiledGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 	}
 
 	// ==========================================
-	//   浏览模式松开左键：结算并抛出框选结�?
+	//   浏览模式松开左键：结算并抛出框选结?
 	// ==========================================
 	if (m_currentMode == Mode_Browse && event->button() == Qt::LeftButton)
 	{
@@ -1060,41 +1580,41 @@ void TiledGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 }
 
 // =========================================================
-// ?? 核心逻辑与辅助函�?
+// ?? 核心逻辑与辅助函?
 // =========================================================
 
 void TiledGraphicsView::setupGraphicsView()
 {
     setFrameShape(QFrame::NoFrame);
-    // 1. 初始化场�?
+    // 1. 初始化场?
     m_scene = new QGraphicsScene(this);
-    m_scene->setBackgroundBrush(QColor(40, 40, 40)); // 深灰色背�?
+    m_scene->setBackgroundBrush(QColor(40, 40, 40)); // 深灰色背?
     setScene(m_scene);
 
     // =========================================================
     // ?? 渲染配置
     // =========================================================
 
-	// 默认用普�?QWidget viewport。QOpenGLWidget 嵌进复杂 QWidget 界面时，
-	// 有些显卡/远程桌面环境会把窗口其它区域残留到视图里，所�?OpenGL 改成显式开启�?
+	// 默认用普?QWidget viewport。QOpenGLWidget 嵌进复杂 QWidget 界面时，
+	// 有些显卡/远程桌面环境会把窗口其它区域残留到视图里，所?OpenGL 改成显式开启?
 	applyRenderBackend();
 
     // 强制全屏重绘，避免局部刷新留下的伪影
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
 
-    // 开启鼠标追�?(即使不按键也能收�?MouseMove，用于显示坐�?
+    // 开启鼠标追?(即使不按键也能收?MouseMove，用于显示坐?
     setMouseTracking(true);
     viewport()->setMouseTracking(true);
 
-    // 变换锚点设为鼠标中心 (缩放时以鼠标为中�?
+    // 变换锚点设为鼠标中心 (缩放时以鼠标为中?
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorUnderMouse);
 
-    // 抗锯�?
+    // 抗锯?
     setAlignment(Qt::AlignLeft | Qt::AlignTop); 
     setRenderHint(QPainter::Antialiasing);
 
-    // 滚动条策�?
+    // 滚动条策?
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
@@ -1102,7 +1622,7 @@ void TiledGraphicsView::setupGraphicsView()
     setDragMode(QGraphicsView::NoDrag);
     //setDragMode(QGraphicsView::ScrollHandDrag);
     setFocusPolicy(Qt::StrongFocus);
-    setFocus(); // 启动时获取焦�?
+    setFocus(); // 启动时获取焦?
 
 	m_vecCp3Manager = new DefectManager(m_scene, this);
 	m_vecPlatformManager = new DefectManager(m_scene, this);
@@ -1173,7 +1693,7 @@ void TiledGraphicsView::setupConnections()
 		m_debounceTimer->start();
         };
 
-    // 3. 监听滚动条变�?
+    // 3. 监听滚动条变?
     connect( horizontalScrollBar(), &QScrollBar::valueChanged, this, triggerScroll);
     connect( verticalScrollBar(), &QScrollBar::valueChanged, this, triggerScroll); 
     connect(m_debounceTimer, &QTimer::timeout, this, [this]()
@@ -1195,7 +1715,7 @@ void TiledGraphicsView::setupConnections()
 	connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [=]() {
 		QRect viewPortRect = viewport()->rect();
 
-		// 1. 获取鼠标�?Scene 中的坐标
+		// 1. 获取鼠标?Scene 中的坐标
 		QPointF sceneTopLPos = mapToScene(viewPortRect.topLeft());
 		QPointF sceneBottomRPos = mapToScene(viewPortRect.bottomRight());
 		QPointF centerPos = QPointF((sceneTopLPos.x() + sceneBottomRPos.x()) / 2.0, sceneTopLPos.y());
@@ -1217,14 +1737,14 @@ void TiledGraphicsView::setupConnections()
 
 void TiledGraphicsView::emitViewCenterChanged()
 {
-	// 这个信号只描�?SDK 自己的连续位置，不掺业务里程，保�?SDK 和项目业务解耦�?
+	// 这个信号只描?SDK 自己的连续位置，不掺业务里程，保?SDK 和项目业务解耦?
 	emit sigViewCenterSceneChanged(currentCenterScenePos());
 	emit sigViewBottomAnchorChanged(currentBottomAnchor());
 }
 
 void TiledGraphicsView::emitUserViewBottomAnchorChanged()
 {
-	// 这条线只表示“用户真的在浏览”，上层拿它�?2D/3D 联动，避免程序定位后自己打回自己�?
+	// 这条线只表示“用户真的在浏览”，上层拿它?2D/3D 联动，避免程序定位后自己打回自己?
 	emit sigUserViewBottomAnchorChanged(currentBottomAnchor());
 }
 
@@ -1237,6 +1757,43 @@ void TiledGraphicsView::updateVisibleTiles()
 	// 1. 获取可视区域
 	QRect viewportRect = viewport()->rect();
 	QRectF visibleSceneRect = mapToScene(viewportRect).boundingRect();
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		// Cancel queued work for the old viewport. Running tasks cannot be stopped,
+		// so a request serial prevents their callbacks from consuming or replacing
+		// the pending state of the current viewport.
+		m_sequenceDecodePool.clear();
+		++m_sequenceRequestSerial;
+		m_sequencePendingRequests.clear();
+		if (sequenceTraceEnabled())
+		{
+			const qint64 now = m_sequenceTraceClock.elapsed();
+			if (now - m_sequenceLastViewportTraceMs >= 100)
+			{
+				m_sequenceLastViewportTraceMs = now;
+				qInfo().noquote() << "[HN_SEQUENCE_TRACE][VIEWPORT_UPDATE]"
+					<< "request=" << m_sequenceRequestSerial
+					<< "visibleScene=" << visibleSceneRect
+					<< "scale=" << transform().m11()
+					<< "active=" << m_sequenceDecodePool.activeThreadCount()
+					<< "cacheKiB=" << m_sequenceImageCache.totalCost();
+			}
+		}
+		m_currentScale = transform().m11();
+		const bool highResolution = !m_isFastScrolling && m_currentScale >= 0.45;
+		requestSequenceRange(visibleSceneRect, highResolution, 3);
+		qreal beforeScreens = qMax(0, m_sequenceOptions.prefetchBackwardScreens);
+		qreal afterScreens = qMax(0, m_sequenceOptions.prefetchForwardScreens);
+		if (isReverseLayout(m_orientation)) qSwap(beforeScreens, afterScreens);
+		QRectF prefetch = visibleSceneRect;
+		if (isVerticalLayout(m_orientation))
+			prefetch.adjust(0.0, -visibleSceneRect.height() * beforeScreens, 0.0, visibleSceneRect.height() * afterScreens);
+		else
+			prefetch.adjust(-visibleSceneRect.width() * beforeScreens, 0.0, visibleSceneRect.width() * afterScreens, 0.0);
+		requestSequenceRange(prefetch, false, 1);
+		viewport()->update();
+		return;
+	}
 
 	// =========================================================
 	// ?? 终极丝滑魔法：双层空间结界！
@@ -1246,14 +1803,14 @@ void TiledGraphicsView::updateVisibleTiles()
 	double highResBuffer = 50.0;
 	QRectF highResRect = visibleSceneRect.adjusted(-highResBuffer, -highResBuffer, highResBuffer, highResBuffer);
 
-	// 【外层结界】：缩略图的“雷达预警区�?(向外狂扩 1.5 个屏幕的宽度�?
-	// 这意味着用户还没滚到那里，提�?1.5 个屏幕的缩略图就已经在后台悄悄解压了
+	// 【外层结界】：缩略图的“雷达预警区?(向外狂扩 1.5 个屏幕的宽度?
+	// 这意味着用户还没滚到那里，提?1.5 个屏幕的缩略图就已经在后台悄悄解压了
 	double prefetchX = visibleSceneRect.width() * 1.5;
 	double prefetchY = visibleSceneRect.height() * 1.5;
 	QRectF prefetchRect = visibleSceneRect.adjusted(-prefetchX, -prefetchY, prefetchX, prefetchY);
 
-	// 整图源一张图片就是一个完整块。沿�?50px 高清窗口会导致图片刚进入视口才开始解码，
-	// 普通滚动稍快就容易露出黑底，所以整图模式单独放大预加载窗口，但仍不做全量常驻�?
+	// 整图源一张图片就是一个完整块。沿?50px 高清窗口会导致图片刚进入视口才开始解码，
+	// 普通滚动稍快就容易露出黑底，所以整图模式单独放大预加载窗口，但仍不做全量常驻?
 	const double wholeThumbX = visibleSceneRect.width() * 1.0;
 	const double wholeThumbY = visibleSceneRect.height() * 3.0;
 	const QRectF wholeThumbRect = visibleSceneRect.adjusted(-wholeThumbX, -wholeThumbY, wholeThumbX, wholeThumbY);
@@ -1264,7 +1821,7 @@ void TiledGraphicsView::updateVisibleTiles()
 
 	m_currentScale = transform().m11();
 
-	// 2. 遍历大管家：统一调度所�?Item 的生死与预加�?
+	// 2. 遍历大管家：统一调度所?Item 的生死与预加?
 	for (auto item : m_items) {
 		if (!item)
 		{
@@ -1302,7 +1859,7 @@ void TiledGraphicsView::updateVisibleTiles()
 		}
 
 		if (prefetchRect.intersects(itemRect)) {
-			// 只要进入雷达区，立刻发起异步请求�?
+			// 只要进入雷达区，立刻发起异步请求?
 			item->ensureThumbnailRequested();
 		}
 		else {
@@ -1314,8 +1871,8 @@ void TiledGraphicsView::updateVisibleTiles()
 		}
 		else
 		{
-			// --- ?? B. 高清�?LOD 降级逻辑 ---
-			// 高清图绝不能�?prefetchRect，必须用极其克制�?highResRect
+			// --- ?? B. 高清?LOD 降级逻辑 ---
+			// 高清图绝不能?prefetchRect，必须用极其克制?highResRect
 			item->updateVisibleTiles(highResRect, m_currentScale, m_lodThresholdMultiplier);
 		} 
 	}
@@ -1324,7 +1881,7 @@ void TiledGraphicsView::updateVisibleTiles()
 
 void TiledGraphicsView::undoLastDrawPoint()
 {
-    // 既然画图�?Tool 接管，撤销当然也直接甩锅给 Tool 去做�?
+    // 既然画图?Tool 接管，撤销当然也直接甩锅给 Tool 去做?
     if (m_currentMode == Mode_Draw && m_currentTool) {
         m_currentTool->undoLastPoint();
     }
@@ -1342,34 +1899,43 @@ void TiledGraphicsView::cancelCurrentDrawing()
 
 double TiledGraphicsView::getFitScale() const
 {
+    if (m_contentMode == ContentMode::VirtualSequence)
+    {
+		if (m_sequenceModel.isNull() || m_sequenceModel->isEmpty()) return 1.0;
+		const QRectF itemsRect = m_sequenceModel->sceneRect();
+		const QSize viewSize = viewport()->size();
+		return isVerticalLayout(m_orientation)
+			? static_cast<double>(qMax(1, viewSize.width())) / qMax<qreal>(1.0, itemsRect.width())
+			: static_cast<double>(qMax(1, viewSize.height())) / qMax<qreal>(1.0, itemsRect.height());
+	}
     if (m_items.isEmpty()) return 1.0;
 
-    // 获取图片真实的物理边�?
+    // 获取图片真实的物理边?
     QRectF itemsRect = m_scene->itemsBoundingRect();
     if (itemsRect.isEmpty()) return 1.0;
 
     QSize viewSize = viewport()->size();
 
     if (!isVerticalLayout(m_orientation)) {
-        // 横向拼接：进度方向是 X，初始按高度铺满�?
+        // 横向拼接：进度方向是 X，初始按高度铺满?
 		int availableHeight = viewSize.height();
 		if (itemsRect.width() * (double)availableHeight / itemsRect.height() > viewSize.width()
 			&& horizontalScrollBar()
 			&& !horizontalScrollBar()->isVisible())
 		{
-			// viewport() 已经扣掉可见滚动条；这里只在滚动条尚未出现但即将出现时预扣一次�?
+			// viewport() 已经扣掉可见滚动条；这里只在滚动条尚未出现但即将出现时预扣一次?
 			availableHeight = qMax(1, availableHeight - horizontalScrollBar()->sizeHint().height());
 		}
         return (double)availableHeight / itemsRect.height();
     }
     else {
-        // 纵向拼接：进度方向是 Y，初始按宽度铺满�?
+        // 纵向拼接：进度方向是 Y，初始按宽度铺满?
 		int availableWidth = viewSize.width();
 		if (itemsRect.height() * (double)availableWidth / itemsRect.width() > viewSize.height()
 			&& verticalScrollBar()
 			&& !verticalScrollBar()->isVisible())
 		{
-			// viewport() 已经扣掉可见滚动条；这里只在滚动条尚未出现但即将出现时预扣一次�?
+			// viewport() 已经扣掉可见滚动条；这里只在滚动条尚未出现但即将出现时预扣一次?
 			availableWidth = qMax(1, availableWidth - verticalScrollBar()->sizeHint().width());
 		}
         return (double)availableWidth / itemsRect.width();
@@ -1378,9 +1944,9 @@ double TiledGraphicsView::getFitScale() const
 
 QList<QGraphicsItem*> TiledGraphicsView::getVisualItems(QPoint viewPos)
 {
-	// ?? 1. 获取设备像素�?(关键修改)
-	// 如果宿主程序没开缩放，高分屏下这里会返回 1.25, 1.5, 2.0 �?
-	// 如果开了缩放，或者普通屏，这里通常�?1.0
+	// ?? 1. 获取设备像素?(关键修改)
+	// 如果宿主程序没开缩放，高分屏下这里会返回 1.25, 1.5, 2.0 ?
+	// 如果开了缩放，或者普通屏，这里通常?1.0
 	qreal ratio = viewport()->devicePixelRatio();
 
 	// 2. 设定基础容差 (逻辑像素)
@@ -1391,11 +1957,11 @@ QList<QGraphicsItem*> TiledGraphicsView::getVisualItems(QPoint viewPos)
 		baseTolerance = 10;
 	}
 
-	// ?? 3. 计算最终容�?
-	// 这样无论在什么屏幕上，物理点击面积都是差不多大的，手感一�?
+	// ?? 3. 计算最终容?
+	// 这样无论在什么屏幕上，物理点击面积都是差不多大的，手感一?
 	int finalTolerance = static_cast<int>(baseTolerance * ratio);
 
-	// 4. 构造点击矩�?
+	// 4. 构造点击矩?
 	QRect viewRect(
 		viewPos.x() - finalTolerance,
 		viewPos.y() - finalTolerance,
@@ -1422,7 +1988,7 @@ void TiledGraphicsView::setDrawingGeometry(DrawShape shapeType)
 
 void TiledGraphicsView::startDrawingDefect(DrawShape shapeType)
 {
-	// 切换到绘图模�?
+	// 切换到绘图模?
 	m_currentMode = Mode_Draw;
 
 	if (m_currentTool) {
@@ -1458,12 +2024,12 @@ void TiledGraphicsView::setLodLevel(int level) {
     if (level < 1) level = 1;
     if (level > 10) level = 10;
 
-    // 2. �?1~10 映射�?1.5 ~ 0.5
-    // Level 1  -> 1.5 (最晚显�?
-    // Level 10 -> 0.5 (最早显�?
+    // 2. ?1~10 映射?1.5 ~ 0.5
+    // Level 1  -> 1.5 (最晚显?
+    // Level 10 -> 0.5 (最早显?
 
-    // 步长 = (最大系�?- 最小系�? / (最大等�?- 1)
-    // 步长 = (1.5 - 0.5) / 9.0 �?0.1111
+    // 步长 = (最大系?- 最小系? / (最大等?- 1)
+    // 步长 = (1.5 - 0.5) / 9.0 ?0.1111
 
     double step = 1.25 / 9.0;
 
@@ -1477,6 +2043,16 @@ void TiledGraphicsView::setLodLevel(int level) {
 
 bool TiledGraphicsView::GlobalSceneToMap(QPointF pt, QString & imageName, int& localX, int& localY)
 {
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull())
+	{
+		const int sourceIndex = m_sequenceModel->sourceIndexAt(pt);
+		if (sourceIndex < 0) return false;
+		const QRectF frameRect = m_sequenceModel->frameRect(sourceIndex);
+		imageName = m_sequenceModel->descriptor(sourceIndex).imageName;
+		localX = qBound(0, qRound(pt.x() - frameRect.left()), qRound(frameRect.width()));
+		localY = qBound(0, qRound(pt.y() - frameRect.top()), qRound(frameRect.height()));
+		return true;
+	}
 	for (TunnelSectionItem* item : qAsConst(m_items))
 	{
 		if (!item || !item->sceneBoundingRect().contains(pt))
@@ -1531,7 +2107,7 @@ void TiledGraphicsView::setHighLightElement(int uuid, ElementType ele)
 		QRectF targetRect(0, 0, sceneRect.width()* margin, sceneRect.height()* margin);
 		targetRect.moveCenter(sceneRect.center());
 
-		// 确保图像不失心变�?
+		// 确保图像不失心变?
 		fitInView(targetRect, Qt::KeepAspectRatio);
 
 		item->setSelected(true);
@@ -1575,14 +2151,96 @@ void TiledGraphicsView::mouseDoubleClickEvent(QMouseEvent * event)
 	}
 }
 
-//TODO 新增功能 20260310 增加图像导出功能�?
+QImage TiledGraphicsView::renderVirtualSequenceRegion(const QRectF& sceneRect, ExportQuality quality, bool drawDefects)
+{
+	if (sceneRect.isEmpty() || m_sequenceModel.isNull() || m_sequenceSource.isNull()) return QImage();
+	const QSize targetSize(qCeil(sceneRect.width()), qCeil(sceneRect.height()));
+	if (targetSize.width() <= 0 || targetSize.height() <= 0) return QImage();
+	QImage result(targetSize, QImage::Format_RGB888);
+	result.fill(Qt::white);
+	QPainter painter(&result);
+	painter.setWindow(sceneRect.toRect());
+	painter.setViewport(result.rect());
+	const int first = m_sequenceModel->firstVisualIndexIntersecting(sceneRect);
+	const int last = m_sequenceModel->lastVisualIndexIntersecting(sceneRect);
+	if (first >= 0 && last >= first)
+	{
+		for (int visual = first; visual <= last; ++visual)
+		{
+			const int sourceIndex = m_sequenceModel->sourceIndexForVisualIndex(visual);
+			const QRectF frameRect = m_sequenceModel->frameRect(sourceIndex);
+			if (!sceneRect.intersects(frameRect)) continue;
+			QImage image = quality == Export_Thumbnail
+				? m_sequenceSource->decodeThumbnail(static_cast<quint64>(sourceIndex), QSize(m_sequenceOptions.thumbnailMaxEdge, m_sequenceOptions.thumbnailMaxEdge))
+				: m_sequenceSource->decodeFullImage(static_cast<quint64>(sourceIndex));
+			if (image.isNull()) continue;
+			painter.save();
+			if (m_sequenceHorizontalMirror || m_sequenceVerticalMirror)
+			{
+				painter.translate(frameRect.left(), frameRect.top());
+				painter.translate(m_sequenceHorizontalMirror ? frameRect.width() : 0.0,
+					m_sequenceVerticalMirror ? frameRect.height() : 0.0);
+				painter.scale(m_sequenceHorizontalMirror ? -1.0 : 1.0,
+					m_sequenceVerticalMirror ? -1.0 : 1.0);
+				painter.drawImage(QRectF(0, 0, frameRect.width(), frameRect.height()), image);
+			}
+			else painter.drawImage(frameRect, image);
+			painter.restore();
+		}
+	}
+	if (drawDefects)
+	{
+		for (SequenceChunkItem* chunk : qAsConst(m_sequenceChunks)) if (chunk) chunk->hide();
+		const QBrush oldBrush = m_scene->backgroundBrush();
+		m_scene->setBackgroundBrush(Qt::NoBrush);
+		painter.setWindow(QRect(0, 0, targetSize.width(), targetSize.height()));
+		painter.setViewport(result.rect());
+		m_scene->render(&painter, result.rect(), sceneRect);
+		m_scene->setBackgroundBrush(oldBrush);
+		for (SequenceChunkItem* chunk : qAsConst(m_sequenceChunks)) if (chunk) chunk->show();
+	}
+	painter.end();
+	return result;
+}
+
+void TiledGraphicsView::setImageBrightness(int value)
+{
+	value = qBound(-100, value, 100);
+	if (m_imageBrightness == value) return;
+	m_imageBrightness = value;
+
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		// Brightness is applied during decode. Invalidate only the virtual sequence
+		// generation so stale results cannot overwrite the new brightness setting.
+		++m_sequenceGeneration;
+		m_sequenceDecodePool.clear();
+		m_sequencePendingRequests.clear();
+		m_sequenceImageCache.clear();
+		updateVisibleTiles();
+		return;
+	}
+
+	// Preserve the existing DB thumbnail/tile pipeline; only ask it to rebuild
+	// currently visible items using its established brightness-aware cache keys.
+	AsyncImageLoader::instance()->setBrightness(value);
+	for (TunnelSectionItem* item : m_items)
+	{
+		if (item) item->unloadAll();
+	}
+	updateVisibleTiles();
+}
+
+//TODO 新增功能 20260310 增加图像导出功能?
 QPixmap TiledGraphicsView::exportRegionData(const QRectF& sceneRect, ExportQuality quality, bool drawDefects)
 {
+	if (m_contentMode == ContentMode::VirtualSequence)
+		return QPixmap::fromImage(renderVirtualSequenceRegion(sceneRect, quality, drawDefects));
 	if (sceneRect.isEmpty() || m_items.isEmpty()) return QPixmap();
 
 	QSize targetSize(qCeil(sceneRect.width()), qCeil(sceneRect.height()));
 	/*if (targetSize.width() > 16384 || targetSize.height() > 16384) {
-		qWarning() << QString::fromLocal8Bit("?? 截取区域过大，已自动等比缩小�?); 
+		qWarning() << "Capture region is too large; scaling it proportionally.";
 		targetSize.scale(16384, 16384, Qt::KeepAspectRatio);
 	}*/ 
 	//QImage resultImage(targetSize, QImage::Format_ARGB32_Premultiplied);
@@ -1635,7 +2293,7 @@ QPixmap TiledGraphicsView::exportRegionData(const QRectF& sceneRect, ExportQuali
 	}
 
 	// =========================================================
-	// 绘制矢量病害�?
+	// 绘制矢量病害?
 	// =========================================================
 	if (drawDefects) {
 		painter.setRenderHint(QPainter::Antialiasing);
@@ -1645,7 +2303,7 @@ QPixmap TiledGraphicsView::exportRegionData(const QRectF& sceneRect, ExportQuali
 			item->hide();
 		}
 
-		// ?? 2. 核心修复：临时抽�?Scene 的“黑背景”，防止它覆盖我们拼好的图片�?
+		// ?? 2. 核心修复：临时抽?Scene 的“黑背景”，防止它覆盖我们拼好的图片?
 		QBrush oldBgBrush = m_scene->backgroundBrush();
 		m_scene->setBackgroundBrush(Qt::NoBrush);
 
@@ -1653,7 +2311,7 @@ QPixmap TiledGraphicsView::exportRegionData(const QRectF& sceneRect, ExportQuali
 		painter.setWindow(0, 0, targetSize.width(), targetSize.height());
 		painter.setViewport(resultImage.rect());
 
-		// 4. 画病害！此时因为背景�?NoBrush，病害会直接以透明底盖在我们的图片�?
+		// 4. 画病害！此时因为背景?NoBrush，病害会直接以透明底盖在我们的图片?
 		m_scene->render(&painter, resultImage.rect(), sceneRect);
 
 		// ?? 5. 打扫战场：把背景色和底图全还给界面，做到神不知鬼不觉
@@ -1671,14 +2329,20 @@ QPixmap TiledGraphicsView::exportRegionData(const QRectF& sceneRect, ExportQuali
 
 
 
-//TODO 新增功能 增加图像导出功能，返�?cv::Mat 灰度图格�?(极速单通道零拷贝版)
+//TODO 新增功能 增加图像导出功能，返?cv::Mat 灰度图格?(极速单通道零拷贝版)
 cv::Mat TiledGraphicsView::exportRegionGrayMat(const QRectF& sceneRect, ExportQuality quality, bool drawDefects)
 {
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		QImage image = renderVirtualSequenceRegion(sceneRect, quality, drawDefects).convertToFormat(QImage::Format_Grayscale8);
+		if (image.isNull()) return cv::Mat();
+		return cv::Mat(image.height(), image.width(), CV_8UC1, image.bits(), image.bytesPerLine()).clone();
+	}
 	if (sceneRect.isEmpty() || m_items.isEmpty()) return cv::Mat();
 
 	QSize targetSize(qCeil(sceneRect.width()), qCeil(sceneRect.height()));
 	//if (targetSize.width() > 16384 || targetSize.height() > 16384) {
-	//	qWarning() << QString::fromLocal8Bit("?? 截取区域过大，已自动等比缩小�?);
+	//	qWarning() << "Capture region is too large; scaling it proportionally.";
 	//	targetSize.scale(16384, 16384, Qt::KeepAspectRatio);
 	//}
 
@@ -1699,7 +2363,7 @@ cv::Mat TiledGraphicsView::exportRegionGrayMat(const QRectF& sceneRect, ExportQu
 		AbstractTileSource* source = item->getSource();
 
 		if (quality == Export_Thumbnail) {
-			// 缩略图逻辑（按需放开�?
+			// 缩略图逻辑（按需放开?
 		}
 		else {
 			int tSize = item->getTileSize();
@@ -1728,7 +2392,7 @@ cv::Mat TiledGraphicsView::exportRegionGrayMat(const QRectF& sceneRect, ExportQu
 		}
 	}
 
-	// 绘制矢量病害�?
+	// 绘制矢量病害?
 	if (drawDefects) {
 		painter.setRenderHint(QPainter::Antialiasing, true);
 		painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -1743,7 +2407,7 @@ cv::Mat TiledGraphicsView::exportRegionGrayMat(const QRectF& sceneRect, ExportQu
 		painter.setWindow(0, 0, targetSize.width(), targetSize.height());
 		painter.setViewport(resultImage.rect());
 
-		// ?? 这里哪怕你界面上画的是大红大黄的线段，最终砸�?finalMat 也会自动变成灰阶线段
+		// ?? 这里哪怕你界面上画的是大红大黄的线段，最终砸?finalMat 也会自动变成灰阶线段
 		m_scene->render(&painter, resultImage.rect(), sceneRect);
 
 		m_scene->setBackgroundBrush(oldBgBrush);
@@ -1768,6 +2432,14 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 	bool drawDefects,
 	bool returnBgr)
 {
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		QImage image = renderVirtualSequenceRegion(sceneRect, quality, drawDefects).convertToFormat(QImage::Format_RGB888);
+		if (image.isNull()) return cv::Mat();
+		cv::Mat rgb(image.height(), image.width(), CV_8UC3, image.bits(), image.bytesPerLine());
+		if (!returnBgr) return rgb.clone();
+		cv::Mat bgr; cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR); return bgr;
+	}
 	if (sceneRect.isEmpty() || m_items.isEmpty()) {
 		return cv::Mat();
 	}
@@ -1778,7 +2450,7 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 	}
 
 	//if (targetSize.width() > 16384 || targetSize.height() > 16384) {
-	//	qWarning() << QString::fromLocal8Bit("?? 截取区域过大，已自动等比缩小�?);
+	//	qWarning() << "Capture region is too large; scaling it proportionally.";
 	//	targetSize.scale(16384, 16384, Qt::KeepAspectRatio);
 	//}
 
@@ -1804,7 +2476,7 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 		}
 
 		if (quality == Export_Thumbnail) {
-			// 你当前原函数里缩略图逻辑也是注释掉的，这里先保持一�?
+			// 你当前原函数里缩略图逻辑也是注释掉的，这里先保持一?
 			continue;
 		}
 
@@ -1840,8 +2512,8 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 	}
 
 	// =========================================================
-	// 绘制矢量病害�?
-	// 这里仍然是画�?resultImage，但 resultImage 背后就是 matRgb.data
+	// 绘制矢量病害?
+	// 这里仍然是画?resultImage，但 resultImage 背后就是 matRgb.data
 	// =========================================================
 	if (drawDefects) {
 		painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1874,13 +2546,13 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 		resultImage.bits(),
 		resultImage.bytesPerLine());
 
-	// 如果后续还要 Qt 显示、或者你只是转灰度识别，可以直接 return matRgb，最�?
+	// 如果后续还要 Qt 显示、或者你只是转灰度识别，可以直接 return matRgb，最?
 	if (!returnBgr) {
 		return matRgb.clone();
 	}
 
-	// OpenCV �?imwrite / 大多数算法默认按 BGR 解释彩色�?
-	// 需要保存正常颜色时，再�?BGR
+	// OpenCV ?imwrite / 大多数算法默认按 BGR 解释彩色?
+	// 需要保存正常颜色时，再?BGR
 	cv::Mat matBgr;
 	cv::cvtColor(matRgb, matBgr, cv::COLOR_RGB2BGR);
 	return matBgr;
@@ -1889,26 +2561,32 @@ cv::Mat TiledGraphicsView::exportRegionMat(const QRectF& sceneRect,
 
 QPixmap TiledGraphicsView::exportRegionDataToWord(const QRectF& sceneRect, ExportQuality quality /*= Export_HighRes*/, bool drawDefects /*= true*/)
 {
+	if (m_contentMode == ContentMode::VirtualSequence)
+	{
+		QImage image = renderVirtualSequenceRegion(sceneRect, quality, drawDefects);
+		if (image.width() > 1500) image = image.scaledToWidth(1500, Qt::SmoothTransformation);
+		return QPixmap::fromImage(image);
+	}
 	if (sceneRect.isEmpty() || m_items.isEmpty()) return QPixmap();
 
 	QSize targetSize(qCeil(sceneRect.width()), qCeil(sceneRect.height()));
 	/*if (targetSize.width() > 16384 || targetSize.height() > 16384) {
-	qWarning() << QString::fromLocal8Bit("?? 截取区域过大，已自动等比缩小�?);
+	qWarning() << "Capture region is too large; scaling it proportionally.";
 	targetSize.scale(16384, 16384, Qt::KeepAspectRatio);
 	}*/
 
 	//QImage resultImage(targetSize, QImage::Format_ARGB32_Premultiplied);
 	QImage resultImage(targetSize, QImage::Format_RGB888);
 
-	// ?? 修复�?1：JPG不支持透明底，一律填成干净的白�?(或你需要的底图颜色)
+	// ?? 修复?1：JPG不支持透明底，一律填成干净的白?(或你需要的底图颜色)
 	resultImage.fill(Qt::white);
 
 	QPainter painter(&resultImage);
 	painter.setRenderHint(QPainter::Antialiasing, false);
 	painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
 
-	// ?? 修复�?2：上帝级坐标系映射！
-	// 告诉画家：“你现在的画板代表的是真实的物理 SceneRect�?
+	// ?? 修复?2：上帝级坐标系映射！
+	// 告诉画家：“你现在的画板代表的是真实的物理 SceneRect?
 	painter.setWindow(sceneRect.toRect());
 	painter.setViewport(resultImage.rect());
 
@@ -1952,7 +2630,7 @@ QPixmap TiledGraphicsView::exportRegionDataToWord(const QRectF& sceneRect, Expor
 	}
 
 	// =========================================================
-	// 绘制矢量病害�?
+	// 绘制矢量病害?
 	// =========================================================
 	if (drawDefects) {
 		painter.setRenderHint(QPainter::Antialiasing);
@@ -1962,7 +2640,7 @@ QPixmap TiledGraphicsView::exportRegionDataToWord(const QRectF& sceneRect, Expor
 			item->hide();
 		}
 
-		// ?? 2. 核心修复：临时抽�?Scene 的“黑背景”，防止它覆盖我们拼好的图片�?
+		// ?? 2. 核心修复：临时抽?Scene 的“黑背景”，防止它覆盖我们拼好的图片?
 		QBrush oldBgBrush = m_scene->backgroundBrush();
 		m_scene->setBackgroundBrush(Qt::NoBrush);
 
@@ -1970,7 +2648,7 @@ QPixmap TiledGraphicsView::exportRegionDataToWord(const QRectF& sceneRect, Expor
 		painter.setWindow(0, 0, targetSize.width(), targetSize.height());
 		painter.setViewport(resultImage.rect());
 
-		// 4. 画病害！此时因为背景�?NoBrush，病害会直接以透明底盖在我们的图片�?
+		// 4. 画病害！此时因为背景?NoBrush，病害会直接以透明底盖在我们的图片?
 		m_scene->render(&painter, resultImage.rect(), sceneRect);
 
 		// ?? 5. 打扫战场：把背景色和底图全还给界面，做到神不知鬼不觉
@@ -1992,6 +2670,15 @@ QPixmap TiledGraphicsView::exportRegionDataToWord(const QRectF& sceneRect, Expor
 // 指定某图片名获取该Mat指针
 cv::Mat TiledGraphicsView::getMatByImageName(QString qstrImageName)
 {
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull() && !m_sequenceSource.isNull())
+	{
+		const int sourceIndex = m_sequenceModel->sourceIndexForName(qstrImageName);
+		if (sourceIndex < 0) return cv::Mat();
+		QImage image = m_sequenceSource->decodeFullImage(static_cast<quint64>(sourceIndex)).convertToFormat(QImage::Format_RGB888);
+		if (image.isNull()) return cv::Mat();
+		cv::Mat rgb(image.height(), image.width(), CV_8UC3, image.bits(), image.bytesPerLine());
+		cv::Mat bgr; cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR); return bgr;
+	}
 	QString qstrFloderPath;
 	QString qstrFindName = qstrImageName.remove(".jpg");
 	for (TunnelSectionItem* item : m_items)
@@ -2013,7 +2700,7 @@ cv::Mat TiledGraphicsView::getMatByImageName(QString qstrImageName)
 
 	QFileInfoList fileList = dir.entryInfoList(QStringList() << "*.jpg", QDir::Files | QDir::NoSymLinks, QDir::NoSort);
 
-	// 每列一个数�?
+	// 每列一个数?
 	vector<vector<pair<QString,QString>>> vecVecColsImages;
 	// 21680宽度是固定的
 	vecVecColsImages.resize(22);
@@ -2050,7 +2737,7 @@ cv::Mat TiledGraphicsView::getMatByImageName(QString qstrImageName)
 
 
 	vector<cv::Mat> vecVconcatMat;
-	// 先按列读�?
+	// 先按列读?
 	for (size_t i = 0; i < vecVecColsImages.size(); i++)
 	{
 		vector<cv::Mat> vecMats;
@@ -2065,7 +2752,7 @@ cv::Mat TiledGraphicsView::getMatByImageName(QString qstrImageName)
 		vecVconcatMat.push_back(vconcatMat);
 	}
 
-	// 检查高度是否都一�?
+	// 检查高度是否都一?
 	bool isSame = true;
 	for (int i = 1; i < vecVconcatMat.size(); i++)
 	{
@@ -2087,6 +2774,8 @@ cv::Mat TiledGraphicsView::getMatByImageName(QString qstrImageName)
 
 double TiledGraphicsView::getImageHeight()
 {
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull() && !m_sequenceModel->isEmpty())
+		return m_sequenceModel->descriptor(0).imageSize.height() - 10.0;
 	if (m_items.size() > 0)
 	{
 		return (double)m_items[0]->boundingRect().height() - 10;
@@ -2097,6 +2786,8 @@ double TiledGraphicsView::getImageHeight()
 
 double TiledGraphicsView::getImageWidth()
 { 
+	if (m_contentMode == ContentMode::VirtualSequence && !m_sequenceModel.isNull() && !m_sequenceModel->isEmpty())
+		return m_sequenceModel->descriptor(0).imageSize.width();
 	if (m_items.size() > 0)
 	{ 
 		return (double)m_items[0]->boundingRect().width();

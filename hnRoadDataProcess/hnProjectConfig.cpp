@@ -41,6 +41,7 @@ void hnProjectConfig::on_okButton_clicked()
 void hnProjectConfig::initWidgetSetting()
 {
 	ui.horizontalScrollBar->setValue(m_xrSetting->movePictureBackMouseRatio);
+	ui.wheelScrollOneImageCheckBox->setChecked(m_xrSetting->wheelScrollOneImage);
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
 		return;
@@ -107,6 +108,8 @@ void hnProjectConfig::dataProcessSetting()
 	emit signal_isDepthCaculate(ui.isDepthCaculateCheckBox->isChecked());
 
 	m_xrSetting->movePictureBackMouseRatio = ui.horizontalScrollBar->value();
+	m_xrSetting->wheelScrollOneImage = ui.wheelScrollOneImageCheckBox->isChecked();
+	emit signal_wheelScrollOneImageChanged(m_xrSetting->wheelScrollOneImage);
 	
 }
 

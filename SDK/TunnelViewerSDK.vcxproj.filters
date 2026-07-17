@@ -51,6 +51,9 @@
     <ClCompile Include="src\TunnelViewerController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\VirtualImageSequence.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\AbstractTileSource.h">
@@ -87,6 +90,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\TunnelGlobal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\VirtualImageSequence.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\AbstractSourceFactory.h">

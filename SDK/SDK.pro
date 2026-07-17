@@ -41,6 +41,7 @@ HEADERS += \
     include/PackImageTileSource.h \
     include/WholeImageTileSource.h \
     include/WholeImageSourceFactory.h \
+	include/VirtualImageSequence.h \
     include/tools/AbstractTool.h \
     include/tools/GridSelectionTool.h \
     src/TiledGraphicsView.h \
@@ -54,6 +55,7 @@ SOURCES += \
     src/TunnelSectionItem.cpp \
     src/AsyncImageLoader.cpp \
     src/GridSelectionTool.cpp \
+	src/VirtualImageSequence.cpp \
 	include/items/DefectShapeItem.cpp
 	
 win32-msvc* {

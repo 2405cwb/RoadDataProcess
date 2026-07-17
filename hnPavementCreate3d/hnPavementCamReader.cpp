@@ -2,6 +2,7 @@
 #include <QDir>
 
 #include <QFileInfo>
+#include <QFile>
 #include <io.h>
 #include <stdlib.h>
 #include "snappy-c.h"
@@ -27,6 +28,8 @@ hnPavementCamReader::hnPavementCamReader(void)
 	m_bNeedRead = false;
 	m_nCurCamIndex = 0;
 	m_nCurReadIndex = 0;
+	m_cachedSubFrameDatIndex = -1;
+	m_subFrameCacheEnabled = false;
 	m_ptrRowHeight = new unsigned short*[100];
 	m_ptrRowIntensity = new unsigned char*[100];
 	m_ptrRowTimeStamp = new unsigned char*[100];
@@ -100,6 +103,7 @@ hnPavementCamReader::~hnPavementCamReader(void)
 
 bool hnPavementCamReader::Open( const char* path )
 {
+	m_cachedSubFrameDatIndex = -1;
 	m_strCamFilePath = path;
 
 	// 根据当前cam文件名，顺序查找第一个dat所在文件夹路径;
@@ -1733,31 +1737,72 @@ bool hnPavementCamReader::getSubFramePoints( int mainFrameIndex,int subFrameInde
 	int datInSubIndex = mainFrameIndex % 100;
 	int frameIndex = datInSubIndex * 40 + subFrameIndex;
 
-	// 获取当前帧的影像路径;
-	QString strCurDatPath = getDatPathByImgNo(datImgIndex);
-
-	// 读取该张影像的全部数据;
-	if (m_ptrDatFile)
+	// 几何顺序计算只解压当前DAT，不再预解析其中全部4000个断面；
+	// 每次请求仅拆出目标断面的2560个点，普通读取模式仍保持原逻辑。
+	if (m_subFrameCacheEnabled && m_cachedSubFrameDatIndex != datImgIndex)
 	{
-		fclose(m_ptrDatFile);
+		QString strCurDatPath = getDatPathByImgNo(datImgIndex);
+		if (strCurDatPath.isEmpty())
+		{
+			// 记住缺失块，避免同一尾段的后续断面反复扫描目录和输出警告。
+			m_cachedSubFrameDatIndex = datImgIndex;
+			m_cachedSubFrameRawData.clear();
+			return false;
+		}
+		QFile datFile(strCurDatPath);
+		if (!datFile.open(QIODevice::ReadOnly))
+		{
+			m_cachedSubFrameDatIndex = -1;
+			m_cachedSubFrameRawData.clear();
+			return false;
+		}
+		const QByteArray compressed = datFile.readAll();
+		size_t uncompressedLength = 0;
+		if (snappy_uncompressed_length(compressed.constData(), compressed.size(), &uncompressedLength) != SNAPPY_OK)
+		{
+			m_cachedSubFrameDatIndex = -1;
+			m_cachedSubFrameRawData.clear();
+			return false;
+		}
+		m_cachedSubFrameRawData.resize(uncompressedLength);
+		if (snappy_uncompress(compressed.constData(), compressed.size(),
+			m_cachedSubFrameRawData.data(), &uncompressedLength) != SNAPPY_OK)
+		{
+			m_cachedSubFrameDatIndex = -1;
+			m_cachedSubFrameRawData.clear();
+			return false;
+		}
+		m_cachedSubFrameRawData.resize(uncompressedLength);
+		m_cachedSubFrameDatIndex = datImgIndex;
 	}
-	m_ptrDatFile = fopen(strCurDatPath.toLocal8Bit().data(),"rb");
-
-	// 获取指定帧数据，首先跳转至指定帧;
-	bool bRet = readNextCamSynDataNew(m_ptrRowHeight,m_ptrRowIntensity,m_ptrRowTimeStamp);
+	else if (!m_subFrameCacheEnabled)
+	{
+		QString strCurDatPath = getDatPathByImgNo(datImgIndex);
+		if (m_ptrDatFile)
+		{
+			fclose(m_ptrDatFile);
+			m_ptrDatFile = NULL;
+		}
+		m_ptrDatFile = fopen(strCurDatPath.toLocal8Bit().data(),"rb");
+		if (!m_ptrDatFile || !readNextCamSynDataNew(m_ptrRowHeight,m_ptrRowIntensity,m_ptrRowTimeStamp))
+			return false;
+	}
 	//bool bRet = readNextCamSynData(m_ptrRowHeight,m_ptrRowIntensity,m_ptrRowTimeStamp);
 
 	// 解析当前帧位置的数据;
-	if (!m_ptrRowHeight || !m_ptrRowIntensity || !m_ptrRowTimeStamp)
+	if ((!m_subFrameCacheEnabled && (!m_ptrRowHeight || !m_ptrRowIntensity || !m_ptrRowTimeStamp))
+		|| (m_subFrameCacheEnabled && m_cachedSubFrameRawData.empty()))
 	{
 		return false;
 	}
 
 	// 计算当前帧第零行的时间值;
 	PAVEMENT_CAM_SYN_INFO& camSynInfo = m_vecCamSynInfo[mainFrameIndex];
-	unsigned short* ptrRowHeight = m_ptrRowHeight[datInSubIndex];
-	unsigned char* ptrRowIntensity = m_ptrRowIntensity[datInSubIndex];
-	unsigned char* ptrRowTimeStamp = m_ptrRowTimeStamp[datInSubIndex];
+	unsigned short* ptrRowHeight = m_subFrameCacheEnabled ? NULL : m_ptrRowHeight[datInSubIndex];
+	unsigned char* ptrRowIntensity = m_subFrameCacheEnabled ? NULL : m_ptrRowIntensity[datInSubIndex];
+	unsigned char* ptrRowTimeStamp = m_subFrameCacheEnabled ? NULL : m_ptrRowTimeStamp[datInSubIndex];
+	const unsigned short* packedPoints = m_subFrameCacheEnabled
+		? reinterpret_cast<const unsigned short*>(m_cachedSubFrameRawData.data()) : NULL;
 	double gpsTime = 0.0;
 	double tempGpsTime = 0.0;
 	tempGpsTime = camSynInfo.nGpsSecond + camSynInfo.nMsecond / 1000.0 + camSynInfo.nUsecond / 1000000.0;
@@ -1783,8 +1828,20 @@ bool hnPavementCamReader::getSubFramePoints( int mainFrameIndex,int subFrameInde
 		curCol = n % 2560;
 
 		// 获取原始的强度信息和高程信息;
-		uheight = ptrRowHeight[n];
-		uIntensity = ptrRowIntensity[n];
+		if (m_subFrameCacheEnabled)
+		{
+			const size_t packedIndex = static_cast<size_t>(frameIndex) * 2560 + curCol;
+			if ((packedIndex + 1) * sizeof(unsigned short) > m_cachedSubFrameRawData.size())
+				continue;
+			const unsigned short packed = packedPoints[packedIndex];
+			uheight = packed & 0x03ff;
+			uIntensity = static_cast<unsigned char>(((packed & 0xfc00) >> 10) << 2);
+		}
+		else
+		{
+			uheight = ptrRowHeight[n];
+			uIntensity = ptrRowIntensity[n];
+		}
 
 		// 时间计算;
 		if (subFrameIndex > 0)

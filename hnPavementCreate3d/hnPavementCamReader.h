@@ -47,6 +47,8 @@ public:
 
 	// 读取指定帧数据（2560个点）;
 	bool getSubFramePoints(int mainFrameIndex,int subFrameIndex,int leftOrRight,std::vector<POINT_STRUCT_XYZIT_INFO>& pionts,int& return_pt_count);
+	// 几何顺序计算专用。默认关闭，避免改变现有随机读取调用方的行为。
+	void setSubFrameCacheEnabled(bool enabled) { m_subFrameCacheEnabled = enabled; m_cachedSubFrameDatIndex = -1; m_cachedSubFrameRawData.clear(); }
 
 	// 读取指定点的坐标 nImageIndex-影像索引 subFrameIndex 当前影像内帧号， ;
 	bool getFramePoints(int nImageIndex, int nSubFrameIndex, int nPtIndex, hn3dPointD& out3dPt);
@@ -153,6 +155,9 @@ private:
 	bool m_bNeedRead;   // 标记是否需要从文件中读取下一个数据文件;
 	int m_nCurCamIndex; // 记录当前同步数据获取的索引值;
 	int m_nCurReadIndex; // 记录当前读取的100 * 40数据对应到哪一份;
+	int m_cachedSubFrameDatIndex; // getSubFramePoints顺序读取时已解析的DAT编号
+	bool m_subFrameCacheEnabled;
+	std::vector<char> m_cachedSubFrameRawData; // 顺序几何计算仅缓存Snappy解压数据，按需解析断面
 	unsigned char** m_ptrRowTimeStamp; // 记录的行时间戳信息;
 	unsigned short** m_ptrRowHeight; // 记录的行高程值;
 	unsigned char** m_ptrRowIntensity; // 记录的行强度值;

@@ -26,6 +26,7 @@ public:
 	bool loadRoute(const QString& rootPath);
 	// 旧项目已经把图片顺序排好了，就走这个入口直接加载，不再让 SDK 重新猜目录结构。
 	bool loadImages(const QStringList& imagePaths);
+	bool loadImages(const QStringList& imagePaths, const SequenceLoadOptions& options);
 
 
 	bool loadPackRoute(const QString& packRoot, const PackRouteOptions& options = PackRouteOptions());

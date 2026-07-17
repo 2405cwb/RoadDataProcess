@@ -56,7 +56,16 @@
     <ClCompile Include="test_DrPciCalculator.cpp">
       <Filter>test_hnRoadDataProcess</Filter>
     </ClCompile>
+	<ClCompile Include="test_LineCameraConfig.cpp">
+	  <Filter>test_hnRoadDataProcess</Filter>
+	</ClCompile>
     <ClCompile Include="..\hnApplication\LittleFrameRenderPathBuilder.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
+    <ClCompile Include="test_GeometryCalculation.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnRoadDataProcess\hnGeometryCalculation.cpp">
       <Filter>test_hnRoadDataProcess\Source</Filter>
     </ClCompile>
   </ItemGroup>
@@ -86,6 +95,12 @@
       <Filter>test_hnRoadDataProcess</Filter>
     </QtMoc>
     <QtMoc Include="test_DrPciCalculator.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+	<QtMoc Include="test_LineCameraConfig.h">
+	  <Filter>test_hnRoadDataProcess</Filter>
+	</QtMoc>
+    <QtMoc Include="test_GeometryCalculation.h">
       <Filter>test_hnRoadDataProcess</Filter>
     </QtMoc>
   </ItemGroup>

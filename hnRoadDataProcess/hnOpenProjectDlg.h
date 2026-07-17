@@ -14,6 +14,8 @@
 #include <QMap>
 #include <QCheckBox>
 #include "applyAllDialog.h"
+#include "../hnProject/hnLineCameraConfig.h"
+#include <QSet>
 class hnOpenProjectDlg : public QDialog
 {
     Q_OBJECT
@@ -34,6 +36,7 @@ private:
 	void slot_onCheckAllCheckBoxCheckStateChangeed(bool state);
 
 	void slot_onApplyAllPushButtonClicked(bool isClicked);
+	void slot_onNextMissingLineAreaClicked();
 
 private:
 	QMap<QString, QMap<QString, QString>> readKeyValueFile(QString fileNme);
@@ -45,6 +48,10 @@ private:
 private:
 	//往界面上添加工程信息
 	void addProjectInfoToWidget();
+	void editLineCameraArea(int row);
+	void updateLineCameraRow(int row);
+	bool validateSelectedLineCameraAreas(QString& errorMessage) const;
+	bool savePendingLineCameraAreas(QString& errorMessage);
 
 	//将配置信息写入文件中   selectProjects使用户选中了的 并且 相关信息通过界面设置后 已经赋值完成的 工程信息 请保证我想要写入xml或者txt的信息是已赋值的
 	void writeProjectInfoToFile1(const std::vector<hnCommon::hnProjectDataInfo> selectProjects);
@@ -78,6 +85,7 @@ private:
 	QPushButton* m_cancelPushButton;
 	QCheckBox *m_checkAllCheckBox;
 	QPushButton *m_applyAllPushButton;
+	QPushButton *m_nextMissingLineAreaButton;
 private:
 	QGridLayout* m_scrollAreaGridLayout;
 	QHBoxLayout *m_hBoxLayout;
@@ -92,5 +100,9 @@ private:
 	QStringList m_roadTypeNames;
 	//工程信息
 	std::vector<hnCommon::hnProjectDataInfo> m_projectDataInfos;
+	QMap<int, hnPro::hnLineCameraInfo> m_lineCameraInfos;
+	QMap<int, QLabel*> m_lineCameraStatusLabels;
+	QMap<int, QLineEdit*> m_lineCameraWidthEdits;
+	QSet<int> m_pendingLineCameraRows;
 	hnCommon::PROJECT_TYPE m_proType;
 };
