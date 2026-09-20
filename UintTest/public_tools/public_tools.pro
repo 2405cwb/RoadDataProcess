@@ -1,0 +1,9 @@
+QT += core gui widgets axcontainer
+CONFIG += console c++11 release no_batch
+CONFIG -= debug app_bundle
+TARGET = public-tools-tests
+INCLUDEPATH += ../../hnRoadDataProcess ../../hnQtCommon ../../hnCommon ../../hnDataTable ../../3rd/SQLite/include ../../QXlsx/header ../../hnConfigService
+SOURCES += $$PWD/hnPublicToolsTest.cpp ../../hnRoadDataProcess/hnDiseaseSampleExporter.cpp ../../hnRoadDataProcess/hnReportMergeTool.cpp ../../hnRoadDataProcess/hnReportMergeDlg.cpp ../../hnRoadDataProcess/hnRoadDiseaseImageExporter.cpp
+HEADERS += ../../hnRoadDataProcess/hnDiseaseSampleExporter.h ../../hnRoadDataProcess/hnReportMergeTool.h ../../hnRoadDataProcess/hnReportMergeDlg.h ../../hnRoadDataProcess/hnRoadDiseaseImageExporter.h
+RESOURCES += ../../hnRoadDataProcess/hnRoadDataProcess.qrc
+LIBS += -L../../bin/Release-x64 -lhnDataTable -lhnCommon -lhnQtCommon -lQXlsx -L../../3rd/SQLite/lib -lsqlite3

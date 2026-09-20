@@ -15,7 +15,8 @@ statusBarWidget::~statusBarWidget()
 
 void statusBarWidget::updateLabelTextSlot(const QString &text)
 {
-	this->setText(text);
+	this->setToolTip(text);
+	this->setText(fontMetrics().elidedText(text, Qt::ElideRight, qMax(80, width() - 8)));
 	this->update();
 }
 
@@ -36,7 +37,7 @@ void statusBarWidget::init()
 	this->m_statusInfo.insert(statusType::MOUSE_POS, "1");
 
 	//test
-	this->setText(QString::fromLocal8Bit("状态栏信息显示"));
+	this->setText(QStringLiteral("就绪 · 打开工程后可浏览影像和检查数据"));
 }
 
 void statusBarWidget::releaseMemory()

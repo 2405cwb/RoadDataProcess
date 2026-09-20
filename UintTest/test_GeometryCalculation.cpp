@@ -123,5 +123,8 @@ void test_GeometryCalculation::integratesRealProjectWhenConfigured()
 	QVERIFY(QFile::exists(input.resultPath));
 	QVERIFY(QFile::exists(QDir(outputDirectory.path()).filePath(QStringLiteral("Geoalig_10m.quality.csv"))));
 	QVERIFY(!result.outputSamples.empty());
-	QVERIFY(result.outputSamples.back().dMileage + 10.0 >= input.projectLength);
+	const double expectedLength = qMin(input.projectLength, result.scanLength);
+	QVERIFY(result.outputSamples.back().dMileage + 10.0 >= expectedLength);
+	if (result.scanLength < input.projectLength)
+		QVERIFY(!result.warningMessage.isEmpty());
 }

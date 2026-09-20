@@ -1,4 +1,6 @@
 #include "projectView.h"
+#include "hnMarkPileEditDialog.h"
+#include "../hnApplication/hnDiseaseService.h"
 #include "../hnQtCommon/MyCommonMethods.h"
 #include "QTableWidgetItem"
 #include "..\hnApplication\hnDataManager.h"
@@ -9,11 +11,25 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QTableWidget>
+#include <QAbstractItemView>
+#include <QMessageBox>
+#include <QDateTime>
 projectView::projectView(QWidget *parent)
 	: QWidget(parent)
 {
 
 	ui.setupUi(this);
+	m_editProjectButton = new QPushButton(QStringLiteral("编辑工程"), this);
+	m_saveProjectButton = new QPushButton(QStringLiteral("保存工程"), this);
+	m_cancelProjectButton = new QPushButton(QStringLiteral("取消"), this);
+	ui.gridLayout->addWidget(m_editProjectButton, 9, 0);
+	ui.gridLayout->addWidget(m_saveProjectButton, 9, 1);
+	ui.gridLayout->addWidget(m_cancelProjectButton, 10, 0, 1, 2);
+	m_saveProjectButton->hide();
+	m_cancelProjectButton->hide();
+	connect(m_editProjectButton, &QPushButton::clicked, this, &projectView::beginProjectEdit);
+	connect(m_saveProjectButton, &QPushButton::clicked, this, &projectView::saveProjectEdit);
+	connect(m_cancelProjectButton, &QPushButton::clicked, this, &projectView::cancelProjectEdit);
 	//设置打标窗口 行数0
 	ui.markTableWidget->setRowCount(0);
 	ui.markTableWidget->setColumnCount(3);
@@ -22,6 +38,8 @@ projectView::projectView(QWidget *parent)
 	ui.markTableWidget->setHorizontalHeaderLabels(QStringList() << QStringLiteral("打标桩号") << QStringLiteral("打标类型") << QStringLiteral("打标信息"));
 	ui.markTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 	ui.markTableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+	ui.markTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+	ui.markTableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	ui.label_22->hide();
 	ui.lineEdit_18->hide();
 	ui.pushButton_7->hide();
@@ -34,6 +52,8 @@ projectView::projectView(QWidget *parent)
 	ui.pileTableWidget->setHorizontalHeaderLabels(QStringList() << QStringLiteral("桩号") << QStringLiteral("里程"));
 	ui.pileTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 	ui.pileTableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+	ui.pileTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+	ui.pileTableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	connect(ui.pileTableWidget, &QTableWidget::customContextMenuRequested, this, &projectView::MilePileMenuClicked);
 	//当用户双击打标
 	connect(ui.markTableWidget, &QTableWidget::itemDoubleClicked, this, &projectView::slot_doubleClickTableVidgetItem);
@@ -51,6 +71,18 @@ projectView::projectView(QWidget *parent)
 	//添加较桩按钮按下
 	connect(ui.pushButton_3, &QPushButton::clicked, this, &projectView::slot_addMilePileClicked);
 
+
+    m_editMarkButton = new QPushButton(QStringLiteral("修改选中打标"), this);
+    m_editPileButton = new QPushButton(QStringLiteral("修改选中校桩"), this);
+    m_editMarkButton->setObjectName(QStringLiteral("editSelectedMark"));
+    m_editPileButton->setObjectName(QStringLiteral("editSelectedPile"));
+    ui.verticalLayout_2->insertWidget(ui.verticalLayout_2->indexOf(ui.markTableWidget), m_editMarkButton);
+    ui.verticalLayout->insertWidget(ui.verticalLayout->indexOf(ui.pileTableWidget), m_editPileButton);
+    connect(m_editMarkButton, &QPushButton::clicked, this, &projectView::editMark);
+    connect(m_editPileButton, &QPushButton::clicked, this, &projectView::editPile);
+    connect(ui.markTableWidget, &QTableWidget::itemSelectionChanged, this, &projectView::updateEditButtons);
+    connect(ui.pileTableWidget, &QTableWidget::itemSelectionChanged, this, &projectView::updateEditButtons);
+    updateEditButtons();
 	ui.lineEdit_16->setValidator(new QIntValidator(this));
 	connect(ui.lineEdit_16, &QLineEdit::textChanged, this, &projectView::updateDmiTxt);
 }
@@ -81,6 +113,7 @@ void projectView::clearProjectInfo()
 }
 void projectView::slot_updateProjectSetting(hnCommon::hnProjectSetInfo setting, QVector<hnCommon::hnMarkInfo> marks, QVector<hnCommon::hnMilePile> pile)
 {
+	m_loadedProjectSettings = setting;
 #pragma region 加载工程信息
 	//更新工程信息界面	
 	//工程是否为上行
@@ -201,6 +234,8 @@ void projectView::slot_doubleClickTableVidgetItem(QTableWidgetItem * item)
 		return;
 	}
 
+	if (firstItem && item->tableWidget() == ui.pileTableWidget)
+		mile = firstItem->data(Qt::UserRole + 1).toDouble();
 	emit signal_jumpToMile(mile);
 }
 void projectView::slot_MarkComboxIndexChanged(int index)
@@ -265,33 +300,13 @@ void projectView::slot_MarkComboxIndexChanged(int index)
 		ui.comboBox_3->setCurrentIndex(0); break;
 	}
 
-	case 3:
-	{
-		ui.label_22->hide();
-		ui.lineEdit_18->hide();
-		ui.comboBox_3->show();
-		ui.pushButton_7->hide();
-		ui.pushButton_5->show();
-		QStringList tempStr;
-		ui.comboBox_3->clear();
-		tempStr << QStringLiteral("等级公路2018") << QStringLiteral("城镇道路") << QStringLiteral("低等级农村公路");
-		ui.comboBox_3->addItems(tempStr);
-		ui.comboBox_3->setCurrentIndex(0);
-	}
-
-	break;
-	case 4:
+	case 3: // UI index 3 is ROAD_CONDITION (stored type 4).
 		ui.comboBox_3->hide();
 		ui.pushButton_7->show();
 		ui.pushButton_5->hide();
 		ui.label_22->show();
 		ui.lineEdit_18->show();
-	
-	 
-
-		break;
-		break;
-	default:
+		break;	default:
 		break;
 	}
 }
@@ -334,6 +349,8 @@ void projectView::slot_addMarkClicked()
 	//用户选择的打标内容 
 	int markType = 0;
 	markType = ui.comboBox_2->currentIndex();
+	// The hidden standard item is skipped; index 3 stores ROAD_CONDITION (type 4).
+	if (markType >= 3) ++markType;
 
 	QString text = "";
 	if (!ui.lineEdit_18->isHidden())
@@ -344,7 +361,14 @@ void projectView::slot_addMarkClicked()
 	{
 		text = ui.comboBox_3->currentText();
 	}
-	double curMile = ui.lineEdit_16->text().toDouble();
+	bool trueMileOk = false;
+	double curMile = ui.lineEdit_16->text().trimmed().toDouble(&trueMileOk);
+	if (!trueMileOk)
+	{
+		QMessageBox::warning(this, QStringLiteral("打标输入错误"),
+			QStringLiteral("打标桩号必须是有效数字，请重新输入。"));
+		return;
+	}
 	double dmi = hnApp::hnDataManager::getDataManager()->getCurrentProject()->trueMileToEncl(curMile);
 	currentMarkInfo.dTrueMile = curMile;
 	currentMarkInfo.dEnclMile = dmi;
@@ -355,7 +379,16 @@ void projectView::slot_addMarkClicked()
 	QApplication::setOverrideCursor(Qt::WaitCursor);
 	if (std::find(marks.begin(), marks.end(), currentMarkInfo) == marks.end())
 	{
-		bool needUpdateAll = hnApp::hnDataManager::getDataManager()->getCurrentProject()->addMark(currentMarkInfo);
+		bool needUpdateAll = false;
+		QString errorMessage;
+		const bool addSuccess = hnApp::hnDataManager::getDataManager()->getCurrentProject()->addMark(
+			currentMarkInfo, &needUpdateAll, &errorMessage);
+		if (!addSuccess)
+		{
+			QApplication::restoreOverrideCursor();
+			QMessageBox::warning(this, QStringLiteral("打标输入错误"), errorMessage);
+			return;
+		}
 		marks = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMarkVector();
 		updateMarkFrom(marks, isUp);
 
@@ -382,21 +415,30 @@ void projectView::slot_addMilePileClicked()
 		return;
 	}
 	bool isUp =  hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nLineType == 1 ? true : false;
-	QVector<hnCommon::hnMilePile> datas = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
+	auto project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	hnCommon::hnMilePile curMile; 
-	curMile.dTrueMile = ui.lineEdit_8->text().toDouble();
-	curMile.dEnclMile = ui.lineEdit_15->text().toDouble();
-	QApplication::setOverrideCursor(Qt::WaitCursor);
-	if (std::find(datas.begin(),datas.end(), curMile) == datas.end())
+	bool trueMileOk = false;
+	bool dmiOk = false;
+	curMile.dTrueMile = ui.lineEdit_8->text().trimmed().toDouble(&trueMileOk);
+	curMile.dEnclMile = ui.lineEdit_15->text().trimmed().toDouble(&dmiOk);
+	if (!trueMileOk || !dmiOk)
 	{
-	 
- 		datas.push_back(curMile); 
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->addMilePile(curMile);
-		updatePileFrom(datas, isUp);
+		QMessageBox::warning(this, QStringLiteral("校桩输入错误"),
+			QStringLiteral("校桩桩号和相对里程必须是有效数字，请重新输入。"));
+		return;
 	}
-	
-	emit signal_updateAllWidget();
+	QApplication::setOverrideCursor(Qt::WaitCursor);
+	QString errorMessage;
+	const bool addSuccess = project->addMilePile(curMile, &errorMessage);
 	QApplication::restoreOverrideCursor();
+	if (!addSuccess)
+	{
+		QMessageBox::warning(this, QStringLiteral("校桩输入错误"), errorMessage);
+		return;
+	}
+	QVector<hnCommon::hnMilePile> datas = project->getCurrentMilePileVector();
+	updatePileFrom(datas, isUp);
+	emit signal_updateAllWidget();
 }
 
 void projectView::MarkMenuClicked(const QPoint &pos)
@@ -408,7 +450,12 @@ void projectView::MarkMenuClicked(const QPoint &pos)
 		return;
 	}
 
-	QMenu menu(ui.markTableWidget);
+    if (!item->isSelected()) ui.markTableWidget->selectRow(item->row());
+    updateEditButtons();
+    QMenu menu(ui.markTableWidget);
+    QAction* editAction = menu.addAction(QStringLiteral("修改"));
+    editAction->setEnabled(m_editMarkButton->isEnabled());
+    connect(editAction, &QAction::triggered, this, &projectView::editMark);
 	QAction * deleteAction = menu.addAction(QStringLiteral("删除"));
 
 	connect(deleteAction, &QAction::triggered, this, &projectView::deleteMark);
@@ -426,13 +473,18 @@ void projectView::MilePileMenuClicked(const QPoint &pos)
 		return;
 	}
 
-	QMenu menu(ui.markTableWidget);
+    if (!item->isSelected()) ui.pileTableWidget->selectRow(item->row());
+    updateEditButtons();
+    QMenu menu(ui.pileTableWidget);
+    QAction* editAction = menu.addAction(QStringLiteral("修改"));
+    editAction->setEnabled(m_editPileButton->isEnabled());
+    connect(editAction, &QAction::triggered, this, &projectView::editPile);
 	QAction * deleteAction = menu.addAction(QStringLiteral("删除"));
 
 	connect(deleteAction, &QAction::triggered, this, &projectView::deletePipe);
 
 	//鼠标位置显示
-	menu.exec(ui.markTableWidget->viewport()->mapToGlobal(pos));
+	menu.exec(ui.pileTableWidget->viewport()->mapToGlobal(pos));
 }
 
 void projectView::deleteMark()
@@ -446,6 +498,7 @@ void projectView::deleteMark()
 
 	bool needUpdateAll = false;
 	QApplication::setOverrideCursor(Qt::WaitCursor);
+	QString deleteError;
 	for (int row : rowToRemove)
 	{
 		QTableWidgetItem * firstItem = ui.markTableWidget->item(row, 0);
@@ -485,6 +538,7 @@ void projectView::deletePipe()
 	}
 
 	QApplication::setOverrideCursor(Qt::WaitCursor);
+	QString deleteError;
 	for (int row : rowToRemove)
 	{
 		QTableWidgetItem * firstItem = ui.pileTableWidget->item(row, 0);
@@ -493,17 +547,17 @@ void projectView::deletePipe()
 			continue;
 		}
 		int rowId = firstItem->data(Qt::UserRole).toInt();
-		hnApp::hnDataManager::getDataManager()->getCurrentProject()->deleteMilePile(rowId);
+		QString currentError;
+		if (!hnApp::hnDataManager::getDataManager()->getCurrentProject()->deleteMilePile(rowId, &currentError) && deleteError.isEmpty())
+			deleteError = currentError;
 	}
 	QApplication::restoreOverrideCursor();
+	if (!deleteError.isEmpty())
+		QMessageBox::warning(this, QStringLiteral("删除校桩失败"), deleteError);
 	emit signal_updateAllWidget();
-	//从高到低删除避免索引错乱
-	QList<int> sortedRows = rowToRemove.toList();
-	std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
-	for (int row : sortedRows)
-	{
-		ui.pileTableWidget->removeRow(row);
-	}
+	bool isUp = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nLineType == 1;
+	QVector<hnCommon::hnMilePile> piles = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
+	updatePileFrom(piles, isUp);
 }
 void projectView::updateDmiTxt(const QString &text)
 {
@@ -599,13 +653,15 @@ void projectView::updatePileFrom( QVector<hnCommon::hnMilePile>& pile,bool isUp)
 	
 	ui.pileTableWidget->clearContents();
 	ui.pileTableWidget->setRowCount(0);
-	int	rowIndex1 = ui.pileTableWidget->rowCount();
-	if (pile.size() > 0)
+	auto manager = hnApp::hnDataManager::getDataManager();
+	auto project = manager ? manager->getCurrentProject() : nullptr;
+	if (pile.size() > 0 && project)
 	{
-		for (int i = 1; i < pile.size()-1; ++i)
+		for (int i = 0; i < pile.size(); ++i)
 		{
 			QStringList row;
 			auto curPile = pile.at(i);
+			// 标准起终点也显示，删除保护仍由工程层统一执行。
 			QString mileStr = QString::number(curPile.dTrueMile, 'f', 2);
 			row << mileStr;
 
@@ -615,6 +671,15 @@ void projectView::updatePileFrom( QVector<hnCommon::hnMilePile>& pile,bool isUp)
 			ui.pileTableWidget->insertRow(rowIndex);
 			QTableWidgetItem* item0 = new QTableWidgetItem(row[0]);
 			item0->setData(Qt::UserRole, curPile.nID);
+            const bool anchor = project->isStandardAnchorPile(curPile);
+            item0->setData(Qt::UserRole + 3, anchor);
+            if (anchor)
+            {
+                item0->setText(mileStr + QStringLiteral("（系统）"));
+                item0->setToolTip(QStringLiteral("工程起终点校桩由系统维护，请通过“编辑工程”调整。"));
+            }
+            item0->setData(Qt::UserRole + 1, curPile.dTrueMile);
+
 			item0->setFlags(item0->flags() & ~Qt::ItemIsEditable);
 			QTableWidgetItem* item1 = new QTableWidgetItem(row[1]);
 			item1->setFlags(item0->flags() & ~Qt::ItemIsEditable);
@@ -624,6 +689,176 @@ void projectView::updatePileFrom( QVector<hnCommon::hnMilePile>& pile,bool isUp)
 	}
 }
 
+
+void projectView::updateEditButtons()
+{
+    if (!m_editMarkButton || !m_editPileButton) return;
+    m_editMarkButton->setEnabled(ui.markTableWidget->selectionModel()->selectedRows().size() == 1);
+    const auto selected = ui.pileTableWidget->selectionModel()->selectedRows();
+    bool editable = selected.size() == 1;
+    if (editable)
+    {
+        auto item = ui.pileTableWidget->item(selected.first().row(), 0);
+        editable = item && !item->data(Qt::UserRole + 3).toBool();
+    }
+    m_editPileButton->setEnabled(editable);
+}
+
+void projectView::editMark()
+{
+    editSelectedRecord(false);
+}
+
+void projectView::editPile()
+{
+    editSelectedRecord(true);
+}
+
+void projectView::editSelectedRecord(bool pileMode)
+{
+    auto manager = hnApp::hnDataManager::getDataManager();
+    auto project = manager ? manager->getCurrentProject() : nullptr;
+    if (!project || (project->getProjectType() != PROJECT_2D_TYPE && project->getProjectType() != PROJECT_23D_TYPE)) return;
+    QTableWidget* table = pileMode ? ui.pileTableWidget : ui.markTableWidget;
+    const auto selected = table->selectionModel()->selectedRows();
+    if (selected.size() != 1) return;
+    auto item = table->item(selected.first().row(), 0);
+    if (!item || (pileMode && item->data(Qt::UserRole + 3).toBool())) return;
+    const int id = item->data(Qt::UserRole).toInt();
+    hnMarkPileEditDialog dialog(project, pileMode, id, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    manager->getDiseaseService()->invalidateCache();
+    auto marks = project->getCurrentMarkVector();
+    auto piles = project->getCurrentMilePileVector();
+    const bool isUp = project->getCurProSetInfo().nLineType == 1;
+    updateMarkFrom(marks, isUp);
+    updatePileFrom(piles, isUp);
+    emit signal_updateAllWidget();
+    // 列表可能重新排序，用数据库 ID 恢复选择，不能依赖旧行号。
+    for (int row = 0; row < table->rowCount(); ++row)
+    {
+        auto current = table->item(row, 0);
+        if (current && current->data(Qt::UserRole).toInt() == id)
+        {
+            table->selectRow(row);
+            table->scrollToItem(current);
+            break;
+        }
+    }
+}
+
+void projectView::beginProjectEdit()
+{
+	QLineEdit* fields[] = { ui.lineEdit, ui.lineEdit_5, ui.lineEdit_2, ui.lineEdit_6,
+		ui.lineEdit_3, ui.lineEdit_7, ui.lineEdit_4, ui.lineEdit_12,
+		ui.lineEdit_9, ui.lineEdit_10, ui.lineEdit_11, ui.lineEdit_13 };
+	for (QLineEdit* field : fields)
+	{
+		if (field) field->setReadOnly(false);
+	}
+	// Mileage is validated on save. Do not mutate an existing editor mask while it is visible.
+	if (m_editProjectButton) m_editProjectButton->hide();
+	if (m_saveProjectButton) m_saveProjectButton->show();
+	if (m_cancelProjectButton) m_cancelProjectButton->show();
+}
+void projectView::cancelProjectEdit()
+{
+	// Do not reload mark/pile tables here: cancelling only restores the editor snapshot.
+	const hnCommon::hnProjectSetInfo& s = m_loadedProjectSettings;
+	ui.lineEdit->setText(QString::fromLocal8Bit(s.strProvince));
+	ui.lineEdit_5->setText(QString::fromLocal8Bit(s.strCity));
+	ui.lineEdit_2->setText(QString::fromLocal8Bit(s.strCounty));
+	ui.lineEdit_6->setText(QString::fromLocal8Bit(s.strRoadNO));
+	ui.lineEdit_3->setText(QString::fromLocal8Bit(s.strNumber));
+	ui.lineEdit_7->setText(QString::fromLocal8Bit(s.strRoadName));
+	ui.lineEdit_4->setText(MyCommonMethods::convertMileToString(s.dBegMile));
+	ui.lineEdit_12->setText(MyCommonMethods::convertMileToString(s.dEndMile));
+	ui.lineEdit_9->setText(QString::fromLocal8Bit(s.strRoadLevel));
+	ui.lineEdit_10->setText(s.nRSurfaceType == 1 ? QStringLiteral("水泥") : (s.nRSurfaceType == 2 ? QStringLiteral("砂石") : QStringLiteral("沥青")));
+	ui.lineEdit_11->setText(QString::fromLocal8Bit(s.strSurveyor));
+	ui.lineEdit_13->setText(QString::fromLocal8Bit(s.strWeather));
+	ui.comboBox->setCurrentIndex(s.nLineType == 1 ? 0 : 1);
+	QDate date = QDate::fromString(QString::fromLocal8Bit(s.strDate), "yyyyMMdd");
+	if (date.isValid()) ui.dateEdit->setDate(date);
+	QTime time = QTime::fromString(QString::fromLocal8Bit(s.strTimer), "hhmmss");
+	if (time.isValid()) ui.timeEdit->setTime(time);
+	QLineEdit* fields[] = { ui.lineEdit, ui.lineEdit_5, ui.lineEdit_2, ui.lineEdit_6, ui.lineEdit_3, ui.lineEdit_7, ui.lineEdit_4, ui.lineEdit_12, ui.lineEdit_9, ui.lineEdit_10, ui.lineEdit_11, ui.lineEdit_13 };
+	for (QLineEdit* field : fields) if (field) field->setReadOnly(true);
+	if (m_editProjectButton) m_editProjectButton->show();
+	if (m_saveProjectButton) m_saveProjectButton->hide();
+	if (m_cancelProjectButton) m_cancelProjectButton->hide();
+}
+void projectView::saveProjectEdit()
+{
+	auto manager = hnApp::hnDataManager::getDataManager();
+	auto project = manager ? manager->getCurrentProject() : nullptr;
+	if (!project) { QMessageBox::critical(this, QStringLiteral("保存失败"), QStringLiteral("当前没有打开的工程。")); return; }
+	hnCommon::hnProjectSetInfo candidate = project->getCurProSetInfo();
+	auto copyText = [](char* destination, const QString& value) { strncpy_s(destination, SQL_NAME_LEN, value.trimmed().toLocal8Bit().constData(), _TRUNCATE); };
+	copyText(candidate.strProvince, ui.lineEdit->text()); copyText(candidate.strCity, ui.lineEdit_5->text());
+	copyText(candidate.strCounty, ui.lineEdit_2->text()); copyText(candidate.strRoadNO, ui.lineEdit_6->text());
+	copyText(candidate.strNumber, ui.lineEdit_3->text()); copyText(candidate.strRoadName, ui.lineEdit_7->text());
+	copyText(candidate.strRoadLevel, ui.lineEdit_9->text()); copyText(candidate.strSurveyor, ui.lineEdit_11->text()); copyText(candidate.strWeather, ui.lineEdit_13->text());
+	const QString material = ui.lineEdit_10->text().trimmed();
+	candidate.nRSurfaceType = material.contains(QStringLiteral("水泥")) ? 1 : (material.contains(QStringLiteral("砂石")) ? 2 : 0);
+	QString beginStake = ui.lineEdit_4->text().trimmed().remove('_');
+	QString endStake = ui.lineEdit_12->text().trimmed().remove('_');
+	if (!beginStake.startsWith('K', Qt::CaseInsensitive) || !endStake.startsWith('K', Qt::CaseInsensitive) || !beginStake.contains('+') || !endStake.contains('+')) { QMessageBox::warning(this, QStringLiteral("桩号格式错误"), QStringLiteral("起点和终点请使用 K0+000 格式。")); return; }
+	candidate.dBegMile = MyCommonMethods::convertStakeToDouble(beginStake);
+	candidate.dEndMile = MyCommonMethods::convertStakeToDouble(endStake);
+	candidate.nLineType = ui.comboBox->currentIndex() == 0 ? 1 : -1;
+	copyText(candidate.strDate, ui.dateEdit->date().toString("yyyyMMdd")); copyText(candidate.strTimer, ui.timeEdit->time().toString("hhmmss"));
+	QString error;
+	int removedPileCount = 0;
+	int removedMarkCount = 0;
+	if (!project->previewProjectRangeChange(candidate, removedPileCount, removedMarkCount, &error))
+	{
+		QMessageBox::warning(this, QStringLiteral("工程范围错误"), error);
+		return;
+	}
+	const hnCommon::hnProjectSetInfo currentSettings = project->getCurProSetInfo();
+	const bool stakeChanged = candidate.dBegMile != currentSettings.dBegMile ||
+		candidate.dEndMile != currentSettings.dEndMile;
+	if (stakeChanged)
+	{
+		const QVector<hnCommon::hnMilePile> piles = project->getCurrentMilePileVector();
+		bool hasManualPile = false;
+		for (const hnCommon::hnMilePile& pile : piles)
+		{
+			if (!project->isStandardAnchorPile(pile))
+			{
+				hasManualPile = true;
+				break;
+			}
+		}
+		if (hasManualPile || !project->getCurrentMarkVector().isEmpty())
+		{
+			QMessageBox::warning(this, QStringLiteral("修改起终点桩号"),
+				QStringLiteral("检测到修改起终点桩号操作，请重新导入工程后手动修正较桩与打标。"));
+		}
+	}
+	if (removedPileCount > 0 || removedMarkCount > 0)
+	{
+		const QString confirmText = QStringLiteral("新的起终点范围将排除 %1 个校桩、%2 个打标。\n确认保存将自动删除这些记录，是否继续？")
+			.arg(removedPileCount).arg(removedMarkCount);
+		if (QMessageBox::question(this, QStringLiteral("确认修改工程范围"), confirmText,
+			QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+		{
+			return;
+		}
+	}
+	if (!project->updateProjectSettings(candidate, &error)) { QMessageBox::critical(this, QStringLiteral("保存失败"), error.isEmpty() ? QStringLiteral("工程设置未保存。") : error); return; }
+	m_loadedProjectSettings = project->getCurProSetInfo();
+	QLineEdit* fields[] = { ui.lineEdit, ui.lineEdit_5, ui.lineEdit_2, ui.lineEdit_6, ui.lineEdit_3, ui.lineEdit_7, ui.lineEdit_4, ui.lineEdit_12, ui.lineEdit_9, ui.lineEdit_10, ui.lineEdit_11, ui.lineEdit_13 };
+	for (QLineEdit* field : fields) if (field) field->setReadOnly(true);
+	if (m_editProjectButton) m_editProjectButton->show();
+	if (m_saveProjectButton) m_saveProjectButton->hide();
+	if (m_cancelProjectButton) m_cancelProjectButton->hide();
+	QVector<hnCommon::hnMarkInfo> marks = project->getCurrentMarkVector();
+	QVector<hnCommon::hnMilePile> piles = project->getCurrentMilePileVector();
+	slot_updateProjectSetting(m_loadedProjectSettings, marks, piles);
+	emit signal_updateAllWidget();
+}
 void projectView::resizeEvent(QResizeEvent *event)
 {
 	QSize oldSize = event->oldSize();

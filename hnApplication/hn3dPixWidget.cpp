@@ -1785,6 +1785,7 @@ void hn3dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& disease
 }
 void hn3dPixWidget::bigFrameAddDisease(const QPoint & mousePoint)
 {
+	if (hnApp::hnDataManager::getDataManager()->getCurrentProject() && !hnApp::hnDataManager::getDataManager()->getCurrentProject()->ensureInitialSurfaceMaterial(this)) return;
 	//检测点是否有效
 	if (!this->isValidPoint(mousePoint))
 	{
@@ -1950,6 +1951,7 @@ void hn3dPixWidget::bigFrameMergeDiseases(const QPoint & screenPoint)
 
 void hn3dPixWidget::editDisease(hnRoadDiseaseInfo &disease, const QPoint & mousePoint)
 {
+	const hnRoadDiseaseInfo originalDisease = disease;
 	hnMile mile = this->getHnMileFromPoint(mousePoint);
 
 	//弹出添加病害窗口 让用户选择病害类型
@@ -1991,7 +1993,6 @@ void hn3dPixWidget::editDisease(hnRoadDiseaseInfo &disease, const QPoint & mouse
 		return;
 	}
 
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease( disease);
 
 	 
 
@@ -2034,7 +2035,7 @@ void hn3dPixWidget::editDisease(hnRoadDiseaseInfo &disease, const QPoint & mouse
 				return;
 			}
 		}
-		else
+		else if (1 == disease.nDrawType)
 		{
 			//计算自动化模式病害深度信息
 			bool isDrawDisease = this->caculateLittleFrameDiseaseDepth(disease,
@@ -2058,11 +2059,129 @@ void hn3dPixWidget::editDisease(hnRoadDiseaseInfo &disease, const QPoint & mouse
 	auto markStd = mark8Bit.toStdString();
 	strcpy(disease.strRemark, markStd.c_str());
 	//写入数据库
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease( disease);
+	hnDiseaseService* service =
+		hnApp::hnDataManager::getDataManager()->getDiseaseService();
+	if (!service->addDisease(disease))
+	{
+		QMessageBox::warning(this, QString::fromUtf8("\xE6\x8F\x90\xE7\xA4\xBA"),
+			QString::fromUtf8("\xE7\x97\x85\xE5\xAE\xB3\xE7\xB1\xBB\xE5\x9E\x8B\xE4\xBF\xAE\xE6\x94\xB9\xE5\x86\x99\xE5\x85\xA5\xE5\xA4\xB1\xE8\xB4\xA5\xEF\xBC\x8C\xE5\x8E\x9F\xE7\x97\x85\xE5\xAE\xB3\xE5\xB7\xB2\xE4\xBF\x9D\xE7\x95\x99\xE3\x80\x82"),
+			QString::fromUtf8("\xE7\xA1\xAE\xE5\xAE\x9A"));
+		return;
+	}
+	hnRoadDiseaseInfo oldDisease = originalDisease;
+	if (!service->deleteOneDisease(oldDisease))
+	{
+		QMessageBox::warning(this, QString::fromUtf8("\xE6\x8F\x90\xE7\xA4\xBA"),
+			QString::fromUtf8("\xE6\x96\xB0\xE7\x97\x85\xE5\xAE\xB3\xE5\xB7\xB2\xE4\xBF\x9D\xE5\xAD\x98\xEF\xBC\x8C\xE4\xBD\x86\xE6\x97\xA7\xE7\x97\x85\xE5\xAE\xB3\xE5\x88\xA0\xE9\x99\xA4\xE5\xA4\xB1\xE8\xB4\xA5\xEF\xBC\x8C\xE8\xAF\xB7\xE5\x88\xB7\xE6\x96\xB0\xE5\x88\x97\xE8\xA1\xA8\xE5\x90\x8E\xE6\xA3\x80\xE6\x9F\xA5\xE3\x80\x82"),
+			QString::fromUtf8("\xE7\xA1\xAE\xE5\xAE\x9A"));
+	}
 
 	 
 }
 
+bool hn3dPixWidget::updateSdkAreaDiseaseGeometry(hnRoadDiseaseInfo& disease, bool saveToDatabase)
+{
+	QVector<SdkSingleImageRect> sdkRects;
+	if (!currentSdkBigFrameSingleRects(sdkRects) || sdkRects.isEmpty())
+	{
+		return false;
+	}
+	const QRect legacyInput = sdkRects.first().singleRect.normalized();
+	disease.vec3dRect = generateLargeFrameHn3dRectVector(legacyInput);
+	if (disease.vec3dRect.empty())
+	{
+		return false;
+	}
+	if (hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+	{
+		const vector<hn2dRectI> mapped = generateLargeFrameHn2dRectVector(legacyInput);
+		if (!mapped.empty())
+		{
+			disease.vec2dRect = mapped;
+		}
+	}
+	const double beginMile = sdkPixPointToEncoderMile(m_diseaseStartPoint);
+	const double endMile = sdkPixPointToEncoderMile(m_diseaseEndPoint);
+	disease.nPixelWid = qAbs(m_diseaseEndPoint.pixPoint.x() - m_diseaseStartPoint.pixPoint.x());
+	disease.dWidth = disease.nPixelWid * m_widthScale;
+	disease.dLength = qAbs(endMile - beginMile);
+	disease.nPixelLen = m_heightScale > 0.0 ? qRound(disease.dLength / m_heightScale) : 0;
+	disease.dDmiStart = qMin(beginMile, endMile);
+	disease.dDmiEnd = qMax(beginMile, endMile);
+	disease.dMileage = (disease.dDmiStart + disease.dDmiEnd) * 0.5;
+	if (!disease.vec2dRect.empty())
+	{
+		disease.dDmi = disease.vec2dRect.front().p0.m_dmi;
+	}
+	hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
+	if (!validateDiseaseGeometryWithinValidArea(disease))
+	{
+		return false;
+	}
+	return !saveToDatabase || hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+}
+
+bool hn3dPixWidget::moveSdkLittleFrameDisease(hnRoadDiseaseInfo& disease, const QPoint& bigImageOffset)
+{
+	if (disease.nDrawType != 1)
+	{
+		return false;
+	}
+	if (bigImageOffset.isNull())
+	{
+		return true;
+	}
+	QVector<QRect> movedRects = sdkDiseaseBigImageRects(disease);
+	if (movedRects.isEmpty())
+	{
+		return false;
+	}
+	for (QRect& rect : movedRects)
+	{
+		rect.translate(bigImageOffset);
+	}
+
+	m_committedLittleFrameDiseaseRects.clear();
+	rebuildCurrentLittleFrameSingleSelections(movedRects);
+	if (m_currentLittleFrameSingleSelections.size() != movedRects.size())
+	{
+		return false;
+	}
+	const vector<hn3dRectI> moved3d = generateLittleFrameHn3dRectVector(movedRects);
+	if (moved3d.size() != static_cast<size_t>(movedRects.size()))
+	{
+		return false;
+	}
+	disease.vec3dRect = moved3d;
+
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (project && project->get2DProject())
+	{
+		const vector<hn2dRectI> moved2d = generateLittleFrameHn2dRectVector(movedRects);
+		if (moved2d.empty())
+		{
+			return false;
+		}
+		disease.vec2dRect = moved2d;
+	}
+
+	const double mileOffset = project && project->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE
+		? project->get2d3dMileDiff() : 0.0;
+	disease.dMileage = caculateLittleFrameMiddleMile(movedRects) + mileOffset;
+	disease.dDmiStart = calculateLittleFrameBeginMile(movedRects) + mileOffset;
+	disease.dDmiEnd = calculateLittleFrameEndMile(movedRects) + mileOffset;
+	if (!disease.vec2dRect.empty())
+	{
+		disease.dDmi = disease.vec2dRect.front().p0.m_dmi;
+	}
+	CalculateDiseaseSize(movedRects, disease);
+	hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
+	if (!validateDiseaseGeometryWithinValidArea(disease))
+	{
+		return false;
+	}
+	return hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+}
 void hn3dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 {
 	// 如果自动化模式数量为0 ，则直接删除整个病害
@@ -3104,17 +3223,9 @@ bool hn3dPixWidget::drawBigFrameProcess()
 	}
 
 	//弹出添加病害窗口
-	addDiseaseDialog dialog(diseaseNameAndKey, false);
-	dialog.setWindowTitle(QString::fromLocal8Bit("添加病害"));
-	dialog.setDiseaseAttributeEnabled(false);
 	QString diseaseTypeName;
 	QString diseaseMark;
-	if (dialog.exec() == QDialog::Accepted)
-	{
-		diseaseTypeName = dialog.getDiseaseTypeName();
-		diseaseMark = dialog.getDiseaseMarkInfo();
-	}
-	else
+	if (!selectDiseaseTypeForDrawing(diseaseSetInfos, diseaseTypeName, diseaseMark))
 	{
 		resetSdkDiseaseDrawingState(true, false);
 		return false;
@@ -3589,18 +3700,9 @@ bool hn3dPixWidget::littleFrameProcess()
 	}
 
 	//弹出添加病害窗口
-	addDiseaseDialog dialog(diseaseNameAndKey, false);
-	dialog.setWindowTitle(QString::fromLocal8Bit("添加病害"));
-	dialog.setDiseaseAttributeEnabled(false);
 	QString diseaseTypeName;
 	QString diseaseMark;
-	if (dialog.exec() == QDialog::Accepted)
-	{
-		diseaseTypeName = dialog.getDiseaseTypeName();
-		diseaseMark = dialog.getDiseaseMarkInfo();
-		stepTimer.restart();
-	}
-	else
+	if (!selectDiseaseTypeForDrawing(diseaseSetInfos, diseaseTypeName, diseaseMark))
 	{
 		#ifdef _DEBUG
 		qDebug() << "HN_LITTLE_FRAME_PERF 3d dialogRejected"

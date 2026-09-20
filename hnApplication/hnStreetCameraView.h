@@ -51,7 +51,7 @@ namespace hnApp
 		bool addStreetImage(bool needRotate,const QString& picPath);
 
 		// 添加图片
-		bool addImage(bool needRotate, int nImageIndex);
+		bool addImage(bool needRotate, double nImageIndex);
 
 		// 设置显示状态
 		void setShowState(bool bShow);
@@ -60,6 +60,8 @@ namespace hnApp
 		bool getShowState() { return m_bShow; }
 
         QString currentImagePath() const;
+        // 返回实际已加载图片及其对应真实桩号，供图片下方说明使用。
+        bool currentDisplayedImageInfo(QString* imagePath, double* trueMile) const;
 
 		// 更新绘制数据
 		void updateDrawData();
@@ -103,6 +105,8 @@ namespace hnApp
 		void drawImage(QPainter * painter);
 
 		void cancelMeasure();
+		int currentImageIndex() const;
+		void stepImage(int step);
 	protected:
 		/************************************************************************/
 		/*									   事件                              */
@@ -132,7 +136,7 @@ namespace hnApp
 		void updateImageView(int);
 
 		// 更新影像
-		void updateShowImg(int);
+		void updateShowImg(double);
 
 		 
 
@@ -161,7 +165,7 @@ namespace hnApp
 
 		void deleteStreetDisease(const QPoint &point);
 
-		QImage updateBrightness(QImage &image);
+		void refreshBrightness();
  
 	private:
 		// 缩放比例
@@ -190,7 +194,7 @@ namespace hnApp
 		STREET_VIEW_TYPE m_nStreetViewType;
 
 		// 当前影像里程
-		int m_nCurImageDmi;
+		double m_nCurImageDmi;
 
 		// 当前影像
 		QStringList m_listImage;
@@ -230,13 +234,16 @@ namespace hnApp
 		double m_pictureInterval;
 
 		//图片亮度
-		int PictureBrightnessFactor = 0;
+		int m_brightnessValue = 0;
 		
 		//存储处理后 用于显示的图像
 		QPixmap*  m_displayPic; //
 
 		// Clean, orientation-correct source used by the 1:1 preview.
 		QImage m_sourceImageWithoutDisease;
+
+		// 已校正方向但未调亮度的原图，只在换图时解码。
+		QImage m_originalStreetImage;
 
 		//图片是否需要旋转
 		bool  m_needRotate;

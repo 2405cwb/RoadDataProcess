@@ -23,6 +23,7 @@ struct GeometryCalculationResult
 {
 	GeometryCalculationStatus status = GeometryCalculationStatus::InvalidInput;
 	QString errorMessage;
+	QString warningMessage;
 	double scanLength = 0.0;
 	std::vector<hnRoadGeoParam> rawSamples;
 	std::vector<hnRoadGeoParam> outputSamples;

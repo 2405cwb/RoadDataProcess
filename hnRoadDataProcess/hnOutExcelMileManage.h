@@ -15,7 +15,7 @@ public:
 	//当前工程  起点桩号   终点桩号   分割区间
 	//道路标准 起点桩号 终点桩号  分割区间使用 传入的  其他的  如公路等级 采用 project获得
 	hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum standard, hnPro::hnProject * project, 
-		double sMile, double eMile, double splitValue,const MyQtCommon::MyEquipment& equips);
+		double sMile, double eMile, double splitValue,const MyQtCommon::MyEquipment& equips, bool ignoreMarksForExport = false);
 	~hnOutExcelMileManage();
 
 	double getStartMile() { return m_sMile; }
@@ -82,11 +82,19 @@ private:
 	//根据分段区间初步分段
 	QVector<hnOutExcelMile>  splitMile(const QVector<hnMile>& firstMile, double xlsLen);
 
+	// 城镇分段使用实际桩号，不能套用长短链的显示桩号。
+	bool m_cityDistanceSegments = false;
+	bool m_useDmiFormat = false;
+	QVector<hnCommon::hnMarkInfo> cityReportMarks() const;
+	QVector<hnOutExcelMile> splitCityMile(const QVector<hnCommon::hnMarkInfo>& marks);
+
 	//根据里程分段
 	QVector<hnOutExcelMile>  splitMile_dmi(const QVector<hnMile>& firstMile, double xlsLen);
 
 	//根据打标处理分段列表
-	void handelMark(QVector<hnOutExcelMile>& miles, const QVector<hnCommon::hnMarkInfo> marks);
+	// 公里评定在属性切分后、备注追加前自动合并农村路短单元。
+	void handelMark(QVector<hnOutExcelMile>& miles, const QVector<hnCommon::hnMarkInfo> marks,
+		bool evaluateKilometer = false);
 	 
 	//为每个分段写入平整度值
 	 bool writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, double BaseLen);
@@ -154,10 +162,14 @@ private:
 
 	//gps
 	bool m_gpsState;
+	//几何线型
+	bool m_jhxxState;
 	//车辙
 	bool m_rutState;
 	//计算各种指标的时候   用这个参数来判断 哪些需要计算;
 	MyQtCommon::MyEquipment m_equipMentList;
+
+	
 
 	//单例  全局设置
 	HnXRSettings* m_xrSetting;

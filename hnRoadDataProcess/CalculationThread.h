@@ -43,6 +43,8 @@ public:
 	CalculationThread(CalculationType type, int taskId, hnPro::hnProject* const project);
 	~CalculationThread();
 	void run() override; 
+	CalculationType calculationType() const { return m_type; }
+	hnPro::hnProject* project() const { return m_Project; }
 signals:
 	void progressUpdated(hnPro::hnProject* project, int calculationType,double progress,bool isInt);
 
@@ -55,7 +57,7 @@ public slots:
 	int taskId()const { return m_taskID; }
 private:
 	CalculationType m_type;
-	bool m_stopRequested;
+	std::atomic<bool> m_stopRequested;
 	int m_taskID;
 	QMutex m_mutex;
 private:
@@ -73,7 +75,7 @@ private: //计算函数
 
 #pragma region 修正后平整度算法 可计算0.1与0.25
 
-	void GenerateIRI_NEW(const std::string& fpath, int vallen, const std::string& fname, bool datasrc);
+	void GenerateIRI_NEW(const std::string& fpath, int vallen, const std::string& fname, bool datasrc, int effectiveLength);
 	// 加载速度修正参数从 Coeff.dat
 	tuple_bool_vec_vec_vec_int LoadParameters(const std::string& fpath, const std::string& fname);
 

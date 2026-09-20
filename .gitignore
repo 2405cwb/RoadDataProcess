@@ -404,3 +404,14 @@ ipch/
 *.exe*.lib
 *.dll
 *.chm
+# 压力测试产生的大数据
+DiskStressDemo/stress_reports/
+
+# Codex/临时编译验证目录
+_codex_build_verify/
+
+# Visual Studio 中间文件
+*.idb
+*.tlog
+*.lastbuildstate
+*.FileListAbsolute.txt

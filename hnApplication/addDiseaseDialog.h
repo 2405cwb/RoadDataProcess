@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QSpacerItem>
 #include <QComboBox>
+#include <QCheckBox>
 
 class HnXRSettings;
 
@@ -33,6 +34,8 @@ public:
 	void setDiseaseInfo(double lenth,double width, double area,double depth);
 
 	QString getDiseaseMarkInfo();
+
+	bool isContinuousDrawingEnabled() const;
 signals:
 	void signal_diseaseRadioButtonToggled(QString &diseaseName);
 
@@ -69,6 +72,7 @@ private:
 private:
 	QGridLayout* m_mainGridLayout = new QGridLayout(this);
 	QComboBox * markEdit;
+	QCheckBox* m_continuousDrawingCheckBox = nullptr;
 private:
 	QString m_diseaseTypeName;
 	

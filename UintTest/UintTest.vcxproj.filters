@@ -65,6 +65,15 @@
     <ClCompile Include="test_GeometryCalculation.cpp">
       <Filter>test_hnRoadDataProcess</Filter>
     </ClCompile>
+    <ClCompile Include="test_RutProfileTrace.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="test_RutProfileDebugExporter.cpp">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hnRoadDataProcess\RutProfileDebugExporter.cpp">
+      <Filter>test_hnRoadDataProcess\Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\hnRoadDataProcess\hnGeometryCalculation.cpp">
       <Filter>test_hnRoadDataProcess\Source</Filter>
     </ClCompile>
@@ -101,6 +110,12 @@
 	  <Filter>test_hnRoadDataProcess</Filter>
 	</QtMoc>
     <QtMoc Include="test_GeometryCalculation.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="test_RutProfileTrace.h">
+      <Filter>test_hnRoadDataProcess</Filter>
+    </QtMoc>
+    <QtMoc Include="test_RutProfileDebugExporter.h">
       <Filter>test_hnRoadDataProcess</Filter>
     </QtMoc>
   </ItemGroup>

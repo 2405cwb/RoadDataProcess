@@ -578,7 +578,7 @@ bool hnRoadDiseaseTable::readStreetData_Service(const QString& standard, const Q
 			auto standardStr = ss3.c_str();
 			 
 			// ²éÑ¯±íÓï¾ä
-			sprintf(m_strQuery, "select * from %s where Dmi >= %f AND Dmi <= %f AND (DiseaseType=1 OR DiseaseType=2) AND RoadStandard='%s' AND AddFile4!='2' AND AddFile4!='3'", m_vecDiseaseTableName[j].c_str(), sMile, eMile, standardStr);
+			sprintf(m_strQuery, "select * from %s where Dmi >= %f AND Dmi <= %f AND (DiseaseType=1 OR DiseaseType=2 OR DiseaseType=3) AND RoadStandard='%s' AND AddFile4!='2' AND AddFile4!='3'", m_vecDiseaseTableName[j].c_str(), sMile, eMile, standardStr);
 
 			// ²éÑ¯
 			hnSQLiteDataReader dr = m_sqliteDB.ExcuteQuery(m_strQuery);

@@ -9,8 +9,46 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QStandardPaths>
+#include <cmath>
 namespace  MyCommonMethods 
 { 
+	//c#的银行家舍入  Math.Round
+	static int MathRoundToInt(double value)
+	{
+		double intPart = 0.0;
+		double frac = std::modf(value, &intPart);
+
+		double absFrac = std::fabs(frac);
+
+		// 小于 0.5，直接取整数部分
+		if (absFrac < 0.5)
+		{
+			return static_cast<int>(intPart);
+		}
+
+		// 大于 0.5，向最近整数舍入
+		if (absFrac > 0.5)
+		{
+			return static_cast<int>(
+				value > 0 ? intPart + 1.0 : intPart - 1.0);
+		}
+
+		// 正好等于 0.5：
+		// 模拟 C# Math.Round 默认 MidpointRounding.ToEven
+		long long n = static_cast<long long>(intPart);
+
+		if (n % 2 == 0)
+		{
+			// 当前整数是偶数，就留在当前整数
+			return static_cast<int>(n);
+		}
+		else
+		{
+			// 当前整数是奇数，进到相邻偶数
+			return static_cast<int>(
+				value > 0 ? n + 1 : n - 1);
+		}
+	}
 
 	static int csharpRoundToInt(double value)
 	{

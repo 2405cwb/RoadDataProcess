@@ -4,6 +4,44 @@
 #include "..\hnQtCommon\MyPoint.h"
 using namespace std;
 
+// 车辙断面算法调试快照，仅在测试导出命中的断面上创建。
+struct hnRutProfileTrace
+{
+	hnRutProfileTrace()
+		: firstFitK(0.0f),
+		firstFitB(0.0f),
+		secondFitK(0.0f),
+		secondFitB(0.0f),
+		secondStageApplied(false),
+		envelopeType(-1),
+		leftRut(0.0f),
+		rightRut(0.0f)
+	{
+		for (int i = 0; i < 5; ++i)
+		{
+			featureIndexes[i] = 0;
+			featureValues[i] = 0.0f;
+		}
+	}
+
+	std::vector<float> worldHeight;
+	std::vector<float> firstDetrended;
+	std::vector<float> firstOutlierReplaced;
+	std::vector<float> secondDetrended;
+	std::vector<float> secondOutlierReplaced;
+	std::vector<float> filteredHeight;
+	float firstFitK;
+	float firstFitB;
+	float secondFitK;
+	float secondFitB;
+	bool secondStageApplied;
+	int envelopeType;
+	int featureIndexes[5];
+	float featureValues[5];
+	float leftRut;
+	float rightRut;
+};
+
 
 class HNALGORITHM_API hnComputeCUT
 {
@@ -16,6 +54,9 @@ public:
     //双车辙，以中间凸起点为界，左右各计算一个车辙深度
     float computerut3(int length ,float ArrayHeight[], float ArrayDistance[], int nStart, int nEnd, float& RD_left, float& RD_right, float& m_k, int flen,
     int MP_idx[], float  MP_val[]);
+	// 在不改变算法结果的前提下，额外返回各处理步骤的断面快照。
+	float computerut3(int length, float ArrayHeight[], float ArrayDistance[], int nStart, int nEnd, float& RD_left, float& RD_right, float& m_k, int flen,
+		int MP_idx[], float MP_val[], hnRutProfileTrace* trace);
 	float computerut(float* line, float* gsfilter,  int gsfLength , int lines, int linee,
 		float threshval, int partlen, int pointthr, MyQtCommon::MyPoint* py, float* tline);
 private:

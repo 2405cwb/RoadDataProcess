@@ -99,6 +99,18 @@ private:
 	 bool isSameDisease(const hnCommon::hnRoadDiseaseInfo& a, const hnCommon::hnRoadDiseaseInfo& b) const;
 
 	 int findDiseaseIndexInCache(const hnCommon::hnRoadDiseaseInfo& disease) const;
+
+	struct DiseaseRangeIndexEntry
+	{
+		double beginMile;
+		double endMile;
+		int cacheIndex;
+	};
+
+	void invalidateDiseaseRangeIndex();
+	void rebuildDiseaseRangeIndex();
+	void getDiseasesInRange(double beginMile, double endMile, double margin,
+		int diseaseTypeFilter, QVector<hnCommon::hnRoadDiseaseInfo>& result);
 private:
 
 	hnPro::hnProject* m_project;
@@ -106,6 +118,9 @@ private:
 	bool m_allDiseaseCacheValid;
 
 	QVector<hnCommon::hnRoadDiseaseInfo> m_allDiseaseCache;
+	bool m_diseaseRangeIndexValid;
+	QVector<DiseaseRangeIndexEntry> m_diseaseRangeIndex;
+	QVector<double> m_diseaseRangePrefixMaxEnd;
  
 
 

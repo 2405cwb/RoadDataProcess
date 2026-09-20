@@ -342,7 +342,14 @@ int hnOutputRoadDiseaseXR::getDiseaseIndex(string strDiseaseName,int disType,int
 			}
 		
 		}
-	
+		if (strDiseaseName == "¿é×´ÐÞ²¹")
+		{
+			return		hnLiqingDiseaseInfo::KZXB_DISEASE_TYPE; 
+		}
+		if (strDiseaseName == "Ìõ×´ÐÞ²¹")
+		{
+			return		hnLiqingDiseaseInfo::TZXB_DISEASE_TYPE; 
+		}
 	}
 	if(disType == SHUINI_ROAD_TYPE)
 	{

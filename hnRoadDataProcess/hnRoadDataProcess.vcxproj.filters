@@ -142,6 +142,9 @@
     <ClCompile Include="CalculationThread.cpp">
       <Filter>对话框\IRM计算窗口</Filter>
     </ClCompile>
+    <ClCompile Include="RutProfileDebugExporter.cpp">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClCompile>
     <ClCompile Include="statusBarWidget.cpp">
       <Filter>状态栏</Filter>
     </ClCompile>
@@ -155,6 +158,12 @@
       <Filter>对话框\出表选择窗口</Filter>
     </ClCompile>
     <ClCompile Include="hnRoadDataProcess.cpp">
+      <Filter>主窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnGjConvertSourceService.cpp">
+      <Filter>主窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hn2dDiseaseExchangeService.cpp">
       <Filter>主窗口</Filter>
     </ClCompile>
     <ClCompile Include="hnXlsxInterface.cpp">
@@ -174,6 +183,12 @@
     </ClCompile>
     <ClCompile Include="hnProjectConfig.cpp">
       <Filter>对话框\软件设置窗口</Filter>
+    </ClCompile>
+    <ClCompile Include="hnProjectDiagnosticService.cpp">
+      <Filter>对话框</Filter>
+    </ClCompile>
+    <ClCompile Include="hnProjectImportValidator.cpp">
+      <Filter>对话框</Filter>
     </ClCompile>
     <ClCompile Include="hnDxfCaculateDialog.cpp">
       <Filter>对话框\DXF计算对话框</Filter>
@@ -247,6 +262,9 @@
     <ClCompile Include="hnDBManagerDlg.cpp">
       <Filter>对话框\数据库备份窗口</Filter>
     </ClCompile>
+    <ClCompile Include="hnResultDataDialog.cpp">
+      <Filter>对话框\数据库备份窗口</Filter>
+    </ClCompile>
     <ClCompile Include="HighAccuracySettingForm.cpp">
       <Filter>对话框\高精度输出窗口</Filter>
     </ClCompile>
@@ -273,6 +291,9 @@
     <QtMoc Include="hnOpenProjectDlg.h">
       <Filter>对话框\打开工程对话框</Filter>
     </QtMoc>
+    <ClInclude Include="hnMarkPileEditDialog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="hnLineCameraValidAreaDialog.h">
       <Filter>对话框\打开工程对话框</Filter>
     </ClInclude>
@@ -288,6 +309,9 @@
     <QtMoc Include="CalculationThread.h">
       <Filter>对话框\IRM计算窗口</Filter>
     </QtMoc>
+    <ClInclude Include="RutProfileDebugExporter.h">
+      <Filter>对话框\IRM计算窗口</Filter>
+    </ClInclude>
     <QtMoc Include="statusBarWidget.h">
       <Filter>状态栏</Filter>
     </QtMoc>
@@ -315,6 +339,16 @@
     <QtMoc Include="hnProjectConfig.h">
       <Filter>对话框\软件设置窗口</Filter>
     </QtMoc>
+    <ClInclude Include="hnDiagnosticResultDialog.h" />
+    <ClInclude Include="hnProjectDiagnosticService.h">
+      <Filter>对话框</Filter>
+    </ClInclude>
+    <ClInclude Include="hnProjectImportValidator.h">
+      <Filter>对话框</Filter>
+    </ClInclude>
+    <ClInclude Include="hn2dDiseaseExchangeService.h">
+      <Filter>主窗口</Filter>
+    </ClInclude>
     <QtMoc Include="hnDxfCaculateDialog.h">
       <Filter>对话框\DXF计算对话框</Filter>
     </QtMoc>
@@ -375,6 +409,9 @@
     <QtMoc Include="hnDBManagerDlg.h">
       <Filter>对话框\数据库备份窗口</Filter>
     </QtMoc>
+    <ClInclude Include="hnResultDataDialog.h">
+      <Filter>对话框\数据库备份窗口</Filter>
+    </ClInclude>
     <QtMoc Include="HighAccuracySettingForm.h">
       <Filter>对话框\高精度输出窗口</Filter>
     </QtMoc>
@@ -424,6 +461,10 @@
     <ClInclude Include="hnOutExcelMileManage.h">
       <Filter>对话框\出表选择窗口</Filter>
     </ClInclude>
+    <ClInclude Include="hnGjExportModeDialog.h"><Filter>主窗口</Filter></ClInclude>
+    <ClInclude Include="hnGjConvertSourceService.h">
+      <Filter>主窗口</Filter>
+    </ClInclude>
     <ClInclude Include="hnReportProjectInfo.h">
       <Filter>对话框\出表选择窗口</Filter>
     </ClInclude>
@@ -466,5 +507,21 @@
     <None Include="..\QHotkey\QHotkey">
       <Filter>全局快捷键</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="hnRoutePhotoExportService.cpp" />
+    <ClCompile Include="hnRoutePhotoExportDialog.cpp" />
+    <ClInclude Include="hnRoutePhotoExportService.h" />
+    <QtMoc Include="hnRoutePhotoExportDialog.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="hnDiseaseSampleExporter.cpp" />
+    <ClInclude Include="hnDiseaseSampleExporter.h" />
+    <ClCompile Include="hnReportMergeTool.cpp" />
+    <QtMoc Include="hnReportMergeTool.h" />
+    <ClCompile Include="hnReportMergeDlg.cpp" />
+    <ClInclude Include="hnReportMergeDlg.h" />
+    <ClCompile Include="hnRoadDiseaseImageExporter.cpp" />
+    <ClInclude Include="hnRoadDiseaseImageExporter.h" />
   </ItemGroup>
 </Project>

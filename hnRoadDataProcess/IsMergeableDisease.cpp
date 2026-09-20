@@ -30,7 +30,7 @@ bool IsMergeableDisease::IsMergeable(const hnCommon::hnRoadDiseaseInfo & disease
 	bool isRightXpixelCorrect = false;
 
 	// 确定是否是相邻图像
-	isMileCorrent = (qAbs(qAbs(diseaseUp.dDmi - diseaseDown.dDmi) - 2.0) < 0.01);
+	isMileCorrent = (qAbs(qAbs(diseaseUp.dDmi - diseaseDown.dDmi) - mileThreshold) < 0.01);
 	if (!isMileCorrent)
 	{
 		return false;			// 图像桩号不满足要求，直接返回，减少无效运算
@@ -102,7 +102,7 @@ bool IsMergeableDisease::IsMergeable(const hnCommon::hnRoadDiseaseInfo & disease
 
 
 bool IsMergeableDisease::BigFrameIsMergeable(const hnCommon::hnRoadDiseaseInfo & diseaseDown, const hnCommon::hnRoadDiseaseInfo & diseaseUp,
-	 int pixHeight, int gYThreshold, int gLeftRightpixelThreshold)
+	 int pixHeight, double imageInterval, int gYThreshold, int gLeftRightpixelThreshold)
 {
 	if (diseaseDown.vec2dRect.size() <= 0 || diseaseUp.vec2dRect.size() <= 0)
 	{
@@ -119,7 +119,8 @@ bool IsMergeableDisease::BigFrameIsMergeable(const hnCommon::hnRoadDiseaseInfo &
 	bool isXpixelCorrect = false;
 
 	// 确定是否是相邻图像
-	isMileCorrent = (qAbs(qAbs(diseaseUp.dDmi - diseaseDown.dDmi) - 2.0) < 0.01);
+	isMileCorrent = imageInterval > 0.0 &&
+		(qAbs(qAbs(diseaseUp.dDmi - diseaseDown.dDmi) - imageInterval) < 0.01);
 	if (!isMileCorrent)
 	{
 		return false;			// 图像桩号不满足要求，直接返回，减少无效运算

@@ -96,6 +96,8 @@ private:
 	void drawDatabaseLoadData(QImage &image) override final;
 	QVector<QRect> sdkDiseaseBigImageRects(const hnRoadDiseaseInfo& disease) override final;
 	QPainterPath sdkDiseaseScenePath(const hnRoadDiseaseInfo& disease) override final;
+	bool updateSdkAreaDiseaseGeometry(hnRoadDiseaseInfo& disease, bool saveToDatabase) override final;
+	bool moveSdkLittleFrameDisease(hnRoadDiseaseInfo& disease, const QPoint& bigImageOffset) override final;
 
 	//ªÊ÷∆¡Ÿ ±ƒ⁄»›
 	void drawTmpData(QImage &image)override final;

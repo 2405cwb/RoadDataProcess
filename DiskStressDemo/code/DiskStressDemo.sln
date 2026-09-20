@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.11912.234 insiders
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DiskStressDemo", "DiskStressDemo.vcxproj", "{E1C5B5F8-6B86-4C7E-8D15-3A4E6A143902}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PackViewerQt", "PackViewerQt\PackViewerQt.vcxproj", "{769B2F84-F161-3F36-A6B5-D1CDA75E36E4}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PackReadBenchmark", "PackReadBenchmark\PackReadBenchmark.vcxproj", "{A68BB79D-5BDF-4D64-9DFB-5089E5B28121}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PackSdk", "PackSdk\PackSdk.vcxproj", "{3195DD3F-C1E2-4D16-8545-AA00A2CFD2A4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E1C5B5F8-6B86-4C7E-8D15-3A4E6A143902}.Debug|x64.ActiveCfg = Debug|x64
+		{E1C5B5F8-6B86-4C7E-8D15-3A4E6A143902}.Debug|x64.Build.0 = Debug|x64
+		{E1C5B5F8-6B86-4C7E-8D15-3A4E6A143902}.Release|x64.ActiveCfg = Release|x64
+		{E1C5B5F8-6B86-4C7E-8D15-3A4E6A143902}.Release|x64.Build.0 = Release|x64
+		{769B2F84-F161-3F36-A6B5-D1CDA75E36E4}.Debug|x64.ActiveCfg = Debug|x64
+		{769B2F84-F161-3F36-A6B5-D1CDA75E36E4}.Debug|x64.Build.0 = Debug|x64
+		{769B2F84-F161-3F36-A6B5-D1CDA75E36E4}.Release|x64.ActiveCfg = Release|x64
+		{769B2F84-F161-3F36-A6B5-D1CDA75E36E4}.Release|x64.Build.0 = Release|x64
+		{A68BB79D-5BDF-4D64-9DFB-5089E5B28121}.Debug|x64.ActiveCfg = Debug|x64
+		{A68BB79D-5BDF-4D64-9DFB-5089E5B28121}.Debug|x64.Build.0 = Debug|x64
+		{A68BB79D-5BDF-4D64-9DFB-5089E5B28121}.Release|x64.ActiveCfg = Release|x64
+		{A68BB79D-5BDF-4D64-9DFB-5089E5B28121}.Release|x64.Build.0 = Release|x64
+		{3195DD3F-C1E2-4D16-8545-AA00A2CFD2A4}.Debug|x64.ActiveCfg = Debug|x64
+		{3195DD3F-C1E2-4D16-8545-AA00A2CFD2A4}.Debug|x64.Build.0 = Debug|x64
+		{3195DD3F-C1E2-4D16-8545-AA00A2CFD2A4}.Release|x64.ActiveCfg = Release|x64
+		{3195DD3F-C1E2-4D16-8545-AA00A2CFD2A4}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

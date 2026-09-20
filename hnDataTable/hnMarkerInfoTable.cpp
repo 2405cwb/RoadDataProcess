@@ -114,77 +114,55 @@
 	}
 
 	// 写入打标信息
-	bool hnMarkerInfoTable::writeData(vector<hnMarkInfo>& vecData,  bool(*pProgress)(float fVal, const char* qstrName, bool bCancle) )
-	{ 
-			// 判断数据库是否连接
-		if (!m_sqliteDB.IsOpen())
-		{
-			return false;
-		}
-		char strTableQuery[SQL_QUERY_LEN];			// 得到查询语句
-		memset(strTableQuery, 0, SQL_QUERY_LEN);	// 初始化建表语句
-
-		try
-		{
-
-			//开启事务
-			sqlite3_exec(m_sqliteDB.getDb(), "begin;", 0, 0, 0);
-			//其他值
-			sqlite3_stmt *stmt = NULL;
-			int res = -1;
-			// 添加CPIIIsql语句
-			memset(strTableQuery, 0, SQL_QUERY_LEN); 
-				sprintf(strTableQuery, "insert into %s(ID, Type, EnclMile, TrueMile, GpsTimer, Mark,"
-					"AddFile1,AddFile2,AddFile3,AddFile4,AddFile5,Remark) "
-					"values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", MARK_INFO_TABLE);
-			 
-			res = sqlite3_prepare_v2(m_sqliteDB.getDb(), strTableQuery, strlen(strTableQuery), &stmt, 0);
-
-			for (int i = 0; i < vecData.size(); ++i)
-			{
-				res = sqlite3_reset(stmt);
-				// SQLITE_STATIC->传递给该字符串的指针将有效,直到执行查询为止
-				res = sqlite3_bind_int(stmt, 1, vecData[i].nID);
-				res = sqlite3_bind_int(stmt, 2, vecData[i].nType);
-				res = sqlite3_bind_double(stmt, 3, vecData[i].dEnclMile);
-				res = sqlite3_bind_double(stmt, 4, vecData[i].dTrueMile);
-				res = sqlite3_bind_double(stmt, 5, vecData[i].dGpsTimer);
-				res = sqlite3_bind_text(stmt, 6, vecData[i].strMark, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 7, vecData[i].strAddFile1, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 8, vecData[i].strAddFile2, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 9, vecData[i].strAddFile3, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 10, vecData[i].strAddFile4, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 11, vecData[i].strAddFile5, -1, SQLITE_STATIC);
-				res = sqlite3_bind_text(stmt, 12, vecData[i].strRemark, -1, SQLITE_STATIC);
-
-
-				
-				//3.遍历select执行的返回结果
-				res = sqlite3_step(stmt);
-				if (pProgress && i%vecData.size() == 0)
-				{
-					pProgress(0.9999, "导入数据库", false);
-				}
-			} 
-			sqlite3_finalize(stmt);
-
-			//提交事务
-			sqlite3_exec(m_sqliteDB.getDb(), "commit;", 0, 0, 0);
-		}
-		catch (...)
-		{
-			if (pProgress)
-			{
-				pProgress(1.0, "更新数据库", false);
-			}
-
-			//提交事务存在问题 则事务回滚 事务已经提交则无法回滚
-			sqlite3_exec(m_sqliteDB.getDb(), "rollback;", 0, 0, 0);
-		} 
-		return true;
-	}
-
-	
+    // 无论独立调用还是加入上层事务，任何 SQL 失败都必须返回 false。
+    bool hnMarkerInfoTable::writeData(vector<hnMarkInfo>& vecData, bool(*pProgress)(float, const char*, bool))
+    {
+        if (!m_sqliteDB.IsOpen()) return false;
+        sqlite3* db = m_sqliteDB.getDb();
+        const bool ownTransaction = sqlite3_get_autocommit(db) != 0;
+        if (ownTransaction && sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) return false;
+        sqlite3_stmt* stmt = nullptr;
+        bool success = false;
+        try
+        {
+            const char* sql = "INSERT INTO MARK_INFO(ID,Type,EnclMile,TrueMile,GpsTimer,Mark,"
+                "AddFile1,AddFile2,AddFile3,AddFile4,AddFile5,Remark) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
+            success = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK;
+            for (size_t i = 0; success && i < vecData.size(); ++i)
+            {
+                const hnMarkInfo& mark = vecData[i];
+                int status = sqlite3_reset(stmt);
+                status |= sqlite3_bind_int(stmt, 1, mark.nID);
+                status |= sqlite3_bind_int(stmt, 2, mark.nType);
+                status |= sqlite3_bind_double(stmt, 3, mark.dEnclMile);
+                status |= sqlite3_bind_double(stmt, 4, mark.dTrueMile);
+                status |= sqlite3_bind_double(stmt, 5, mark.dGpsTimer);
+                status |= sqlite3_bind_text(stmt, 6, mark.strMark, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 7, mark.strAddFile1, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 8, mark.strAddFile2, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 9, mark.strAddFile3, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 10, mark.strAddFile4, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 11, mark.strAddFile5, -1, SQLITE_TRANSIENT);
+                status |= sqlite3_bind_text(stmt, 12, mark.strRemark, -1, SQLITE_TRANSIENT);
+                success = status == SQLITE_OK && sqlite3_step(stmt) == SQLITE_DONE;
+            }
+            if (stmt)
+            {
+                const int status = sqlite3_finalize(stmt);
+                stmt = nullptr;
+                if (status != SQLITE_OK) success = false;
+            }
+            if (success && pProgress) pProgress(0.9999f, "导入数据库", false);
+            if (success && ownTransaction) success = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+        }
+        catch (...)
+        {
+            if (stmt) sqlite3_finalize(stmt);
+            success = false;
+        }
+        if (!success && ownTransaction) sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return success;
+    }
 
 	bool hnMarkerInfoTable::updateData(vector<hnMarkInfo>& vecData,  bool(*pProgress)(float fVal, const char* qstrName, bool bCancle))
 	{
@@ -235,7 +213,6 @@
 			}
 			sqlite3_finalize(stmt);
 
-			//提交事务
 			sqlite3_exec(m_sqliteDB.getDb(), "commit;", 0, 0, 0);
 		}
 		catch (...)
@@ -245,7 +222,6 @@
 				pProgress(1.0, "更新数据库", false);
 			}
 
-			//提交事务存在问题 则事务回滚 事务已经提交则无法回滚
 			sqlite3_exec(m_sqliteDB.getDb(), "rollback;", 0, 0, 0);
 		} 
 	}
@@ -273,23 +249,11 @@
 		return true;
 	}
 
-	bool hnMarkerInfoTable::clearData()
-	{
-		// 判断数据库是否连接成功
-		if (!m_sqliteDB.IsOpen())
-		{
-			return 1;
-		}
-		char strQuery[SQL_QUERY_LEN];
-		memset(strQuery, 0, SQL_QUERY_LEN);
-
-		sprintf(strQuery, "delete from %s", MARK_INFO_TABLE);
-
-		// 执行sql语句
-		executeDB(strQuery);
-
-		return true;
-	}
+    bool hnMarkerInfoTable::clearData()
+    {
+        if (!m_sqliteDB.IsOpen()) return false;
+        return sqlite3_exec(m_sqliteDB.getDb(), "DELETE FROM MARK_INFO;", nullptr, nullptr, nullptr) == SQLITE_OK;
+    }
 
 	// 获取最大id
 	int hnMarkerInfoTable::getMaxID()

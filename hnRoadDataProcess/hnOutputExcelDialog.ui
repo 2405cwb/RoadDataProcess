@@ -35,6 +35,18 @@
             <string>公共设置</string>
            </property>
            <layout class="QGridLayout" name="gridLayout_2">
+            <item row="6" column="0"><widget class="QGroupBox" name="cityReportGroup">
+        <property name="title"><string>城镇道路报表分段方式</string></property>
+        <layout class="QGridLayout" name="cityReportGrid">
+         <item row="0" column="0"><widget class="QRadioButton" name="cityStakeRadio"><property name="text"><string>整桩号</string></property><property name="checked"><bool>true</bool></property></widget></item>
+         <item row="0" column="1"><widget class="QRadioButton" name="cityDistanceRadio"><property name="text"><string>整里程</string></property></widget></item>
+         <item row="1" column="0"><widget class="QLabel" name="cityLengthLabel"><property name="text"><string>分段长度（米）：</string></property></widget></item>
+         <item row="1" column="1"><widget class="QSpinBox" name="cityLengthSpinBox"><property name="minimum"><number>1</number></property><property name="maximum"><number>2147483647</number></property><property name="value"><number>200</number></property></widget></item>
+         <item row="2" column="0"><widget class="QLabel" name="cityCrossingLabel"><property name="text"><string>路口分界：</string></property></widget></item>
+         <item row="2" column="1"><widget class="QComboBox" name="cityCrossingCombo"><item><property name="text"><string>出入口</string></property></item><item><property name="text"><string>中心点</string></property></item></widget></item>
+         <item row="3" column="0" colspan="2"><widget class="QLabel" name="cityReportHelp"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>整里程与二维软件保持一致：从道路单元边界按桩号差分段，再换算采集里程；最后剩余不足500米直接成段。修改后自动保存，并同步应用于本次城镇报表。</string></property></widget></item>
+        </layout>
+       </widget></item>
             <item row="0" column="0">
              <widget class="QGroupBox" name="groupBox_2">
               <property name="enabled">
@@ -77,7 +89,7 @@
             <item row="0" column="1">
              <widget class="QGroupBox" name="groupBox_5">
               <property name="enabled">
-               <bool>false</bool>
+               <bool>true</bool>
               </property>
               <property name="title">
                <string>路面病害程度区分</string>
@@ -97,75 +109,6 @@
                 <widget class="QRadioButton" name="radioButton_5">
                  <property name="text">
                   <string>所有病害按重度计算</string>
-                 </property>
-                </widget>
-               </item>
-              </layout>
-             </widget>
-            </item>
-            <item row="5" column="0" colspan="4">
-             <widget class="QGroupBox" name="groupBox_13">
-              <property name="enabled">
-               <bool>false</bool>
-              </property>
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="title">
-               <string>水泥病害破碎板面积计算方式设置</string>
-              </property>
-              <property name="alignment">
-               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
-              </property>
-              <layout class="QHBoxLayout" name="horizontalLayout_8">
-               <item>
-                <widget class="QRadioButton" name="radioButton_10">
-                 <property name="text">
-                  <string>按框的面积计算</string>
-                 </property>
-                 <property name="checked">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QRadioButton" name="radioButton_9">
-                 <property name="text">
-                  <string>按板块面积计算</string>
-                 </property>
-                 <property name="checked">
-                  <bool>false</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLabel" name="label_10">
-                 <property name="text">
-                  <string>板块宽度(米):</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLineEdit" name="lineEdit_9">
-                 <property name="text">
-                  <string>2</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLabel" name="label_13">
-                 <property name="text">
-                  <string>板块长度(米):</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLineEdit" name="lineEdit_10">
-                 <property name="text">
-                  <string>4</string>
                  </property>
                 </widget>
                </item>
@@ -639,19 +582,6 @@
                <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
               </property>
               <layout class="QVBoxLayout" name="verticalLayout_21">
-               <item>
-                <widget class="QCheckBox" name="checkBox_7">
-                 <property name="text">
-                  <string>输出桩号结果是否排序</string>
-                 </property>
-                 <property name="checkable">
-                  <bool>true</bool>
-                 </property>
-                 <property name="checked">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
                <item>
                 <widget class="QCheckBox" name="checkBox_2">
                  <property name="text">
@@ -1417,9 +1347,6 @@
   <tabstop>radioButton_4</tabstop>
   <tabstop>radioButton_5</tabstop>
   <tabstop>checkBox_2</tabstop>
-  <tabstop>radioButton_10</tabstop>
-  <tabstop>radioButton_9</tabstop>
-  <tabstop>lineEdit_9</tabstop>
   <tabstop>lineEdit_7</tabstop>
   <tabstop>lineEdit_4</tabstop>
   <tabstop>lineEdit_6</tabstop>

@@ -17,12 +17,13 @@
 #include <QHash>
 #include <QByteArray>
 #include "lineAlgorithm.h"
-#include "../SDK/include/tools/GridSelectionTool.h"
+#include "../TunnelViewerSDK/include/tools/GridSelectionTool.h"
 #include <qmath.h>
 using namespace hnApp;
 
 class TiledGraphicsView;
 struct TiledViewAnchor;
+struct ImageDisplayAdjustments;
 class TunnelViewerController;
 class SdkDiseaseOverlayWidget;
 class QTimer;
@@ -45,6 +46,7 @@ public:
 	~hn2d3dPixBaseWidget();
 	void setSingleFrameNavigationEnabled(bool enabled);
 	bool stepSingleFrame(int visualDelta);
+	bool isLittleFrameMode() const { return m_frameMode == FrameMode::LITTLE_FRAME; }
 
 protected:
 	enum WidgetType
@@ -135,7 +137,7 @@ public:
 	void setImageDistanceMeters(double meters);
 
 	// Adjust the current SDK-rendered image brightness, range -100 to 100.
-	void setSdkImageBrightness(int value);
+	void setSdkImageAdjustments(const ImageDisplayAdjustments& adjustments);
 
 	// 获取当前 SDK 视图中心点对应的连续编码器里程，2D/3D 联动以该值作为同步基准。
 	double currentCenterEncoderMile() const;
@@ -176,6 +178,10 @@ public:
 	// 清空 SDK 图像、病害、临时绘制、打标和相关状态，用于卸载工程或切换项目。
 	void clearSdkView();
 
+	// 退出当前视图的连续绘制模式；连续类型不跨工程和不持久化。
+	void clearContinuousDiseaseDrawing();
+	bool isContinuousDiseaseDrawing() const;
+
 protected:
 	//计算线状病害属性
 	virtual hnRoadDiseaseInfo caculateLineDiseaseInfo(QVector<pixImagePoint> lineDiseasePoints, hnDiseaseSetInfo diseaseSetInfo) = 0;
@@ -200,6 +206,7 @@ protected:
 
 	// Refresh the 1:1 preview from source-image scene pixels.
 	void updateSdkInspectionViews(const QPoint& viewportPoint);
+	void renderSdkInspectionView(const QPoint& viewportPoint);
 
 	// 根据 SDK 底部或中心 anchor 刷新状态栏，滚轮/键盘/滚动条变化时使用。
 	void refreshStatusInfoFromSdkAnchor(const TiledViewAnchor& anchor);
@@ -305,6 +312,15 @@ protected:
 	// SDK 鼠标释放事件处理入口，拉框类病害在这里提交。
 	bool handleSdkDiseaseMouseRelease(QMouseEvent* mouseEvent);
 
+	bool handleSdkAreaResizeMousePress(QMouseEvent* mouseEvent);
+	bool handleSdkAreaResizeMouseMove(QMouseEvent* mouseEvent);
+	bool handleSdkAreaResizeMouseRelease(QMouseEvent* mouseEvent);
+	bool selectedSdkAreaDisease(hnRoadDiseaseInfo& disease) const;
+	void refreshSdkAreaResizeHandles();
+	void resetSdkEditGesture();
+	QString sdkWorkModeHintText() const;
+	void showSdkNoDiseaseModeHint(const QPoint& viewportPoint);
+
 	// SDK 删除模式下的小框专用入口：左键删单格，右键删整条病害。
 	bool handleSdkLittleFrameDeleteMousePress(QMouseEvent* mouseEvent, const pixImagePoint& point);
 
@@ -377,6 +393,7 @@ protected:
 
 	// 合并模式直接使用 SDK scene 命中病害，避免回退到已失效的旧 widget 坐标命中。
 	bool handleSdkMergeMousePress(QMouseEvent* mouseEvent);
+	bool mergeSdkAreaDiseases();
 
 	// 在当前可见 SDK 病害中查找鼠标命中的小框病害和格子下标。
 	bool findSdkLittleFrameDiseaseAtPoint(const pixImagePoint& point, hnRoadDiseaseInfo& disease, int& hitIndex);
@@ -449,12 +466,21 @@ protected:
 
 	// 子类复用各自的小框更新逻辑，统一完成重算面积、更新数据库和刷新信号。
 	virtual void updateSdkLittleFrameDiseaseAfterCellDelete(hnRoadDiseaseInfo& disease) = 0;
+	virtual bool moveSdkLittleFrameDisease(hnRoadDiseaseInfo& disease, const QPoint& bigImageOffset) = 0;
+
+	// Rebuild the persistent area geometry after a corner drag. Implementations
+	// update the database exactly once, on mouse release.
+	virtual bool updateSdkAreaDiseaseGeometry(hnRoadDiseaseInfo& disease, bool saveToDatabase = true) = 0;
 
 protected:
 	// 获取病害类型
 	QStringList getDiseaseTypes();
 	// 获取病害设置信息
 	QVector<hnDiseaseSetInfo> getDiseaseSetInfos();
+
+	// 优先使用当前视图缓存的病害类型；类型不适用时回退到选择弹窗。
+	bool selectDiseaseTypeForDrawing(const QVector<hnDiseaseSetInfo>& diseaseSetInfos,
+		QString& diseaseTypeName, QString& diseaseMark);
 
 protected:
 	// 添加线状病害
@@ -684,6 +710,8 @@ protected:
 	QWidget* m_sdkDiseaseOverlay = nullptr;
 	hnSdkDiseaseGraphicsLayer m_sdkDiseaseGraphicsLayer;
 	QTimer* m_sdkDiseaseRefreshTimer = nullptr;
+	QTimer* m_sdkInspectionRefreshTimer = nullptr;
+	QPoint m_pendingSdkInspectionPoint = QPoint(-1, -1);
 	QHash<QString, QByteArray> m_sdkDiseaseRenderFingerprints;
 
 	// 单张图代表多少米。默认 0 表示还没配置，配置前不做里程换算。
@@ -691,8 +719,24 @@ protected:
 	bool m_isProgrammaticSdkScroll = false;
     QString m_currentStreetPictureNameForStatus;
 	QString m_selectedSdkDiseaseKey;
+	int m_sdkAreaResizeCorner = -1;
+	bool m_sdkAreaResizeDragging = false;
+	QRectF m_sdkAreaResizeRect;
+	QPointF m_sdkAreaResizeOpposite;
+	hnRoadDiseaseInfo m_sdkAreaResizeDisease;
+	bool m_sdkEditPressPending = false;
+	QPoint m_sdkEditPressViewportPoint;
+	QPoint m_sdkEditLegacyPoint = QPoint(-1, -1);
+	hnRoadDiseaseInfo m_sdkEditDisease;
+	bool m_sdkAreaMoveCandidate = false;
+	bool m_sdkAreaMoveDragging = false;
+	QPointF m_sdkAreaMovePressScene;
+	QRectF m_sdkAreaMoveOriginalRect;
+	qint64 m_lastSdkNoDiseaseHintMs = 0;
 	hnRoadDiseaseInfo m_lastSdkAddedDisease;
 	bool m_hasLastSdkAddedDisease = false;
+	bool m_isContinuousDiseaseDrawing = false;
+	QString m_continuousDiseaseTypeName;
 	int m_programmaticSdkScrollTicket = 0;
 
 	// 鼠标右键移动删除病害，是否按下标志

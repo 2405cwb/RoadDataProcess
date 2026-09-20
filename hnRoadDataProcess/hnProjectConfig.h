@@ -24,6 +24,7 @@ signals:
 signals:
 	void signal_isDepthCaculate(bool isCaculate);
 	void signal_wheelScrollOneImageChanged(bool enabled);
+	void signal_autoPlayIntervalChanged(int intervalMs);
 
 private slots:
 	void on_okButton_clicked();

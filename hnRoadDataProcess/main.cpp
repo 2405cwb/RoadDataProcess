@@ -6,12 +6,9 @@
 #include <QtWidgets/QApplication>
 #include "logMgr.h"
 #include <windows.h>
-#include <QEvent>
-#include <QTimer>
-#include <QWidget>
-#include <QElapsedTimer>
 #include <QDateTime>
 #include <QAbstractEventDispatcher>
+#include "../hnQtCommon/hnProgressStyle.h"
 //
 //
 //#ifdef _DEBUG
@@ -55,129 +52,6 @@ namespace
 		return ::SetProcessDPIAware() != FALSE;
 	}
 
-	QString hnEventTypeName(QEvent::Type type)
-	{
-		switch (type)
-		{
-		case QEvent::ApplicationActivate: return "ApplicationActivate";
-		case QEvent::ApplicationDeactivate: return "ApplicationDeactivate";
-		case QEvent::WindowActivate: return "WindowActivate";
-		case QEvent::WindowDeactivate: return "WindowDeactivate";
-		case QEvent::ActivationChange: return "ActivationChange";
-		case QEvent::WindowStateChange: return "WindowStateChange";
-		case QEvent::FocusIn: return "FocusIn";
-		case QEvent::FocusOut: return "FocusOut";
-		case QEvent::Move: return "Move";
-		case QEvent::Resize: return "Resize";
-		case QEvent::Show: return "Show";
-		case QEvent::Hide: return "Hide";
-		default: return QString::number(static_cast<int>(type));
-		}
-	}
-
-	QString hnWidgetInfo(QWidget* widget)
-	{
-		if (!widget)
-		{
-			return QString();
-		}
-
-		const QRect geo = widget->geometry();
-		return QString("class=%1 object=%2 title=%3 visible=%4 active=%5 minimized=%6 maximized=%7 fullScreen=%8 geo=%9,%10,%11,%12")
-			.arg(widget->metaObject() ? widget->metaObject()->className() : "")
-			.arg(widget->objectName())
-			.arg(widget->windowTitle())
-			.arg(widget->isVisible())
-			.arg(widget->isActiveWindow())
-			.arg(widget->isMinimized())
-			.arg(widget->isMaximized())
-			.arg(widget->isFullScreen())
-			.arg(geo.x()).arg(geo.y()).arg(geo.width()).arg(geo.height());
-	}
-
-	bool hnShouldLogWidgetEvent(QWidget* widget, QEvent::Type type)
-	{
-		if (!widget)
-		{
-			return false;
-		}
-
-		const bool importantWindowEvent =
-			type == QEvent::WindowActivate ||
-			type == QEvent::WindowDeactivate ||
-			type == QEvent::ActivationChange ||
-			type == QEvent::WindowStateChange ||
-			type == QEvent::Show ||
-			type == QEvent::Hide ||
-			type == QEvent::Move ||
-			type == QEvent::Resize;
-
-		return importantWindowEvent && widget->isWindow();
-	}
-
-	class HnRuntimeEventProbe : public QObject
-	{
-	public:
-		explicit HnRuntimeEventProbe(QObject* parent = nullptr)
-			: QObject(parent)
-		{
-			m_lastHeartbeat.start();
-		}
-
-		bool eventFilter(QObject* watched, QEvent* event) override
-		{
-			if (!event)
-			{
-				return QObject::eventFilter(watched, event);
-			}
-
-			const QEvent::Type type = event->type();
-			if (type == QEvent::ApplicationActivate || type == QEvent::ApplicationDeactivate)
-			{
-				#ifdef _DEBUG
-				qDebug().noquote() << "[HN_PERF][AppEvent]"
-					<< "event=" << hnEventTypeName(type)
-					<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-				#endif
-			}
-			else
-			{
-				QWidget* widget = qobject_cast<QWidget*>(watched);
-				if (hnShouldLogWidgetEvent(widget, type))
-				{
-					#ifdef _DEBUG
-					qDebug().noquote() << "[HN_PERF][WidgetEvent]"
-						<< "event=" << hnEventTypeName(type)
-						<< hnWidgetInfo(widget);
-					#endif
-				}
-			}
-
-			return QObject::eventFilter(watched, event);
-		}
-
-		void startHeartbeat()
-		{
-			QTimer* timer = new QTimer(this);
-			timer->setInterval(1000);
-			connect(timer, &QTimer::timeout, this, [this]() {
-				const qint64 gapMs = m_lastHeartbeat.elapsed();
-				if (gapMs >= 3000)
-				{
-					#ifdef _DEBUG
-					qDebug().noquote() << "[HN_PERF][EventLoopGap]"
-						<< "gapMs=" << gapMs
-						<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
-					#endif
-				}
-				m_lastHeartbeat.restart();
-			});
-			timer->start();
-		}
-
-	private:
-		QElapsedTimer m_lastHeartbeat;
-	};
 }
 using namespace std;
 void logOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
@@ -230,11 +104,8 @@ int main(int argc, char *argv[])
 	QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
 
 
-	try { 
+	try {
     QApplication a(argc, argv);
-	HnRuntimeEventProbe runtimeEventProbe(&a);
-	a.installEventFilter(&runtimeEventProbe);
-	runtimeEventProbe.startHeartbeat();
 	#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AppStart]" << "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
 	#endif
@@ -244,7 +115,7 @@ int main(int argc, char *argv[])
 	QFile qssFile(qssFileName);
 	qssFile.open(QIODevice::ReadOnly);
 	QString qss = qssFile.readAll();
-	a.setStyleSheet(qss);
+	a.setStyleSheet(qss + hnProgressStyle::styleSheet());
 	qssFile.close();
 
 

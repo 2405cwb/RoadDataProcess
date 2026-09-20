@@ -1,9 +1,17 @@
+#include <QPushButton>
 #include "IrmActualTimeShow.h" 
 
 IrmActualTimeShow::IrmActualTimeShow(QWidget *parent)
 	: QWidget(parent)
 {
 	setupUI();
+	clearChart();
+	m_emptyHint = new QLabel(QStringLiteral("尚无可显示的 IRM 数据，请打开工程后查看。"), this);
+	m_emptyHint->setWordWrap(true);
+	mainLayout->insertWidget(0, m_emptyHint);
+	QPushButton* calculate = new QPushButton(QStringLiteral("打开 IRM 计算"), this);
+	mainLayout->insertWidget(1, calculate);
+	connect(calculate, &QPushButton::clicked, this, &IrmActualTimeShow::requestCalculation);
 	resize(900, 600);
 }
 
@@ -19,6 +27,7 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
 	{
+		resetData();
 		return;
 	}
 	curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
@@ -30,6 +39,11 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 			cur2DProject = project;
 			curLeftIriDatas.clear();
 			curRightIriDatas.clear();
+			curLeftRutDatas.clear();
+			curRightRutDatas.clear();
+			curLeftSmtdDatas.clear();
+			curRightSmtdDatas.clear();
+			curCenterSmtdDatas.clear();
 
 			//获取平整度地址
 			QString iriPath = curProject->get2DProject()->getIRIPath();
@@ -58,8 +72,9 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 				QStringList sp = line.split(' ');
 				if (sp.length() <= 1)
 				{
-					sp = line.split('/t');
+					sp = line.split(QChar('\t'), QString::SkipEmptyParts);
 				}
+				if (sp.size() < 2) continue;
 				bool ok = false;
 				double value =  sp.at(1).toDouble(&ok);
 				if (ok)
@@ -73,8 +88,9 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 				QStringList sp = line.split(' ');
 				if (sp.length() <= 1)
 				{
-					sp = line.split('/t');
+					sp = line.split(QChar('\t'), QString::SkipEmptyParts);
 				}
+				if (sp.size() < 2) continue;
 				bool ok = false;
 				double value = sp.at(1).toDouble(&ok);
 				if(ok)
@@ -109,8 +125,9 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 				QStringList sp = line.split(' ');
 				if (sp.length() <= 1)
 				{
-					sp = line.split('/t');
+					sp = line.split(QChar('\t'), QString::SkipEmptyParts);
 				}
+				if (sp.size() < 2) continue;
 				bool ok = false;
 				double value = sp.at(1).toDouble(&ok);
 				if (ok)
@@ -124,8 +141,9 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 				QStringList sp = line.split(' ');
 				if (sp.length() <= 1)
 				{
-					sp = line.split('/t');
+					sp = line.split(QChar('\t'), QString::SkipEmptyParts);
 				}
+				if (sp.size() < 2) continue;
 				bool ok = false;
 				double value = sp.at(1).toDouble(&ok);
 				if (ok)
@@ -139,8 +157,9 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 				QStringList sp = line.split(' ');
 				if (sp.length() <= 1)
 				{
-					sp = line.split('/t');
+					sp = line.split(QChar('\t'), QString::SkipEmptyParts);
 				}
+				if (sp.size() < 2) continue;
 				bool ok = false;
 				double value = sp.at(1).toDouble(&ok);
 				if (ok)
@@ -153,8 +172,19 @@ void IrmActualTimeShow::slot_updateIriFormSlots(double mile, double dmi)
 		}
 
 		//根据里程和当前用户设置的区间获取相应数据 
-		int index = dmi / 10;
+		int index = qMax(0, int(dmi / 10));
 		updateIriCharts(index);
+		QStringList missing;
+		if (curLeftIriDatas.isEmpty() && curRightIriDatas.isEmpty()) missing << QStringLiteral("IRI");
+		if (curLeftRutDatas.isEmpty() && curRightRutDatas.isEmpty()) missing << QStringLiteral("RUT");
+		if (curLeftSmtdDatas.isEmpty() && curRightSmtdDatas.isEmpty() && curCenterSmtdDatas.isEmpty()) missing << QStringLiteral("SMTD");
+		m_emptyHint->setText(missing.isEmpty() ? QStringLiteral("显示当前工程的计算结果；横轴为 DMI（米）。") :
+			QStringLiteral("暂无 %1 数据。可打开 IRM 计算，或使用“检查数据”核查输入文件。").arg(missing.join(QStringLiteral("、"))));
+	}
+	else
+	{
+		resetData();
+		m_emptyHint->setText(QStringLiteral("当前工程不包含二维 IRM 数据。请切换到二维或二三维工程。"));
 	}
 }
 
@@ -300,7 +330,18 @@ void IrmActualTimeShow::setupUI()
 
 void IrmActualTimeShow::clearChart()
 {
+	for (auto series : {leftIriSeries, rightIriSeries, leftRutSeries, rightRutSeries, leftSmtdSeries, rightSmtdSeries, centerSmtdSeries}) series->clear();
+}
 
+void IrmActualTimeShow::resetData()
+{
+	curProject = nullptr;
+	cur2DProject = nullptr;
+	curLeftIriDatas.clear(); curRightIriDatas.clear();
+	curLeftRutDatas.clear(); curRightRutDatas.clear();
+	curLeftSmtdDatas.clear(); curRightSmtdDatas.clear(); curCenterSmtdDatas.clear();
+	clearChart();
+	m_emptyHint->setText(QStringLiteral("暂无可显示的 IRM 数据，请打开工程并浏览影像；缺少结果时可先执行 IRM 计算。"));
 }
 
 void IrmActualTimeShow::updateIriCharts(int startIndex)
@@ -326,6 +367,7 @@ void IrmActualTimeShow::updateIriCharts(int startIndex)
 
 void IrmActualTimeShow::updateTargetChart(int& startIndex, int& endIndex, int length, const QVector<double>&  targeDatas, QVector<double>&datas, QLineSeries* series)
 {
+	series->clear();
 	if (targeDatas.size() == 0)
 	{
 		return;

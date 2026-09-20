@@ -11,6 +11,7 @@
 #include "..\hnCommon\hnRoadTypeDef.h"
 #include "..\hnConfigService\HnXRSettings.h"
 using namespace hnCommon;
+class QWidget;
 //using namespace hnDataTable;
 
 namespace hnPro
@@ -183,22 +184,34 @@ namespace hnPro
 		//设置单三维模式下的 当前路面桩号   陈智超备注：参数编码器里程
 		void setCurrent3dRoadDmi(const double& dmi);
 
-		//用户修改打标列表   写入打标数据  重新加载HnMile  
-		//返回值 false表示不需要刷新界面（打标为材质切换等需要进行材质切换）
-		bool changeMark(QVector<hnCommon::hnMarkInfo>& marks,const QVector<int>&deleteMarkIndexs);
+		// 用户修改打标列表；返回是否保存成功，并通过 needUpdate 返回是否需要刷新道路视图。
+		bool changeMark(QVector<hnCommon::hnMarkInfo>& marks, const QVector<int>& deleteMarkIndexs);
+		bool changeMark(QVector<hnCommon::hnMarkInfo>& marks, const QVector<int>& deleteMarkIndexs,
+			bool* needUpdate, QString* errorMessage);
 
-		//添加打标
-		bool addMark( hnCommon::hnMarkInfo& mark);
+		// 添加打标；桩号和相对里程越界时拒绝写库。
+		bool addMark(hnCommon::hnMarkInfo& mark);
+		bool addMark(hnCommon::hnMarkInfo& mark, bool* needUpdate, QString* errorMessage);
+		bool validateUserMark(const hnCommon::hnMarkInfo& mark,
+			QString* errorMessage = nullptr) const;
 
 		//删除打标
 		bool deleteMark(const hnCommon::hnMarkInfo& Mark);
 		bool deleteMark(int id);
 
-		//用户修改较桩列表 写入较桩数据  重新加载hnmile
-		void changeMilePile(QVector <hnCommon::hnMilePile>& piles);
-		void addMilePile( hnCommon::hnMilePile& plile);
+		// 按原 ID 修改，失败不改变原记录。校桩修改同步打标桩号，保留采集位置。
+		bool updateMark(int id, const hnCommon::hnMarkInfo& value, QString* errorMessage = nullptr);
+		bool updateMilePile(int id, const hnCommon::hnMilePile& value, QString* errorMessage = nullptr);
+		bool validateMarkConflict(const hnCommon::hnMarkInfo& value, int ignoredId, QString* errorMessage) const;
+		bool validateUserMilePile(const hnCommon::hnMilePile& pile, QString* errorMessage, int ignoredId) const;
 
-		 void  deleteMilePile(int id);
+		//用户修改较桩列表 写入较桩数据  重新加载hnmile
+		bool changeMilePile(QVector <hnCommon::hnMilePile>& piles, QString* errorMessage = nullptr);
+		bool addMilePile(hnCommon::hnMilePile& pile, QString* errorMessage = nullptr);
+
+		bool deleteMilePile(int id, QString* errorMessage = nullptr);
+		bool isStandardAnchorPile(const hnCommon::hnMilePile& pile) const;
+		bool validateUserMilePile(const hnCommon::hnMilePile& pile, QString* errorMessage = nullptr) const;
 
 		//人工操作  重写打标数据库
 		void updataMarkDatabase();
@@ -208,11 +221,22 @@ namespace hnPro
 
 		//手动导出内业修正后的外业文本，不覆盖外业原始文件
 		void exportCorrectedFieldTextFiles();
+
+		// 从外业文本重新生成相对里程校桩和打标，并原子替换当前成果库数据。
+		bool reimportMileagePilesAndMarks(QString* backupPath = nullptr,
+			int* pileCount = nullptr, int* markCount = nullptr,
+			QString* errorMessage = nullptr);
+		// Operator-edit entry point: validates before committing the in-memory value.
+		bool previewProjectRangeChange(const hnCommon::hnProjectSetInfo& settings,
+			int& removedPileCount, int& removedMarkCount,
+			QString* errorMessage = nullptr) const;
+		bool updateProjectSettings(const hnCommon::hnProjectSetInfo& settings, QString* errorMessage = nullptr);
+		bool ensureInitialSurfaceMaterial(QWidget* parent = nullptr, QString* errorMessage = nullptr);
 	private: //cwb
-		bool saveMarksToResultDb();
-		bool saveMileagePilesToResultDb();
+		bool saveMarksToResultDb(QString* errorMessage = nullptr);
+		bool saveMileagePilesToResultDb(QString* errorMessage = nullptr);
 		bool saveProjectSettingToResultDb();
-		void import2DFieldDataToResultDb();
+		bool ensureResultDbDmiNormalized(QString* errorMessage = nullptr);
 		bool isRoadAttributeMark(int nType) const;
 
 		bool  read2dSetting(const QString& path );
@@ -232,11 +256,6 @@ namespace hnPro
 		void updatePorjectText();
 		//更新  打标  较桩  工程配置   相关的 所有 文本，xml，数据库记录
 		void updatePorjectAllSettingSource();
-	private:
-		bool m_bNeedImportFieldMilePilesToResultDb;
-		bool m_bNeedImportFieldMarksToResultDb;
-
-
 		HnXRSettings* m_xrSetting;
 		// 工程根目录
 		QString m_strProjectPath;

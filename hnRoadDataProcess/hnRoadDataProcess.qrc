@@ -72,6 +72,8 @@
         <file>iconsNew/删除病害.png</file>
         <file>iconsNew/深度图模式.png</file>
         <file>iconsNew/输出报表.png</file>
+        <file>iconsNew/project-ledger.png</file>
+        <file>iconsNew/merge-reports.png</file>
         <file>iconsNew/添加病害.png</file>
         <file>iconsNew/添加控制点.png</file>
         <file>iconsNew/图片调整.png</file>
@@ -79,5 +81,19 @@
         <file>iconsNew/影像生成.png</file>
         <file>iconsNew/最近工程.png</file>
         <file>iconsNew/logo_xroe.ico</file>
+    </qresource>
+    <qresource prefix="/reports">
+        <file alias="cpms-road.xlsx">reportTemplates/cpms-road.xlsx</file>
+        <file alias="cpms-road-small.xlsx">reportTemplates/cpms-road-small.xlsx</file>
+        <file alias="cpms-facilities.xlsx">reportTemplates/cpms-facilities.xlsx</file>
+        <file alias="cpms-roadbed.xlsx">reportTemplates/cpms-roadbed.xlsx</file>
+        <file alias="cpms-rural-facilities.xlsx">reportTemplates/cpms-rural-facilities.xlsx</file>
+        <file alias="cpms-rural-roadbed.xlsx">reportTemplates/cpms-rural-roadbed.xlsx</file>
+        <file alias="rural-5211-pci.xlsx">reportTemplates/rural-5211-pci.xlsx</file>
+        <file alias="rural-5211-rqi.xlsx">reportTemplates/rural-5211-rqi.xlsx</file>
+        <file alias="rural-5211-disease.xlsx">reportTemplates/rural-5211-disease.xlsx</file>
+        <file alias="rural-5211-mqi.xlsx">reportTemplates/rural-5211-mqi.xlsx</file>
+        <file alias="rural-5211-detail.xlsx">reportTemplates/rural-5211-detail.xlsx</file>
+        <file alias="project-ledger.xlsx">reportTemplates/project-ledger.xlsx</file>
     </qresource>
 </RCC>

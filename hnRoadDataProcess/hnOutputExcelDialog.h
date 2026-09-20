@@ -14,6 +14,8 @@ QXLSX_USE_NAMESPACE
 using namespace hnApp;
 class HnXRSettings;
 class QTableWidget;
+class QLineEdit;
+class QLabel;
 class hnOutputExcelDialog : public QDialog
 {
 	Q_OBJECT
@@ -61,6 +63,15 @@ private:
 
 	//用户点击确定按钮
 	void onOkButton();
+	void chooseOutputDirectory();
+	void updateExportSummary();
+	void saveCityReportOptions();
+	void refreshCityReportOptions();
+private:
+	void setupExportWorkflow();
+	QLineEdit* m_outputDirectory = nullptr;
+	QLabel* m_exportSummary = nullptr;
+private slots:
 
 	//保存用户界面配置到文件
 	void	saveConfig();

@@ -4,6 +4,7 @@
 #include "..\hnApplication\hnStreetCameraView.h"
 #include <QLabel>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QSlider>
 #include <QRadioButton>
 using namespace hnApp;
@@ -31,6 +32,7 @@ public:
 protected:
 
 	virtual void resizeEvent(QResizeEvent *);
+	bool eventFilter(QObject* watched, QEvent* event) override;
 
 protected:
 	void enterEvent(QEvent *event) override;
@@ -43,7 +45,7 @@ protected:
 	void reloadData();
 
 signals:
-	void signal_imageIdxChanged(int imageIdx);
+	void signal_imageIdxChanged(double imageIdx);
 
 
 signals:
@@ -56,16 +58,19 @@ signals:
 	void signal_updateBrightness(int value);
 public slots :
     // 更新图像
-    void updateViewImage(int nIndex);
+    void updateViewImage(double nIndex);
 
 
 	void slot_updateBrightness(int value);
+	void savePendingBrightness();
 
 
 
 
 private:
 	void updateCurViewImage();
+	void updateImageCaptions();
+	void updateImageCaption(hnStreetCameraView* view, QLabel* caption);
 
 public:
 	// 单景观
@@ -82,7 +87,7 @@ private:
 	bool m_bDoubleStreet;
 
 	//当前的帧号
-	int m_currentFrameIdx;
+	double m_currentFrameIdx;
 
 private:
 	//主布局
@@ -103,10 +108,17 @@ private:
 	QLabel *m_leftImgLabel;
 	 
 	//右景观视图
-	QLabel *m_rightImgLabel; 
+	QLabel *m_rightImgLabel;
+	QWidget* m_leftImagePanel;
+	QWidget* m_rightImagePanel;
+	QLabel* m_leftImageCaption;
+	QLabel* m_rightImageCaption;
 
 	//亮度调节
 	QSlider * brightnessSlider;
+	QTimer* m_brightnessSaveTimer;
+	QString m_pendingBrightnessProjectPath;
+	int m_pendingBrightnessValue;
 
 	bool m_rightPicNeedRotate;
 

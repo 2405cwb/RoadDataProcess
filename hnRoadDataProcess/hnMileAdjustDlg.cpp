@@ -21,10 +21,16 @@ hnMileAdjustDlg::hnMileAdjustDlg(QVector<hnCommon::hnMilePile>& milePile, QWidge
 	connect(ui.pushButton_2, &QPushButton::clicked, this, [&]() {
 		reject();
 	});
-	for (int i = 1; i <milePile.size()-1; ++i)
+	auto dataManager = hnApp::hnDataManager::getDataManager();
+	auto project = dataManager ? dataManager->getCurrentProject() : nullptr;
+	for (int i = 0; i < milePile.size(); ++i)
 	{
 		QStringList row;
 		auto mile = milePile.at(i);
+		if (project && project->isStandardAnchorPile(mile))
+		{
+			continue;
+		}
 		 
 		row << QString::number(mile.dTrueMile,  'f', 2);
 		row << QString::number(mile.dEnclMile, 'f', 2);

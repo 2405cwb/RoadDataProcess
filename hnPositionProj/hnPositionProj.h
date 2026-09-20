@@ -14,7 +14,7 @@
 //class HNPOSITIONPROJ_API ChnPositionProj {
 //public:
 //	ChnPositionProj(void);
-//	// TODO: 在此添加您的方法。
+//	//  在此添加您的方法。
 //};
 //
 //extern HNPOSITIONPROJ_API int nhnPositionProj;

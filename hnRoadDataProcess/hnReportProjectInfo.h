@@ -208,12 +208,29 @@ namespace hnReportProjectInfo
 		return key + QChar(0xFF1A) + value;
 	}
 
-	inline bool save(hnPro::hnProject* project, const Data& data)
+	inline bool save(hnPro::hnProject* project, const Data& data, QString* errorMessage = nullptr)
 	{
-		const QString path = configPath(project);
-		if (path.isEmpty() || data.roadWidth <= 0.0)
+		if (errorMessage)
 		{
+			errorMessage->clear();
+		}
+		const auto fail = [errorMessage](const QString& message)
+		{
+			if (errorMessage)
+			{
+				*errorMessage = message;
+			}
 			return false;
+		};
+
+		const QString path = configPath(project);
+		if (path.isEmpty())
+		{
+			return fail(QStringLiteral("\u5de5\u7a0b\u914d\u7f6e\u6587\u4ef6\u8def\u5f84\u4e3a\u7a7a\u3002"));
+		}
+		if (data.roadWidth <= 0.0)
+		{
+			return fail(QStringLiteral("\u68c0\u6d4b\u8def\u9762\u5bbd\u5ea6\u5fc5\u987b\u5927\u4e8e 0\u3002"));
 		}
 
 		QStringList lines;
@@ -222,7 +239,8 @@ namespace hnReportProjectInfo
 		{
 			if (!input.open(QIODevice::ReadOnly | QIODevice::Text))
 			{
-				return false;
+				return fail(QStringLiteral("\u65e0\u6cd5\u8bfb\u53d6\u73b0\u6709\u5de5\u7a0b\u914d\u7f6e\u6587\u4ef6\uff1a%1")
+					.arg(input.errorString()));
 			}
 			QTextStream stream(&input);
 			stream.setCodec(QTextCodec::codecForName("UTF-8"));
@@ -231,6 +249,7 @@ namespace hnReportProjectInfo
 				lines.append(stream.readLine());
 			}
 		}
+		input.close();
 
 		int sectionStart = -1;
 		int sectionEnd = lines.size();
@@ -293,7 +312,8 @@ namespace hnReportProjectInfo
 		QSaveFile output(path);
 		if (!output.open(QIODevice::WriteOnly | QIODevice::Text))
 		{
-			return false;
+			return fail(QStringLiteral("\u65e0\u6cd5\u521b\u5efa\u5de5\u7a0b\u914d\u7f6e\u4e34\u65f6\u6587\u4ef6\uff1a%1")
+				.arg(output.errorString()));
 		}
 		QTextStream stream(&output);
 		stream.setCodec(QTextCodec::codecForName("UTF-8"));
@@ -306,8 +326,10 @@ namespace hnReportProjectInfo
 		if (committed)
 		{
 			widthCache().remove(path);
+			return true;
 		}
-		return committed;
+		return fail(QStringLiteral("\u65e0\u6cd5\u63d0\u4ea4\u5de5\u7a0b\u914d\u7f6e\u6587\u4ef6\uff1a%1")
+			.arg(output.errorString()));
 	}
 
 	inline double roadWidth(hnPro::hnProject* project)

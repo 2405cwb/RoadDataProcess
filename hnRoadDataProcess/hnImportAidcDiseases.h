@@ -60,7 +60,7 @@ public:
 	void import();
 
 	//导入人工2d病害
-	void import2dDisease();
+	bool import2dDisease();
 
 	public:
 	//加载数据库
@@ -70,7 +70,7 @@ public:
 	bool load2dDb();
 
 	//把多个表中的病害 批量写入数据库
-	void writeDb(QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases);
+	bool writeDb(QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases);
 
 	public:
 	QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> transformDiseases();

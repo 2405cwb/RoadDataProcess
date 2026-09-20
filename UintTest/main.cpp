@@ -9,6 +9,8 @@
 #include "test_LineCameraConfig.h"
 #include "test_VirtualImageSequence.h"
 #include "test_GeometryCalculation.h"
+#include "test_RutProfileTrace.h"
+#include "test_RutProfileDebugExporter.h"
 #include <QtTest/QTest>
 
 int main(int argc, char *argv[])
@@ -45,6 +47,12 @@ int main(int argc, char *argv[])
 
 	test_GeometryCalculation obj_test_GeometryCalculation;
 	if (classEnabled(QStringLiteral("test_GeometryCalculation"))) testObjects.push_back(&obj_test_GeometryCalculation);
+
+	test_RutProfileTrace obj_test_RutProfileTrace;
+	if (classEnabled(QStringLiteral("test_RutProfileTrace"))) testObjects.push_back(&obj_test_RutProfileTrace);
+
+	test_RutProfileDebugExporter obj_test_RutProfileDebugExporter;
+	if (classEnabled(QStringLiteral("test_RutProfileDebugExporter"))) testObjects.push_back(&obj_test_RutProfileDebugExporter);
 
 	int status = 0;
 	for (auto object : qAsConst(testObjects))

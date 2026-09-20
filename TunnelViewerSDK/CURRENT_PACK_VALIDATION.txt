@@ -1,0 +1,40 @@
+Current ImagePack integration validation
+Date: 2026-09-01
+
+Result: STATIC VALIDATION PASSED
+
+1. Current Pack only
+- Supported name: img_<tag>.jph + img_<tag>_NNNN.jpd.
+- No PackImageTileSource source/header remains.
+- No packv2:// URI path remains.
+- No PackReaderQt source/header remains.
+- No active Pack branch remains in AsyncImageLoader.
+- A directory with multiple img_*.jph is intentionally rejected instead of silently selecting one.
+
+2. Unified single-image / Pack display pipeline
+- FileSequenceFrameSource reads JPEG from individual files.
+- PackSequenceFrameSource reads JPEG bytes through ImagePackReader / ImagePack.dll.
+- Both implement ISequenceFrameSource.
+- Both enter TunnelViewerController::loadSequenceSource().
+- Thumbnail/full-resolution switching, cache, prefetch, scrolling, image adjustments and painting are shared in TiledGraphicsView.
+
+3. Current official ImagePack SDK
+- Bundled ImagePackApi.h: API 1.1.1.
+- Bundled Debug/Release ImagePack.dll hashes match the uploaded ImagePackSDK_V1.1.1 files.
+- Dynamically used exports are present in the supplied Release DLL.
+- Pack metadata is read in pages of 4096 with ImagePack_GetImageList.
+- JPEG payloads remain demand-loaded.
+
+4. Writing / format ownership
+- TunnelViewerSDK does not duplicate the Pack writer or binary format implementation.
+- Producer applications use the bundled official ImagePackApi.h Writer API and ImagePackSdkExample.cpp.
+- Reader and writer therefore share the same current format definition.
+
+5. Build-file checks
+- TunnelViewerSDK.vcxproj XML: OK.
+- TunnelViewerSDK.vcxproj.filters XML: OK.
+- SDK.pro references ImagePackReader.cpp/.h and current ImagePack SDK deployment paths.
+- No business-software/TunnelViewerSDK version number was changed for this adjustment.
+
+Limitation:
+Final VS2015/v140 + Qt runtime compilation/opening should still be tested once on the Windows development machine.

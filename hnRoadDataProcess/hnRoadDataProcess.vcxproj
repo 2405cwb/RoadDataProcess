@@ -85,6 +85,9 @@
     <QtUic>
       <QtUicDir>..\bin\$(Configuration)-x64\uic\</QtUicDir>
     </QtUic>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)..\3rd\opencv3.2.0\bin\opencv_world320.dll" "$(OutDir)opencv_world480.dll"&#xD;&#xA;if not exist "$(OutDir)config\GjExportModeConfig.json" xcopy /Y /I "$(ProjectDir)config\GjExportModeConfig.json" "$(OutDir)config\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
@@ -108,8 +111,7 @@
       <QtUicDir>..\bin\$(Configuration)-x64\uic\</QtUicDir>
     </QtUic>
     <PostBuildEvent>
-      <Command>
-      </Command>
+      <Command>copy /Y "$(ProjectDir)..\3rd\opencv3.2.0\bin\opencv_world320d.dll" "$(OutDir)opencv_world480d.dll"&#xD;&#xA;if not exist "$(OutDir)config\GjExportModeConfig.json" xcopy /Y /I "$(ProjectDir)config\GjExportModeConfig.json" "$(OutDir)config\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -149,9 +151,12 @@
     <ClCompile Include="dxfExcelInfo.cpp" />
     <ClCompile Include="HighAccuracySettingForm.cpp" />
     <ClCompile Include="hnAboutInfoWidgets.cpp" />
+    <ClCompile Include="hn2dDiseaseExchangeService.cpp" />
     <ClCompile Include="hnCalRoadGeometry.cpp" />
     <ClCompile Include="hnGeometryCalculation.cpp" />
+    <ClCompile Include="hnGjConvertSourceService.cpp" />
     <ClCompile Include="hnDBManagerDlg.cpp" />
+    <ClCompile Include="hnResultDataDialog.cpp" />
     <ClCompile Include="hnDiseaseSumAreaCaculate.cpp" />
     <ClCompile Include="hnDxfCaculateDialog.cpp" />
     <ClCompile Include="hnDxfInfoPreprocess.cpp" />
@@ -164,6 +169,8 @@
     <ClCompile Include="hnOutExcelMileManage.cpp" />
     <ClCompile Include="hnOutputExcelDialog.cpp" />
     <ClCompile Include="hnProjectConfig.cpp" />
+    <ClCompile Include="hnProjectDiagnosticService.cpp" />
+    <ClCompile Include="hnProjectImportValidator.cpp" />
     <ClCompile Include="hnRegionJumpDlg.cpp" />
     <ClCompile Include="hnStreetWidget.cpp" />
     <ClCompile Include="hnXlsxInterface.cpp" />
@@ -174,6 +181,7 @@
     <ClCompile Include="projectView.cpp" />
     <ClCompile Include="ReportConfig.cpp" />
     <ClCompile Include="RutParm.cpp" />
+    <ClCompile Include="RutProfileDebugExporter.cpp" />
     <ClCompile Include="statusBarWidget.cpp" />
     <ClCompile Include="StreetDiseaseManage.cpp" />
     <ClCompile Include="VMirror2dRectI.cpp" />
@@ -211,7 +219,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnOpenProjectDlg.h" />
+    <ClInclude Include="hnMarkPileEditDialog.h" />
     <ClInclude Include="hnLineCameraValidAreaDialog.h" />
+    <ClInclude Include="RutProfileDebugExporter.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="hnDiseaseListWidget.h" />
@@ -241,9 +251,13 @@
     <QtMoc Include="CustomBaiduMapView.h" />
     <QtMoc Include="hnAboutInfoWidgets.h" />
     <QtMoc Include="hnDBManagerDlg.h" />
+    <ClInclude Include="hnResultDataDialog.h" />
     <QtMoc Include="HighAccuracySettingForm.h" />
     <ClInclude Include="hnCalRoadGeometry.h" />
     <ClInclude Include="hnGeometryCalculation.h" />
+    <ClInclude Include="hnGjConvertSourceService.h" />
+    <ClInclude Include="hnGjExportModeDialog.h" />
+    <ClInclude Include="hn2dDiseaseExchangeService.h" />
     <ClInclude Include="hnOutExcelManage.h" />
     <ClInclude Include="MileAndDmi.h" />
     <ClInclude Include="ReportConfig.h" />
@@ -269,6 +283,11 @@
     <ClInclude Include="DrPciCalculator.h" />
     <ClInclude Include="hnReportProjectInfo.h" />
     <ClInclude Include="hnOutExcelMileManage.h" />
+    <ClInclude Include="hnCityReportSegmenter.h" />
+    <ClInclude Include="hnRuralEvaluationUnitMerger.h" />
+    <ClInclude Include="hnDiagnosticResultDialog.h" />
+    <ClInclude Include="hnProjectDiagnosticService.h" />
+    <ClInclude Include="hnProjectImportValidator.h" />
     <QtMoc Include="hnXlsxInterface.h" />
   </ItemGroup>
   <ItemGroup>
@@ -279,8 +298,23 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\QHotkey\QHotkey" />
+    <None Include="config\GjExportModeConfig.json" />
   </ItemGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup>
+    <ClCompile Include="hnRoutePhotoExportService.cpp" />
+    <ClCompile Include="hnRoutePhotoExportDialog.cpp" />
+    <ClInclude Include="hnRoutePhotoExportService.h" />
+    <QtMoc Include="hnRoutePhotoExportDialog.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="hnDiseaseSampleExporter.cpp" />
+    <ClInclude Include="hnDiseaseSampleExporter.h" />
+    <ClCompile Include="hnReportMergeTool.cpp" />
+    <QtMoc Include="hnReportMergeTool.h" />
+    <ClCompile Include="hnReportMergeDlg.cpp" />
+    <ClInclude Include="hnReportMergeDlg.h" />
+  </ItemGroup>
+  <ItemGroup><ClCompile Include="hnRoadDiseaseImageExporter.cpp" /><ClInclude Include="hnRoadDiseaseImageExporter.h" /></ItemGroup>  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
     <Import Project="$(QtMsBuild)\qt.targets" />
   </ImportGroup>

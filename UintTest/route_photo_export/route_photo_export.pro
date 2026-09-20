@@ -1,0 +1,9 @@
+QT += core gui widgets
+CONFIG += console c++11
+CONFIG -= app_bundle debug
+CONFIG += release
+TARGET = route-photo-tests
+INCLUDEPATH += ../../hnRoadDataProcess ../../QXlsx/header
+SOURCES += $$PWD/main.cpp ../../hnRoadDataProcess/hnRoutePhotoExportService.cpp ../../hnRoadDataProcess/hnRoutePhotoExportDialog.cpp
+HEADERS += ../../hnRoadDataProcess/hnRoutePhotoExportService.h ../../hnRoadDataProcess/hnRoutePhotoExportDialog.h
+LIBS += $$quote($$PWD/../../bin/Release-x64/QXlsx.lib)

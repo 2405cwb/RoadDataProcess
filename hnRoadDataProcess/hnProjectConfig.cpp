@@ -1,18 +1,28 @@
+#include "../hnQtCommon/hnProgressStyle.h"
+#include "../hnQtCommon/hnWindowUiState.h"
 #include "hnProjectConfig.h"
 #include <QButtonGroup>
 #include <QMessageBox>
 #include "..\hnConfigService\HnXRSettings.h"
 hnProjectConfig::hnProjectConfig(QWidget *parent)
+	: QDialog(parent), m_xrSetting(HnXRSettings::getInstance())
 {
-	m_xrSetting = HnXRSettings::getInstance();
 	
 	ui.setupUi(this);
+	ui.okButton->setText(QStringLiteral("保存设置"));
+    setStyleSheet(hnProgressStyle::taskDialogStyleSheet());
+    new hnWindowUiState(this, QStringLiteral("SoftwareSettings"));
 	this->setWindowTitle(QString::fromLocal8Bit("软件设置"));
 
-	connect(ui.horizontalScrollBar, &QScrollBar::valueChanged, [=](int value)
-	{
-		ui.label_9->setText(QStringLiteral("图片退回阈值:%1").arg(QString::number(value)));
-	});
+	ui.autoPlayIntervalSpinBox->setRange(HnXRSettings::MinAutoPlayIntervalMs,
+		HnXRSettings::MaxAutoPlayIntervalMs);
+	ui.autoPlaySpeedSlider->setRange(HnXRSettings::MinAutoPlayIntervalMs,
+		HnXRSettings::MaxAutoPlayIntervalMs);
+	// 滑条与间隔框共用毫秒值，反向显示使向右拖动表示加快。
+	connect(ui.autoPlaySpeedSlider, &QSlider::valueChanged,
+		ui.autoPlayIntervalSpinBox, &QSpinBox::setValue);
+	connect(ui.autoPlayIntervalSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+		ui.autoPlaySpeedSlider, &QSlider::setValue);
 }
 
 hnProjectConfig::~hnProjectConfig()
@@ -25,7 +35,14 @@ void hnProjectConfig::on_cancelButton_clicked()
 }
 
 void hnProjectConfig::on_okButton_clicked()
-{	
+{
+	if (!m_xrSetting->saveAutoPlayIntervalMs(ui.autoPlayIntervalSpinBox->value()))
+	{
+		QMessageBox::warning(this, QStringLiteral("保存失败"),
+			QStringLiteral("自动播放速度未保存，请检查用户目录中 Playback.ini 的写入权限和磁盘空间。"));
+		return;
+	}
+	emit signal_autoPlayIntervalChanged(m_xrSetting->autoPlayIntervalMs());
 	//视图设置
 	this->widgetSetting();
 
@@ -36,11 +53,13 @@ void hnProjectConfig::on_okButton_clicked()
 	//提示用户设置成功
 	QMessageBox::information(nullptr, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("设置成功")
 		,QString::fromLocal8Bit("确定"));
+	accept();
 }
 
 void hnProjectConfig::initWidgetSetting()
 {
-	ui.horizontalScrollBar->setValue(m_xrSetting->movePictureBackMouseRatio);
+	ui.autoPlayIntervalSpinBox->setValue(m_xrSetting->autoPlayIntervalMs());
+	ui.autoPlaySpeedSlider->setValue(m_xrSetting->autoPlayIntervalMs());
 	ui.wheelScrollOneImageCheckBox->setChecked(m_xrSetting->wheelScrollOneImage);
 	if (!hnDataManager::getDataManager()->isOpenProject())
 	{
@@ -101,13 +120,13 @@ void hnProjectConfig::widgetSetting()
 
 void hnProjectConfig::dataProcessSetting()
 {
+
 	configService config;
 	QString configName = QApplication::applicationDirPath() + "/config/XRSetting.ini";
 	config.loadCfg(configName);
 	config.setValue("PROJECT", "IS_DEAP_CALCULATE", QString::number(ui.isDepthCaculateCheckBox->isChecked()));
 	emit signal_isDepthCaculate(ui.isDepthCaculateCheckBox->isChecked());
 
-	m_xrSetting->movePictureBackMouseRatio = ui.horizontalScrollBar->value();
 	m_xrSetting->wheelScrollOneImage = ui.wheelScrollOneImageCheckBox->isChecked();
 	emit signal_wheelScrollOneImageChanged(m_xrSetting->wheelScrollOneImage);
 	

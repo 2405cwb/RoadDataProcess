@@ -76,6 +76,8 @@ public:
 	static void ouSmallRectlRuralRoadlowLevelRoad(const QString& saveExcelDir, const QString&selectModelTxt, int  key, double xlslen, hnPro::hnProject*curProject, double sMile = 0, double eMile = 0);
 
 private:
+	static bool exportCPMSStreet(const QString& directory, int category, hnPro::hnProject* project);
+	static bool exportRural5211(const QString& directory, int kind, double interval, hnPro::hnProject* project);
 	//初始化分段区间
 	static	bool initSegmentInterval(hnPro::hnProject * project,
 		const double lenth, const MyQtCommon::MyEquipment& equip, double sMile = 0, double eMile = 0);

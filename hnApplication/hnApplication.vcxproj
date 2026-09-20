@@ -67,7 +67,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../SDK/include;../SDK/include/tools;../SDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;../hdPointCloud;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../TunnelViewerSDK/include;../TunnelViewerSDK/include/tools;../TunnelViewerSDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level1</WarningLevel>
       <FunctionLevelLinking>
       </FunctionLevelLinking>
@@ -88,11 +88,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../SDK/include;../SDK/include/tools;../SDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;$(QTDIR)\include\QtSql;..\3rd;..\hd3DScene;..\hd3DEngine;..\hd3DEngine\include;../hnContinuousBrowsePix;../hnQtCommon;../3rd/SQLite/include;.\;../hnProject;../3rd/opencv3.2.0/include;..\hnContinuousBrowsePix\x64\$(ConfigurationName)\uic;../TunnelViewerSDK/include;../TunnelViewerSDK/include/tools;../TunnelViewerSDK/src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>Qt5Cored.lib;Qt5Widgetsd.lib;Qt5Guid.lib;Qt5Sqld.lib;hnDataTable.lib;qtmaind.lib;hnCommon.lib;hd3DScene.lib;hdFramework.lib;hdCommon.lib;hdCore.lib;hd3DEngine.lib;hnProject.lib;hnConfigService.lib;hnContinuousBrowsePix.lib;hnQtCommon.lib;opencv_world320d.lib;hdPointCloud.lib;hnPointCloud.lib;HighAccConvertPlane.lib;TunnelViewerSDK.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);../SDK/debug;../3rd/opencv3.2.0/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(QTDIR)\lib;$(OutDir);../3rd/opencv3.2.0/lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -203,7 +203,7 @@
     <QtUic Include="ShowCtrlPointInfoDlg.ui" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\SDK\TunnelViewerSDK.vcxproj">
+    <ProjectReference Include="..\TunnelViewerSDK\TunnelViewerSDK.vcxproj">
       <Project>{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}</Project>
     </ProjectReference>
   </ItemGroup>

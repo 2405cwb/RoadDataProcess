@@ -338,6 +338,7 @@ private:
 	double LeftMtdValue;
 	double RightMtdValue;
 	double CenterMtdValue;
+	bool m_hasMtdValue;
 
 //	QString MtdValueStr;
 
@@ -349,6 +350,7 @@ private:
 	double LeftMpdValue;
 	double RightMpdValue;
 	double CenterMpdValue;
+	bool m_hasMpdValue;
 	
 	QString MpdValueStr;
 	QString MpdEvaluateStr;

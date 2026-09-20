@@ -12,12 +12,242 @@
 #include "..\HighAccConvertPlane\HighAccuracyPositioning.h"
 #include "..\hnApplication\hnDiseaseService.h"
 #include "hnReportProjectInfo.h"
+#include <algorithm>
+#include "hnCpmsReportWriter.h"
+#include "hnRural5211ReportWriter.h"
+#include "hnReportDiseaseSeverity.h"
 
 namespace
 {
 	double reportRoadWidth(hnPro::hnProject* project)
 	{
 		return hnReportProjectInfo::roadWidth(project);
+	}
+
+	QString roadSurfaceName(int surfaceType)
+	{
+		switch (surfaceType)
+		{
+		case hnCommon::ROAD_SURFACE_TYPE::ROAD_LQ_SURFACE:
+			return QStringLiteral("沥青");
+		case hnCommon::ROAD_SURFACE_TYPE::ROAD_SN_SURFACE:
+			return QStringLiteral("水泥");
+		default:
+			return QStringLiteral("砂石");
+		}
+	}
+
+	QString roadAttributeValueFromMark(const hnCommon::hnMarkInfo& mark, int markType)
+	{
+		if (mark.nType != markType)
+		{
+			return QString();
+		}
+
+		const QString markText = QString::fromLocal8Bit(mark.strMark).trimmed();
+		if (markType != hnCommon::ROAD_MARK_TYPE::ROAD_SURFACE)
+		{
+			return markText;
+		}
+
+		if (markText.contains(QStringLiteral("沥青")))
+		{
+			return roadSurfaceName(hnCommon::ROAD_SURFACE_TYPE::ROAD_LQ_SURFACE);
+		}
+		if (markText.contains(QStringLiteral("水泥")))
+		{
+			return roadSurfaceName(hnCommon::ROAD_SURFACE_TYPE::ROAD_SN_SURFACE);
+		}
+		if (markText.contains(QStringLiteral("砂石")))
+		{
+			return roadSurfaceName(hnCommon::ROAD_SURFACE_TYPE::ROAD_SS_SURFACE);
+		}
+		return QString();
+	}
+
+	QString roadAttributeDescriptionInExportRange(
+		hnPro::hnProject* project,
+		double startTrueMile,
+		double endTrueMile,
+		int markType,
+		const QString& defaultValue)
+	{
+		if (!project)
+		{
+			return QString();
+		}
+
+		QVector<hnCommon::hnMarkInfo> attributeMarks;
+		const QVector<hnCommon::hnMarkInfo> databaseMarks = project->getCurrentMarkVector();
+		for (const hnCommon::hnMarkInfo& mark : databaseMarks)
+		{
+			if (!roadAttributeValueFromMark(mark, markType).isEmpty())
+			{
+				attributeMarks.push_back(mark);
+			}
+		}
+
+		// 无对应属性打标时，整个导出区间均使用工程默认值。
+		if (attributeMarks.isEmpty())
+		{
+			return defaultValue;
+		}
+
+		std::sort(attributeMarks.begin(), attributeMarks.end(),
+			[project](const hnCommon::hnMarkInfo& left, const hnCommon::hnMarkInfo& right)
+			{
+				const double leftDmi = project->trueMileToEncl(left.dTrueMile);
+				const double rightDmi = project->trueMileToEncl(right.dTrueMile);
+				if (qAbs(leftDmi - rightDmi) > 0.001)
+				{
+					return leftDmi < rightDmi;
+				}
+				return left.nID < right.nID;
+			});
+
+		const double startDmi = project->trueMileToEncl(startTrueMile);
+		const double endDmi = project->trueMileToEncl(endTrueMile);
+		const double rangeBegin = qMin(startDmi, endDmi);
+		const double rangeEnd = qMax(startDmi, endDmi);
+		if (qFuzzyCompare(rangeBegin + 1.0, rangeEnd + 1.0))
+		{
+			return defaultValue;
+		}
+
+		QString currentValue = defaultValue;
+		double segmentBegin = rangeBegin;
+		QStringList descriptions;
+		for (const hnCommon::hnMarkInfo& mark : attributeMarks)
+		{
+			const QString markedValue = roadAttributeValueFromMark(mark, markType);
+			if (markedValue.isEmpty())
+			{
+				continue;
+			}
+
+			const double markDmi = project->trueMileToEncl(mark.dTrueMile);
+			if (markDmi <= rangeBegin)
+			{
+				currentValue = markedValue;
+				continue;
+			}
+			if (markDmi >= rangeEnd)
+			{
+				break;
+			}
+			if (markedValue == currentValue)
+			{
+				continue;
+			}
+
+			descriptions.push_back(
+				QStringLiteral("%1-%2Km%3")
+				.arg(qRound(project->enclToTrueMile(segmentBegin)))
+				.arg(qRound(project->enclToTrueMile(markDmi)))
+				.arg(currentValue));
+			segmentBegin = markDmi;
+			currentValue = markedValue;
+		}
+
+		descriptions.push_back(
+			QStringLiteral("%1-%2Km%3")
+			.arg(qRound(project->enclToTrueMile(segmentBegin)))
+			.arg(qRound(project->enclToTrueMile(rangeEnd)))
+			.arg(currentValue));
+		return descriptions.join(QStringLiteral("\n"));
+	}
+
+	QString roadSurfaceDescriptionInExportRange(
+		hnPro::hnProject* project,
+		double startTrueMile,
+		double endTrueMile)
+	{
+		const int defaultSurfaceType = project ? project->getCurProSetInfo().nRSurfaceType : 0;
+		return roadAttributeDescriptionInExportRange(
+			project,
+			startTrueMile,
+			endTrueMile,
+			hnCommon::ROAD_MARK_TYPE::ROAD_SURFACE,
+			roadSurfaceName(defaultSurfaceType));
+	}
+
+	QString roadLevelDescriptionInExportRange(
+		hnPro::hnProject* project,
+		double startTrueMile,
+		double endTrueMile)
+	{
+		const QString defaultRoadLevel = project
+			? QString::fromLocal8Bit(project->getCurProSetInfo().strRoadLevel).trimmed()
+			: QString();
+		return roadAttributeDescriptionInExportRange(
+			project,
+			startTrueMile,
+			endTrueMile,
+			hnCommon::ROAD_MARK_TYPE::ROAD_GRAD,
+			defaultRoadLevel);
+	}
+
+	QVector<hnCommon::hnRoadDiseaseInfo> roadDiseasesInExportRange(
+		hnPro::hnProject* project,
+		double startTrueMile,
+		double endTrueMile)
+	{
+		QVector<hnCommon::hnRoadDiseaseInfo> result;
+		if (!project)
+		{
+			return result;
+		}
+
+		const double startDmi = project->trueMileToEncl(startTrueMile);
+		const double endDmi = project->trueMileToEncl(endTrueMile);
+		const double rangeBegin = qMin(startDmi, endDmi);
+		const double rangeEnd = qMax(startDmi, endDmi);
+		const QVector<hnCommon::hnRoadDiseaseInfo> allDiseases =
+			hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+
+		// 病害可能跨越自定义区间边界，按病害实际起止DMI判断相交关系。
+		for (const hnCommon::hnRoadDiseaseInfo& disease : allDiseases)
+		{
+			double diseaseBegin = disease.dDmiStart;
+			double diseaseEnd = disease.dDmiEnd;
+			if (diseaseBegin <= 0.0 && diseaseEnd <= 0.0)
+			{
+				diseaseBegin = disease.dMileage;
+				diseaseEnd = disease.dMileage;
+			}
+			if (diseaseBegin > diseaseEnd)
+			{
+				qSwap(diseaseBegin, diseaseEnd);
+			}
+
+			if (diseaseEnd >= rangeBegin && diseaseBegin <= rangeEnd)
+			{
+				result.push_back(disease);
+			}
+		}
+
+		hnReportDiseaseSeverity severity;
+		severity.apply(result, project);
+		return result;
+	}
+
+	void writeDiseaseStatisticsAreaRows(
+		Document& xlsx,
+		const QVector<double>& areas)
+	{
+		int rowCount = 4;
+		const Format areaFormat = xlsx.cellAt("C4")->format();
+		const Format ratioFormat = xlsx.cellAt("D4")->format();
+		for (double area : areas)
+		{
+			xlsx.write(rowCount, 3, area, areaFormat);
+			xlsx.write(
+				rowCount,
+				4,
+				QStringLiteral("=C%1/($B$2*$F$2)").arg(rowCount),
+				ratioFormat);
+			++rowCount;
+		}
 	}
 
 	double distanceFromRightEdge(hnPro::hnProject* project, double centerPixel)
@@ -77,6 +307,10 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 		}
 		QString segment = reportItem->segments[reportItem->selectSegmentIndex];
 		QStringList segmentList = segment.split(',');
+		if (standard == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1)
+		{
+			segmentList = QStringList(QString::number(m_xrSetting->PartType_Dmi_Len > 0 ? m_xrSetting->PartType_Dmi_Len : 200));
+		}
 
 		for each (QString  splitValueStr in segmentList)
 		{
@@ -84,6 +318,51 @@ void hnOutExcelManage::OutExcelManager(const QString& excelDir,
 			const QString taskText = QStringLiteral("正在生成：%1（%2 米分段）")
 				.arg(reportItem->displayName, splitValueStr.trimmed());
 			updateExportProgress(process, progressValue, taskText);
+
+            if (reportItem->displayName.startsWith(QStringLiteral("CPMS")))
+            {
+                const bool road = reportItem->displayName.contains(QStringLiteral("路面"));
+                MyQtCommon::MyEquipment equipment;
+                equipment.ROAD = road;
+                equipment.STREET = !road;
+                if (initSegmentInterval(curProject, road ? splitValue : 100.0, equipment, sMile, eMile))
+                {
+                    if (road) exportCPMS_LMBHDCB(excelDir, QString(), splitValue, curProject);
+                    else exportCPMSStreet(excelDir, reportItem->displayName.contains(QStringLiteral("路基")) ? 2 : 1, curProject);
+                }
+                ++progressValue;
+                updateExportProgress(process, progressValue, taskText);
+                continue;
+            }
+            if (standard == HnProjectEnums::RuralRoadlowLevel
+                && DrawType == hnCommon::ROAD_WORK_LARGE_RECT
+                && reportItem->displayName.startsWith(QStringLiteral("（5211）")))
+            {
+                const QString reportName = reportItem->displayName;
+                const int kind = reportName.contains(QStringLiteral("路面破损评定汇总"))
+                    ? hnRural5211ReportWriter::PciSummary
+                    : reportName.contains(QStringLiteral("路面平整度评定汇总"))
+                    ? hnRural5211ReportWriter::RqiSummary
+                    : reportName.contains(QStringLiteral("路面病害面积统计"))
+                    ? hnRural5211ReportWriter::DiseaseSurvey
+                    : reportName.contains(QStringLiteral("技术状况评定汇总"))
+                    ? hnRural5211ReportWriter::MqiSummary
+                    : hnRural5211ReportWriter::Detail;
+                MyQtCommon::MyEquipment equipment;
+				equipment.ROAD = true;
+                equipment.IRI = kind != hnRural5211ReportWriter::PciSummary
+                    && kind != hnRural5211ReportWriter::DiseaseSurvey;
+                equipment.STREET = kind == hnRural5211ReportWriter::MqiSummary
+                    || kind == hnRural5211ReportWriter::Detail;
+                const double interval = kind == hnRural5211ReportWriter::PciSummary
+                    || kind == hnRural5211ReportWriter::RqiSummary
+                    || kind == hnRural5211ReportWriter::MqiSummary ? 1000.0 : splitValue;
+                if (initSegmentInterval(curProject, interval, equipment, sMile, eMile))
+                    exportRural5211(excelDir, kind, interval, curProject);
+                ++progressValue;
+                updateExportProgress(process, progressValue, taskText);
+                continue;
+            }
 
 			switch (standard)
 			{
@@ -1651,9 +1930,14 @@ bool hnOutExcelManage::exportProjectInfoSheet(Document &xlsx, hnPro::hnProject*c
 	QString direction = projectInfo.nLineType == 1 ? QString::fromLocal8Bit("上行") : QString::fromLocal8Bit("下行");
 	contextFormat = xlsx.cellAt("B8")->format();
 	xlsx.write(QString("B8"), direction, contextFormat);
-	//公路等级
-	QString roadLevel = QString::fromLocal8Bit(projectInfo.strRoadLevel);
+	// 公路等级：以成果库等级打标为准，无打标时使用工程默认等级。
+	QString roadLevel = roadLevelDescriptionInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	contextFormat = xlsx.cellAt("B9")->format();
+	contextFormat.setTextWrap(true);
+	xlsx.setRowHeight(9, 30 * qMax(1, roadLevel.count(QLatin1Char('\n')) + 1));
 	xlsx.write(QString("B9"), roadLevel, contextFormat);
 	//车道
 	QString lane = QString::fromLocal8Bit(projectInfo.strRoadNO);
@@ -1674,15 +1958,12 @@ bool hnOutExcelManage::exportProjectInfoSheet(Document &xlsx, hnPro::hnProject*c
 	QString wheather = QString::fromLocal8Bit(projectInfo.strWeather);
 	contextFormat = xlsx.cellAt("B14")->format();
 	xlsx.write(QString("B14"), wheather, contextFormat);
-	//路面材质 
-	QString marksPath = curProject->get2DProject()->getFullRoadTypeMarkFilePath();
-	QStringList marks = MyCommonMethods::ReadAllLines(marksPath, "utf-8");
-	QString roadType;
-	for (int i = 0; i < marks.size(); ++i)
-	{
-		roadType += marks[i] + "\n";
-	}
-	//xlsx.setRowHeight(15, 30 * marks.size());
+	// 路面材质：以成果库材质打标为准，无打标时使用工程默认材质。
+	QString roadType = roadSurfaceDescriptionInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
+	xlsx.setRowHeight(15, 30 * qMax(1, roadType.count(QLatin1Char('\n')) + 1));
 
 	contextFormat = xlsx.cellAt("B15")->format();
 	contextFormat.setTextWrap(true);
@@ -2057,7 +2338,10 @@ bool hnOutExcelManage::exportLMZHexcel_GZQT(const QString& saveExcelDir, const Q
 		QVector<hnMile> curMiles = curProject->getCurrentMileVector();
 		QVector<hnCommon::hnRoadDiseaseInfo> diss;
 	//	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
-		diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+		diss = roadDiseasesInExportRange(
+			curProject,
+			m_outExcelMileManage->getStartMile(),
+			m_outExcelMileManage->getEndMile());
 		int	formatRowIndex = 3;
 		for (int i = 0; i < diss.size(); ++i)
 		{
@@ -2999,7 +3283,10 @@ bool hnOutExcelManage::exportLMBHMJTJB_RECT(const QString& saveExcelDir, const Q
 	//	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->trueMileToEncl(m_outExcelMileManage->getStartMile()), curProject->trueMileToEncl(m_outExcelMileManage->getEndMile()), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 	////	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 	//}
-	diss =hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 
 	QVector<hnCommon::hnRoadDiseaseInfo> rutDiss = m_outExcelMileManage->getRutDis();
 	if (rutDiss.size() > 0)
@@ -3066,7 +3353,10 @@ bool hnOutExcelManage::export3DLMBHMJTJB_RECT(const QString& saveExcelDir, const
 		curProject->getDB()->getDiseaseTable()->read3dRoadDiseaseData(HnProjectEnums::roadTypeEnumToQString(curProject->getBaseStandard()), sMile, eMile, dissVec);
 		 
 	}*/
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	//QVector<hnCommon::hnRoadDiseaseInfo> diss = QVector<hnCommon::hnRoadDiseaseInfo>::fromStdVector(dissVec);
 	
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
@@ -3112,7 +3402,10 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart(const QString& saveExcelDir, const 
 	auto curMiles = curProject->getCurrentMileVector();
 	//curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
 
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
 
 	std::vector<QString> surfaceTyes = hnApp::hnDataManager::getDataManager()->getRoadSurfaceType();
@@ -3144,7 +3437,7 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 	{
 		streetSpace = -16;
 	}
-	else if (streetSpace = 20)
+	else if (streetSpace == 20)
 	{
 		streetSpace = 10;
 	}
@@ -3164,7 +3457,8 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 			colCount = 1;
 			auto dis = diss.at(i);
 			int  startTrueMile = qRound(curProject->enclToTrueMile(dis.dMileage));
-			if (m_xrSetting->outExcelFormatDmi)
+			if (m_xrSetting->outExcelFormatDmi
+				&& !(curProject->getBaseStandard() == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1))
 			{
 				startTrueMile = getCloseMile(dis.dMileage, curProject);
 			}
@@ -3439,6 +3733,11 @@ void hnOutExcelManage::exportDiseaseAreaSheet(Document& xlsx, const QVector<hnCo
 			xlsx.reverseRowsFrom(1, colCount, 3);
 		}
 	}
+    if (m_xrSetting->roadDisDegreeExcel == 1 && xlsx.selectSheet(QStringLiteral("病害列表")))
+    {
+        xlsx.setColumnHidden(4, true);
+    }
+
 }
 
 bool hnOutExcelManage::exportGPSExcel(const QString& saveExcelDir, const QString& modelBasePath, double xlslen, hnPro::hnProject*curProject)
@@ -3519,14 +3818,17 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 	//获取病害
 	QVector<hnCommon::hnRoadDiseaseInfo> diss;
 //	curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diss, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	int formatRowIndex = 3;
 	double streetSpace = curProject->get2DProject()->_StreetImgDis;
 	if (streetSpace == 10)
 	{
 		streetSpace = -16;
 	}
-	else if (streetSpace = 20)
+	else if (streetSpace == 20)
 	{
 		streetSpace = 10;
 	}
@@ -3542,7 +3844,8 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 
 			auto dis = diss.at(i);
 			int  startTrueMile = qRound(curProject->enclToTrueMile(dis.dMileage));
-			if (m_xrSetting->outExcelFormatDmi)
+			if (m_xrSetting->outExcelFormatDmi
+				&& !(curProject->getBaseStandard() == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1))
 			{
 				startTrueMile = getCloseMile(dis.dMileage, curProject);
 			}
@@ -3566,7 +3869,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 				else
 				{
 					xlsx.writeAndFormat(rowCount, colCount++, disSplit.at(0), formatRowIndex);
-					xlsx.writeAndFormat(rowCount, colCount++, QStringLiteral("无"), formatRowIndex);
+					xlsx.writeAndFormat(rowCount, colCount++, disSplit.at(1), formatRowIndex);
 				}
 
 			}
@@ -3710,6 +4013,7 @@ bool hnOutExcelManage::exportLMBHMJTJB_Smart_GZQT(const QString& saveExcelDir, c
 			xlsx.reverseRowsFrom(1, 15, 3);
 		}
 	}
+	    if (m_xrSetting->roadDisDegreeExcel == 1 && xlsx.selectSheet(QStringLiteral("病害列表"))) xlsx.setColumnHidden(5, true);
 	//沥青病害统计表
 	writeAsphaltDiseasesStatisticsSheet_Smart_QTDZ(xlsx, diss, curProject);
 
@@ -3756,7 +4060,10 @@ bool hnOutExcelManage::export3DLMBHMJTJB_Smart(const QString& saveExcelDir, cons
 	//获取病害 
 	QVector<hnCommon::hnRoadDiseaseInfo> diss;
 	//curProject->getDB()->getDiseaseTable()->read3dRoadDiseaseData(HnProjectEnums::roadTypeEnumToQString(curProject->getBaseStandard()), sMile, eMile, dissVec);
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diss = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	 
 	exportDiseaseAreaSheet(xlsx, diss,curProject);
 
@@ -3899,55 +4206,103 @@ bool hnOutExcelManage::exportLMTCPJDJJLB_GZQT(const QString& saveExcelDir, const
 	return true;
 }
 
-bool hnOutExcelManage::exportCPMS_LMBHDCB(const QString& saveExcelDir, const QString & modelBasePath, double xlslen, hnPro::hnProject*curProject)
+bool hnOutExcelManage::exportCPMS_LMBHDCB(const QString& saveExcelDir, const QString& modelBasePath, double xlslen, hnPro::hnProject* curProject)
 {
-	QString tableName = QString::fromLocal8Bit("CPMS路面病害调查表.xlsx");
-	QString xlsxTemplatePath = QApplication::applicationDirPath() + modelBasePath + tableName;
-	tableName = addMetersToTable(xlslen, tableName);
-	tableName = m_outExcelMileManage->getProject()->get2DProName() + "_" + tableName;
-	QFile file(xlsxTemplatePath);
-	if (!file.exists())
-	{
-		return false;
-	}
-
-	//加载表格模板
-	Document xlsx(xlsxTemplatePath);
-	auto projectInfo = curProject->getCurProSetInfo();
-	///获取内容的样式
-	hnXlsxInterface xlsxInterface;
-	//Format contextFormat = xlsxInterface.getContentFormat();
-	QXlsx::Format format;
-	//下面这些从第n行开始
-	int rowCount = 3;
-	//获得每一行的数据
-	QVector<hnOutExcelMile> excelMiles = m_outExcelMileManage->getRoadMessageVec();
-
-	if (!curProject)
-	{
-		return false;
-	}
-
-	/*if (WritePrj2CPMSXls(xlsx, QStringLiteral("沥青路面损坏调查表")))
-	{
-	xlsx.copyRange("A1:Q22", "A25");
-	}*/
-	if (WritePrj2CPMSXls(xlsx, QStringLiteral("水泥路面损坏调查表"), curProject))
-	{
-		xlsx.copyRange("A1:R30", "A33");
-	}
-
-
-	//保存表格
-	if (!saveExcel(saveExcelDir, tableName, xlsx))
-	{
-		return false;
-	}
-
-	return true;
+    Q_UNUSED(modelBasePath);
+    if (!curProject || !m_outExcelMileManage || !m_outExcelMileManage->getDataComplete()) return false;
+    const QString source = curProject->getCurProSetInfo().nDrawType == 1
+        ? QStringLiteral(":/reports/cpms-road-small.xlsx") : QStringLiteral(":/reports/cpms-road.xlsx");
+    Document xlsx(source);
+    hnCpmsReportWriter writer;
+    QString error;
+    if (!writer.write(xlsx, curProject, m_outExcelMileManage->getRoadMessageVec(), xlslen, 0,
+        m_xrSetting->outExcelNeedSort, error))
+    {
+        m_outExcelMileManage->reportExcelError(error);
+        return false;
+    }
+    const QString name = curProject->get2DProName() + QStringLiteral("_")
+        + addMetersToTable(xlslen, QStringLiteral("CPMS路面病害调查表.xlsx"));
+    if (!saveExcel(saveExcelDir, name, xlsx))
+    {
+        m_outExcelMileManage->reportExcelError(QStringLiteral("CPMS 路面调查表保存失败：%1").arg(name));
+        return false;
+    }
+    return true;
 }
 
+bool hnOutExcelManage::exportCPMSStreet(const QString& directory, int category, hnPro::hnProject* project)
+{
+    if (!project || !m_outExcelMileManage || !m_outExcelMileManage->getDataComplete()) return false;
+    const bool rural = project->getBaseStandard() == HnProjectEnums::RuralRoadlowLevel;
+    Document xlsx(category == 1
+        ? (rural ? QStringLiteral(":/reports/cpms-rural-facilities.xlsx") : QStringLiteral(":/reports/cpms-facilities.xlsx"))
+        : (rural ? QStringLiteral(":/reports/cpms-rural-roadbed.xlsx") : QStringLiteral(":/reports/cpms-roadbed.xlsx")));
+    hnCpmsReportWriter writer;
+    QString error;
+    if (!writer.write(xlsx, project, m_outExcelMileManage->getRoadMessageVec(), 100.0, category,
+        m_xrSetting->outExcelNeedSort, error))
+    {
+        m_outExcelMileManage->reportExcelError(error);
+        return false;
+    }
+    const QString name = project->get2DProName() + (category == 1
+        ? QStringLiteral("_CPMS沿线设施损坏.xlsx") : QStringLiteral("_CPMS路基损坏.xlsx"));
+    if (!saveExcel(directory, name, xlsx))
+    {
+        m_outExcelMileManage->reportExcelError(QStringLiteral("CPMS 景观调查表保存失败：%1").arg(name));
+        return false;
+    }
+    return true;
+}
 
+bool hnOutExcelManage::exportRural5211(const QString& directory, int kind, double interval, hnPro::hnProject* project)
+{
+    if (!project || !m_outExcelMileManage || !m_outExcelMileManage->getDataComplete()) return false;
+    QString resource;
+    QString name;
+    switch (kind)
+    {
+    case hnRural5211ReportWriter::PciSummary:
+        resource = QStringLiteral(":/reports/rural-5211-pci.xlsx");
+        name = QStringLiteral("路面破损评定汇总表.xlsx");
+        break;
+    case hnRural5211ReportWriter::RqiSummary:
+        resource = QStringLiteral(":/reports/rural-5211-rqi.xlsx");
+        name = QStringLiteral("路面平整度评定汇总表.xlsx");
+        break;
+    case hnRural5211ReportWriter::DiseaseSurvey:
+        resource = QStringLiteral(":/reports/rural-5211-disease.xlsx");
+        name = addMetersToTable(interval, QStringLiteral("路面病害面积统计表.xlsx"));
+        break;
+    case hnRural5211ReportWriter::MqiSummary:
+        resource = QStringLiteral(":/reports/rural-5211-mqi.xlsx");
+        name = QStringLiteral("技术状况评定汇总表.xlsx");
+        break;
+    case hnRural5211ReportWriter::Detail:
+        resource = QStringLiteral(":/reports/rural-5211-detail.xlsx");
+        name = addMetersToTable(interval, QStringLiteral("技术状况评定明细表.xlsx"));
+        break;
+    default:
+        return false;
+    }
+    Document xlsx(resource);
+    hnRural5211ReportWriter writer;
+    QString error;
+    if (!writer.write(xlsx, project, m_outExcelMileManage->getRoadMessageVec(),
+        static_cast<hnRural5211ReportWriter::Kind>(kind), m_xrSetting->outExcelNeedSort, error))
+    {
+        m_outExcelMileManage->reportExcelError(error);
+        return false;
+    }
+    name = project->get2DProName() + QStringLiteral("_5211_") + name;
+    if (!saveExcel(directory, name, xlsx))
+    {
+        m_outExcelMileManage->reportExcelError(QStringLiteral("5211 报表保存失败：%1").arg(name));
+        return false;
+    }
+    return true;
+}
 
 bool hnOutExcelManage::exportLMGZSDPJDJJLB(const QString& saveExcelDir, const QString& modelBasePath, double xlslen, hnPro::hnProject*curProject)
 {
@@ -4918,9 +5273,14 @@ bool hnOutExcelManage::exportProjectInfoSheet_GZQT(Document &xlsx, hnPro::hnProj
 	QString direction = projectInfo.nLineType == 1 ? QString::fromLocal8Bit("上行") : QString::fromLocal8Bit("下行");
 	contextFormat = xlsx.cellAt("B8")->format();
 	xlsx.write(QString("B8"), direction, contextFormat);
-	//公路等级
-	QString roadLevel = QString::fromLocal8Bit(projectInfo.strRoadLevel);
+	// 公路等级：贵州乾通报表与通用报表使用相同的数据库打标和区间规则。
+	QString roadLevel = roadLevelDescriptionInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	contextFormat = xlsx.cellAt("B9")->format();
+	contextFormat.setTextWrap(true);
+	xlsx.setRowHeight(9, 30 * qMax(1, roadLevel.count(QLatin1Char('\n')) + 1));
 	xlsx.write(QString("B9"), roadLevel, contextFormat);
 	//车道
 	QString lane = QString::fromLocal8Bit(projectInfo.strRoadNO);
@@ -4941,9 +5301,14 @@ bool hnOutExcelManage::exportProjectInfoSheet_GZQT(Document &xlsx, hnPro::hnProj
 	QString wheather = QString::fromLocal8Bit(projectInfo.strWeather);
 	contextFormat = xlsx.cellAt("B14")->format();
 	xlsx.write(QString("B14"), wheather, contextFormat);
-	//路面材质
-	QString roadType = QString::fromLocal8Bit(projectInfo.getRSurfaceType().data());
+	// 路面材质：贵州乾通报表与通用报表使用相同的数据库打标和区间规则。
+	QString roadType = roadSurfaceDescriptionInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	contextFormat = xlsx.cellAt("B15")->format();
+	contextFormat.setTextWrap(true);
+	xlsx.setRowHeight(15, 30 * qMax(1, roadType.count(QLatin1Char('\n')) + 1));
 	xlsx.write(QString("B15"), roadType, contextFormat);
 	//终点桩号
 
@@ -5046,20 +5411,13 @@ bool hnOutExcelManage::writeDiseasesStatisticsSheet(Document &xlsx, int roadType
 	double roadWidth = reportRoadWidth(curProject);
 
 	//路段长度
-	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);
+	double roadLenth = qAbs(m_outExcelMileManage->getStartMile() - m_outExcelMileManage->getEndMile());
 
 	xlsx.write("B2", roadWidth);
 	xlsx.write("F2", roadLenth);
 
-	//遍历面积，写入表格
-	int rowCount = 4;
-	const int columnCount = 3;
-	auto format = xlsx.cellAt("C4")->format();
-	for (auto area : qAsConst(areas))
-	{
-		xlsx.write(rowCount, columnCount, area, format);
-		rowCount++;
-	}
+	// 面积与占比必须使用同一导出区间，占比保留Excel公式。
+	writeDiseaseStatisticsAreaRows(xlsx, areas);
 
 	return true;
 }
@@ -5105,7 +5463,7 @@ bool hnOutExcelManage::writeDiseasesSumSheet(Document &xlsx, int roadType, QVect
 		//车道
 		auto projectInfo = curProject->getCurProSetInfo();
 		QString RoadNum = QString::fromLocal8Bit(projectInfo.strRoadNO);
-		xlsx.write(QString("C%1").arg(rowCount), RoadNum, format);
+		xlsx.write(QString("C%1").arg(rowCount), RoadNum, xlsx.cellAt("C5")->format());
 
 		//获取病害
 		auto diseases = excelMile.getRoadDisVec();
@@ -5175,20 +5533,13 @@ bool hnOutExcelManage::writeAsphaltDiseasesStatisticsSheet_Smart_QTDZ(Document &
 	double roadWidth = reportRoadWidth(curProject);
 
 	//路段长度
-	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);
+	double roadLenth = qAbs(m_outExcelMileManage->getStartMile() - m_outExcelMileManage->getEndMile());
 
 	xlsx.write("B2", roadWidth);
 	xlsx.write("F2", roadLenth);
 
-	//遍历面积，写入表格
-	int rowCount = 4;
-	const int columnCount = 3;
-	auto format = xlsx.cellAt("C4")->format();
-	for (auto area : qAsConst(areas))
-	{
-		xlsx.write(rowCount, columnCount, area, format);
-		rowCount++;
-	}
+	// 面积与占比必须使用同一导出区间，占比保留Excel公式。
+	writeDiseaseStatisticsAreaRows(xlsx, areas);
 
 	return true;
 }
@@ -5244,7 +5595,7 @@ bool hnOutExcelManage::writeAsphaltDiseasesSumSheet_Smart_QTDZ(Document &xlsx, Q
 		xlsx.write(QString("S%1").arg(rowCount), pci, pciFormat);
 		//评价等级
 		auto evaluateFormat = xlsx.cellAt("T4")->format();
-		xlsx.write(QString("T%1").arg(rowCount), excelMile.getPciEvaluateStr("S", rowCount), format);
+		xlsx.write(QString("T%1").arg(rowCount), excelMile.getPciEvaluateStr("S", rowCount), evaluateFormat);
 
 		rowCount++;
 
@@ -5270,7 +5621,10 @@ bool hnOutExcelManage::writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &x
 	//获取病害
 	QVector<hnCommon::hnRoadDiseaseInfo> diseases;
 	//curProject->getDB()->getDiseaseTable()->readRoadDiseaseData(curProject->getCurProSetInfo(), curProject->getCurrentMileVector(), diseases, curProject->getCurrentMarkVector(), curProject->getRoadSpace());
-	diseases = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
+	diseases = roadDiseasesInExportRange(
+		curProject,
+		m_outExcelMileManage->getStartMile(),
+		m_outExcelMileManage->getEndMile());
 	//获取面积
 	hnDiseaseSumAreaCaculate caculate;
 	QVector<double> areas = caculate.caculateSumArea(diseases, false, HnProjectEnums::StandardParmTypeEnum::DegreeRoad2018, 1, curProject);
@@ -5295,20 +5649,13 @@ bool hnOutExcelManage::writeCementDiseasesStatisticsSheet_Smart_QTDZ(Document &x
 	double roadWidth = reportRoadWidth(curProject);
 
 	//路段长度
-	double roadLenth = qAbs(curProject->getCurProSetInfo().dBegMile - curProject->getCurProSetInfo().dEndMile);
+	double roadLenth = qAbs(m_outExcelMileManage->getStartMile() - m_outExcelMileManage->getEndMile());
 
 	xlsx.write("B2", roadWidth);
 	xlsx.write("F2", roadLenth);
 
-	//遍历面积，写入表格
-	int rowCount = 4;
-	const int columnCount = 3;
-	auto format = xlsx.cellAt("C4")->format();
-	for (auto area : qAsConst(areas))
-	{
-		xlsx.write(rowCount, columnCount, area, format);
-		rowCount++;
-	}
+	// 水泥统计表与沥青统计表采用相同的区间和公式写入规则。
+	writeDiseaseStatisticsAreaRows(xlsx, areas);
 
 	return true;
 }
@@ -5364,7 +5711,7 @@ bool hnOutExcelManage::writeCementDiseasesSumSheet_Smart_QTDZ(Document &xlsx, QV
 		xlsx.write(QString("R%1").arg(rowCount), pci, pciFormat);
 		//评价等级
 		auto evaluateFormat = xlsx.cellAt("S4")->format();
-		xlsx.write(QString("S%1").arg(rowCount), excelMile.getPciEvaluateStr("R", rowCount), format);
+		xlsx.write(QString("S%1").arg(rowCount), excelMile.getPciEvaluateStr("R", rowCount), evaluateFormat);
 
 		rowCount++;
 	}
@@ -5418,12 +5765,12 @@ void hnOutExcelManage::outExcelStreetDegreeRoad2018(const QString& saveExcelDir,
 
 	case 1:		//CPMS沿线设施损坏
 	{
-		MyQtCommon::MyEquipment setEquip;
-		setEquip.STREET = true;
-		initSegmentInterval(curProject,xlslen, setEquip, sMile, eMile);
-		exportLMMHPJDJB(saveExcelDir,modeleBasePath, xlslen, curProject);
-	}
-	break;
+        MyQtCommon::MyEquipment equipment;
+        equipment.STREET = true;
+        if (initSegmentInterval(curProject, 100.0, equipment, sMile, eMile))
+            exportCPMSStreet(saveExcelDir, 1, curProject);
+    }
+    break;
 	case 2:		//路基损坏汇总表
 	{
 		MyQtCommon::MyEquipment setEquip;
@@ -5434,15 +5781,12 @@ void hnOutExcelManage::outExcelStreetDegreeRoad2018(const QString& saveExcelDir,
 	break;
 	case 3:		//CPMS路基损坏
 	{
-		MyQtCommon::MyEquipment setEquip;
-		if (m_xrSetting->outSpeedAndMarkExcel)
-		{
-			setEquip.SPEED = true;
-		} 
-		initSegmentInterval(curProject,xlslen, setEquip, sMile, eMile);
-		exportLMPSexcel(saveExcelDir,modeleBasePath, xlslen, curProject);
-	}
-	break;
+        MyQtCommon::MyEquipment equipment;
+        equipment.STREET = true;
+        if (initSegmentInterval(curProject, 100.0, equipment, sMile, eMile))
+            exportCPMSStreet(saveExcelDir, 2, curProject);
+    }
+    break;
 	default:
 		break;
 	}
@@ -5470,12 +5814,12 @@ void hnOutExcelManage::outExcelStreetRuralRoadlowLevelRoad(const QString& saveEx
 
 	case 1:		//CPMS沿线设施损坏
 	{
-		MyQtCommon::MyEquipment setEquip;
-		setEquip.STREET = true;
-		initSegmentInterval(curProject,xlslen, setEquip, sMile, eMile);
-		exportLMMHPJDJB(saveExcelDir, modeleBasePath, xlslen, curProject);
-	}
-	break;
+        MyQtCommon::MyEquipment equipment;
+        equipment.STREET = true;
+        if (initSegmentInterval(curProject, 100.0, equipment, sMile, eMile))
+            exportCPMSStreet(saveExcelDir, 1, curProject);
+    }
+    break;
 	case 2:		//路基损坏汇总表
 	{
 		MyQtCommon::MyEquipment setEquip;
@@ -5486,12 +5830,12 @@ void hnOutExcelManage::outExcelStreetRuralRoadlowLevelRoad(const QString& saveEx
 	break;
 	case 3:		//CPMS路基损坏
 	{
-		MyQtCommon::MyEquipment setEquip;
-		setEquip.STREET = true;
-		initSegmentInterval(curProject,xlslen, setEquip, sMile, eMile);
-		exportLMPSexcel(saveExcelDir, modeleBasePath, xlslen, curProject);
-	}
-	break;
+        MyQtCommon::MyEquipment equipment;
+        equipment.STREET = true;
+        if (initSegmentInterval(curProject, 100.0, equipment, sMile, eMile))
+            exportCPMSStreet(saveExcelDir, 2, curProject);
+    }
+    break;
 	default:
 		break;
 	}
@@ -5576,4 +5920,3 @@ HnXRSettings* hnOutExcelManage::m_xrSetting=HnXRSettings::getInstance();
 int hnOutExcelManage::progressDefault = 0 ;
  
 //QString hnOutExcelManage::saveExcelDir;
-

@@ -46,10 +46,6 @@
 
 			// 获取数据的结果
 			int nCount = dr.RowCount();
-			if (nCount<2)
-			{
-				return false;
-			}
 			int i = 0;
 
 			// 桥梁病害数据
@@ -120,7 +116,10 @@
 	{
 		for (int i = 0; i < vecData.size(); i++)
 		{
-			writeData(vecData[i]);
+			if (!writeData(vecData[i]))
+			{
+				return false;
+			}
 		}
 
 		return true;
@@ -223,24 +222,11 @@
 		return true;
 	}
 
-	bool hnMilePileTable::clearData()
-	{
-		// 判断数据库是否连接成功
-		if (!m_sqliteDB.IsOpen())
-		{
-			return 1;
-		}
-		char strQuery[SQL_QUERY_LEN];
-		memset(strQuery, 0, SQL_QUERY_LEN);
-
-		sprintf(strQuery, "delete from %s", MILEAGE_PILE_TABLE);
-
-		// 执行sql语句
-		executeDB(strQuery);
-
-		return true;
-
-	}
+    bool hnMilePileTable::clearData()
+    {
+        if (!m_sqliteDB.IsOpen()) return false;
+        return sqlite3_exec(m_sqliteDB.getDb(), "DELETE FROM MILEAGE_PILE;", nullptr, nullptr, nullptr) == SQLITE_OK;
+    }
 
 	// 获取最大id
 	int hnMilePileTable::getMaxID()

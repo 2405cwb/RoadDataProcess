@@ -19,6 +19,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QPushButton>
 #include "ui_projectView.h"
 #include "../hnCommon/hnRoadStruct.h"
 class projectView : public QWidget
@@ -73,9 +74,16 @@ void deleteMark();
 
 //校桩列表的删除操作
 void deletePipe();
+void editMark();
+void editPile();
+void updateEditButtons();
 
 //用户输入桩号 更新里程框
 void updateDmiTxt(const QString &text);
+
+void beginProjectEdit();
+void saveProjectEdit();
+void cancelProjectEdit();
 public:
 	//反序排序
 	 static bool compareDeScendingMark(const hnCommon::hnMarkInfo& a, const hnCommon::hnMarkInfo& b)
@@ -99,5 +107,12 @@ private:
 protected:
 	void resizeEvent(QResizeEvent *event) override;
 private:
+	void editSelectedRecord(bool pileMode);
 	Ui::projectView ui;
+	QPushButton* m_editMarkButton = nullptr;
+	QPushButton* m_editPileButton = nullptr;
+	QPushButton* m_editProjectButton = nullptr;
+	QPushButton* m_saveProjectButton = nullptr;
+	QPushButton* m_cancelProjectButton = nullptr;
+	hnCommon::hnProjectSetInfo m_loadedProjectSettings;
 };

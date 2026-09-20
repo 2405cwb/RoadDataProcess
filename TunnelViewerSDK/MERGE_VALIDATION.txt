@@ -1,0 +1,15 @@
+TunnelViewerSDK unified source validation
+Date: 2026-09-01
+
+PASS: previous three-SDK merge structure remains intact.
+PASS: key public interfaces are unchanged from the previous unified delivery.
+PASS: current ImagePack API 1.1.1 integration is present.
+PASS: official ImagePack Debug/Release DLL files match the user-provided package byte-for-byte.
+PASS: required DLL exports were verified from the PE export table.
+PASS: legacy external DiskStressDemo/PackSdk dependency is removed.
+PASS: loadPackRoute keeps its existing API and now accepts current .jph/.jpd Pack data.
+PASS: metadata enumeration is paged (4096 records/page) for large Pack startup efficiency.
+PASS: VS project/filter XML parses successfully.
+PASS: no TunnelViewerSDK/business-software version number was changed.
+
+See PACK_ADAPTATION_VALIDATION.txt, IMAGEPACK_COMPATIBILITY.md and VALIDATION_CHECKLIST.md.

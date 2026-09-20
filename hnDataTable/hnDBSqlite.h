@@ -30,12 +30,21 @@ public:
 
 	// 执行SQL语句
 	bool executeDB(const char* strQuery);
+	// 使用 SQLite 在线备份，包含 WAL 中已提交的内容。
+	bool backupDatabase(const QString& path);
+
+	// 校验并原子写入相对里程校桩、打标以及可选的工程设置。
+	bool saveRelativeMileageData(const hnProjectSetInfo* projectSettings,
+		const vector<hnMilePile>& milePiles, const vector<hnMarkInfo>& marks,
+		bool replaceMarks, double projectStartMile, double projectEndMile,
+		double projectLength, QString* errorMessage = nullptr);
 
 	//是否打开
 	bool isOpen();
 
 	//获得db路径
 	char* getDBPath();
+
 private:
 	// 设置参数
 	void setParam();

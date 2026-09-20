@@ -116,6 +116,11 @@ namespace hnApp
 		hnPro::hnProjectManager* getProjectManager() { return m_pProjectManager; }
 
 		void setDiseaseCalcuteSize(hnRoadDiseaseInfo& dise);
+		// 显式传入目标病害配置，沿用二三维面积计算规则。
+		void calculateImportedDiseaseSize(const hnDiseaseSetInfo& setting, hnRoadDiseaseInfo& disease)
+		{
+			calcuteDiseaseSize(disease.nDrawType, setting, disease);
+		}
 		
 		// 获取道路类型参数 cwb
 		bool getRoadTypeSetInfo(HnProjectEnums::StandardParmTypeEnum strRoadStandard, QString strRoadLevel, ROAD_SURFACE_TYPE nRoadSurfaceType, hnRoadTypeSetInfo& roadTypeSetInfo);

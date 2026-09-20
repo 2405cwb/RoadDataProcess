@@ -501,10 +501,11 @@ QMap<QString, QMap<QString,QString>> hnOpenProjectDlg::readKeyValueFile(QString 
 
 void hnOpenProjectDlg::writeKeyValue(QMap<QString, QMap<QString, QString>>& keyValueMap, QString section, QString key, QString value)
 {
-	if (keyValueMap.contains(section)&&keyValueMap[section].contains(key))
+	if (!keyValueMap.contains(section))
 	{
-		keyValueMap[section][key] = value;
+		keyValueMap.insert(section, QMap<QString, QString>());
 	}
+	keyValueMap[section][key] = value;
 }
 
 void hnOpenProjectDlg::writeKeyValueFile(QString fileName, QMap<QString, QMap<QString, QString>> keyValueMap)

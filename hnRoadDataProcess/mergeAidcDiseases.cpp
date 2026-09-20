@@ -1210,7 +1210,8 @@ std::vector<hnCommon::hnRoadDiseaseInfo> mergeAidcDiseases::BigFrameMergeSingleD
 
 						IsMergeableDisease judgeMergeDiseases;
 						int upMinDisIndex = 0, downMinDisIndex = 0;
-						const bool isMergeable = judgeMergeDiseases.BigFrameIsMergeable(tmpDiseaseDown, tmpDiseaseUp, m_pixHeight, YThreshold, leftRightXpixelThreshold);
+						const bool isMergeable = judgeMergeDiseases.BigFrameIsMergeable(tmpDiseaseDown, tmpDiseaseUp,
+							m_pixHeight, m_roadWidth, YThreshold, leftRightXpixelThreshold);
 						if (isMergeable)
 						{
 							// todo 将两个病害合并

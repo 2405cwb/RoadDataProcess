@@ -17,6 +17,8 @@
 #include "hnCommandDef.h"
 #include "hnDataManager.h"
 #include "hnStreetCameraView.h"
+#include "hnImageBrightness.h"
+#include "hnImageDistanceNavigation.h"
 #include "..\hnProject\hn2DProject.h"
 #include "..\hnProject\hnProject.h"
 #include "hnDiseaseService.h"
@@ -28,7 +30,7 @@ namespace hnApp
 	hnStreetCameraView::hnStreetCameraView(QWidget *parent)//m_scale(0.25)
 		: hnView(parent), m_pCenter(0, 0), m_scale(0.12), m_LoadPic(NULL),
 		m_bPushMiddleButton(false), m_bShow(true), m_nCurImageDmi(0),
-		m_bFirstLoadImage(true), m_calculateRoadWidthMode(false) 
+		m_bFirstLoadImage(true), m_pictureInterval(0.0), m_calculateRoadWidthMode(false)
 	{
 		//背景
 		QPalette myPalette = QPalette(palette());
@@ -129,9 +131,9 @@ namespace hnApp
 
 		hnMile currentHnMile;
 		//获取当前的hnMle
-		if (m_listImage.size()  * m_pictureInterval > m_nCurImageDmi)
+		if (currentImageIndex() >= 0)
 		{
-			auto iter = m_pixPathStreetMilesMap.find(m_listImage.at((m_nCurImageDmi/m_pictureInterval)));
+			auto iter = m_pixPathStreetMilesMap.find(currentImagePath());
 			if (iter != m_pixPathStreetMilesMap.end())
 			{
 				currentHnMile = iter.value();
@@ -148,7 +150,15 @@ namespace hnApp
 		);
 		  
 		//储存当前视图的病害
+		// 自定义标注按原始相机侧显示，清空当前视图也只操作这一侧。
+		for (int i = diseases.size() - 1; i >= 0; i--)
+		{
+			if (diseases.at(i).ndiseaseType == 3 &&
+				(diseases.at(i).nDrawType == 11) != (m_nViewType != STREET_LEFT_VIEW)) diseases.removeAt(i);
+		}
 		this->m_currentWidgetDiseases = diseases;
+			// 每次从无标注图重绘，避免病害文字反复叠加。
+			*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
 			QPainter diseasePainter(m_LoadPic);
 			QFont font = diseasePainter.font();
 			font.setBold(true);
@@ -175,21 +185,35 @@ namespace hnApp
 				//病害分数
 				int score = 0;
 				hnDiseaseSetInfo setInfo;
-				hnDataManager::getDataManager()->getStreetDiseaseSetInfo(QString::fromLocal8Bit(disease.strDisName),
-					currentHnMile.roadStandard, setInfo);
-				score = disease.dArea * setInfo.nDWKF;
+				if (disease.ndiseaseType != 3 && hnDataManager::getDataManager()->getStreetDiseaseSetInfo(
+					QString::fromLocal8Bit(disease.strDisName), currentHnMile.roadStandard, setInfo))
+				{
+					score = disease.dArea * setInfo.nDWKF;
+				}
 
 				QString text = QString::fromLocal8Bit("%1,%2,扣分：%3")
 					.arg(regionWithK)
 					.arg(QString::fromLocal8Bit(disease.strDisName))
 					.arg(score);
 
+				if (disease.ndiseaseType == 3)
+				{
+					text = QStringLiteral("%1，自定义：%2，数量：%3 %4").arg(regionWithK)
+						.arg(QString::fromLocal8Bit(disease.strDisName)).arg(disease.dArea)
+						.arg(QString::fromLocal8Bit(disease.strRemark));
+					if (!disease.vec2dRect.empty())
+					{
+						const auto& rect = disease.vec2dRect.front();
+						diseasePainter.drawRect(QRect(QPoint(rect.p0.x, rect.p0.y), QPoint(rect.p2.x, rect.p2.y)));
+					}
+				}
 				diseasePainter.drawText(QPoint(0, diseaseY), text);
 
 				diseaseY += fontSize;
 			}
 
 			//向窗口上绘制图片
+			diseasePainter.end();
 			drawImage(&painterTrans);
 
 			if (m_calculateRoadWidthMode)
@@ -304,62 +328,26 @@ namespace hnApp
 	}
 
 	// 鼠标滚动事件(放大缩小)
-	void hnStreetCameraView::wheelEvent(QWheelEvent *e)
+	void hnStreetCameraView::stepImage(int step)
 	{
-		bool up = e->delta() > 0 ? true : false;
-
-		if (up)
+		if (currentImageIndex() < 0)
 		{
-			m_nCurImageDmi+= m_pictureInterval;
+			return;
 		}
-		else
-		{
-			m_nCurImageDmi-= m_pictureInterval;
-		} 
-
-		 if (m_nCurImageDmi < 0)
-		 {
-			 m_nCurImageDmi = 0;
-		 }
-
-		 if (m_nCurImageDmi >= m_listImage.size() * m_pictureInterval)
-		 {
-			 m_nCurImageDmi = (m_listImage.size() - 1)* m_pictureInterval;
-		 } 
-		 emit updateShowImg(m_nCurImageDmi);
-
-		  
-		//if (!m_LoadPic)
-		//{
-		//	return;
-		//}
-
-		////获得新中心
-		//QPoint oldPos = e->pos();
-		//QPoint pUser = fromScreen2User(oldPos);
-
-		//// 直接调用当前工具进行三维浏览（此处是hdToolfly）
-		//int ndelta = e->delta();
-		//int global_x = 0.0;
-		//int global_y = 0.0;
-
-		//// 缩放影像
-		//scaleImage(ndelta);
-
-		//m_dOffsetX = m_LoadPic->width()* m_scale;
-		//m_dOffsetY = m_LoadPic->height()* m_scale;
-
-		//QPoint newPos = fromUser2Screen(pUser);
-
-		//m_pCenter = m_pCenter - (newPos - oldPos);
-		//
-		//// 事件处理完毕
-		//e->accept();
-
-		//update();
+		const hnImageDistanceNavigation navigation;
+		const double target = navigation.stepDistance(m_nCurImageDmi, m_pictureInterval, m_listImage.size(), step);
+		emit updateShowImg(target);
 	}
 
-	// 鼠标按下事件
+	void hnStreetCameraView::wheelEvent(QWheelEvent *e)
+	{
+		if (e->delta() != 0)
+		{
+			stepImage(e->delta() > 0 ? 1 : -1);
+		}
+		e->accept();
+	}
+
 	void hnStreetCameraView::mousePressEvent(QMouseEvent *event)
 	{
 		if (!hnDataManager::getDataManager()->isOpenProject())
@@ -465,45 +453,21 @@ namespace hnApp
 	// 键盘按下事件 空格键 浏览模式 图片回到正常水平
 	void hnStreetCameraView::keyPressEvent(QKeyEvent *e)
 	{
-		
 		switch (e->key())
 		{
 		case Qt::Key_Left:
-		{
-			m_nCurImageDmi -= m_pictureInterval;
-			break;
-		}
-		case Qt::Key_Right:
-		{
-			m_nCurImageDmi += m_pictureInterval;
-			break;
-		}
 		case Qt::Key_Up:
-		{
-			m_nCurImageDmi-= m_pictureInterval;
+			stepImage(-1);
 			break;
-		}
+		case Qt::Key_Right:
 		case Qt::Key_Down:
-		{
-			m_nCurImageDmi+= m_pictureInterval;
+			stepImage(1);
 			break;
-		}
 		default:
-			break;
+			e->ignore();
+			return;
 		}
-
-		if (m_nCurImageDmi < 0)
-		{
-			m_nCurImageDmi = 0;
-		}
-
-		if (m_nCurImageDmi >= m_listImage.size() * m_pictureInterval)
-		{
-			m_nCurImageDmi = (m_listImage.size() - 1)*m_pictureInterval;
-		}
-		
-		emit updateShowImg(m_nCurImageDmi);
-		
+		e->accept();
 	}
 
 	/************************************************************************/
@@ -618,36 +582,32 @@ namespace hnApp
 	// 添加图片 bResetCurImage表示重置当前图片
 	bool hnStreetCameraView::addStreetImage(bool needRotate,const QString& picPath)
 	{
-		//法3
-		if (NULL != m_LoadPic)
+		// 同一张图只解码一次，亮度调节和病害刷新复用未处理原图。
+		if (m_originalStreetImage.isNull() || m_curPicPath != picPath || m_needRotate != needRotate)
 		{
-			delete m_LoadPic;
-			m_LoadPic = NULL;
+			QImage original(picPath);
+			if (original.isNull())
+			{
+				m_originalStreetImage = QImage();
+				m_sourceImageWithoutDisease = QImage();
+				if (m_LoadPic)
+				{
+					*m_LoadPic = QPixmap();
+				}
+				update();
+				return false;
+			}
+			if (needRotate)
+			{
+				QTransform transform;
+				transform.rotate(90);
+				original = original.transformed(transform, Qt::SmoothTransformation);
+			}
+			m_originalStreetImage = original;
+			m_needRotate = needRotate;
+			m_curPicPath = picPath;
+			refreshBrightness();
 		}
-
-		m_LoadPic = new QPixmap;
-
-		//从文件中加载
-		QImage imageTemp;
-		imageTemp.load(picPath);
-		imageTemp = updateBrightness(imageTemp);
-		m_needRotate = needRotate;
-		m_curPicPath = picPath;
-		if (needRotate)
-		{
-			QTransform transform;
-			transform.translate(imageTemp.height() / 2.0, imageTemp.width() / 2.0);//移动到中心 
-			transform.rotate(90);
-			transform.translate(-imageTemp.width() / 2.0, -imageTemp.height() / 2.0);//移回原点 
-			QImage rotatedImage = imageTemp.transformed(transform, Qt::SmoothTransformation);
-			m_sourceImageWithoutDisease = rotatedImage;
-			*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
-		}
-		else
-		{
-			m_sourceImageWithoutDisease = imageTemp;
-			*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
-		} 
 		//图片大小设置
 		if (m_bFirstLoadImage)
 		{
@@ -680,40 +640,50 @@ namespace hnApp
 	}
 
 	// 添加图片
-	bool hnStreetCameraView::addImage(bool needRotate, int nImageIndex)
+	bool hnStreetCameraView::addImage(bool needRotate, double nImageIndex)
 	{
-
-		//行驶距离/图片间隔
-		int curIdx = qRound(nImageIndex / m_pictureInterval);
-		if (curIdx < 0 || curIdx >= m_listImage.size())
+		const hnImageDistanceNavigation navigation;
+		const int index = navigation.imageIndex(nImageIndex, m_pictureInterval, m_listImage.size());
+		if (index < 0)
 		{
 			return false;
 		}
-		m_nCurImageDmi = nImageIndex;
-
-		addStreetImage(needRotate, m_listImage[curIdx]);
-
-		//if (nImageIndex < 0 || nImageIndex >= m_listImage.size())
-		//{
-		//	return false;
-		//}
-
-		//m_nCurImageIndex = nImageIndex;
-
-		//addImage(needRotate,m_listImage[nImageIndex]);
+		m_nCurImageDmi = qMax(0.0, nImageIndex);
+		return addStreetImage(needRotate, m_listImage.at(index));
 	}
 
-	//清空信息
-    QString hnStreetCameraView::currentImagePath() const
-    {
-        if (m_listImage.isEmpty() || m_pictureInterval <= 0.0)
-        {
-            return QString();
-        }
+	int hnStreetCameraView::currentImageIndex() const
+	{
+		const hnImageDistanceNavigation navigation;
+		return navigation.imageIndex(m_nCurImageDmi, m_pictureInterval, m_listImage.size());
+	}
 
-        int curIdx = qRound(m_nCurImageDmi / m_pictureInterval);
-        curIdx = qBound(0, curIdx, m_listImage.size() - 1);
-        return m_listImage.value(curIdx);
+	QString hnStreetCameraView::currentImagePath() const
+	{
+		return m_listImage.value(currentImageIndex());
+	}
+
+    bool hnStreetCameraView::currentDisplayedImageInfo(QString* imagePath, double* trueMile) const
+    {
+        if (m_originalStreetImage.isNull() || m_curPicPath.isEmpty() ||
+            m_curPicPath != currentImagePath()) return false;
+        if (imagePath) *imagePath = m_curPicPath;
+        if (trueMile)
+        {
+            auto iter = m_pixPathStreetMilesMap.constFind(m_curPicPath);
+            if (iter != m_pixPathStreetMilesMap.constEnd())
+            {
+                *trueMile = iter.value().dTrueMile;
+            }
+            else
+            {
+                const auto manager = hnDataManager::getDataManager();
+                const auto project = manager ? manager->getCurrentProject() : nullptr;
+                if (!project || currentImageIndex() < 0) return false;
+                *trueMile = project->enclToTrueMile(currentImageIndex() * m_pictureInterval);
+            }
+        }
+        return true;
     }
 
 	void hnStreetCameraView::clear()
@@ -721,6 +691,12 @@ namespace hnApp
 
 		//清空图片
 		m_sourceImageWithoutDisease = QImage();
+		m_originalStreetImage = QImage();
+		m_listImage.clear();
+		m_pixPathStreetMilesMap.clear();
+		m_streetMiles.clear();
+		m_nCurImageDmi = 0.0;
+		m_curPicPath.clear();
 		if (m_LoadPic)
 		{
 			delete m_LoadPic;
@@ -796,6 +772,7 @@ namespace hnApp
 	void hnStreetCameraView::reloadData(bool needRotate, STREET_VIEW_TYPE nViewType)
 	{
 		m_nViewType = nViewType;
+		m_pixPathStreetMilesMap.clear();
 		//获取景观的桩号
 		if (nViewType ==  STREET_LEFT_VIEW)
 		{
@@ -836,12 +813,12 @@ namespace hnApp
 		}
 		if (nViewType== STREET_LEFT_VIEW)
 		{
-			addStreetImage(false,m_listImage[m_nCurImageDmi]);
+			addStreetImage(false,m_listImage.first());
 
 		}
 		else
 		{
-			addStreetImage(needRotate, m_listImage[m_nCurImageDmi]);
+			addStreetImage(needRotate, m_listImage.first());
 
 
 		}
@@ -862,8 +839,8 @@ namespace hnApp
 	void hnStreetCameraView::slot_updatePictureBrightness(int value)
 	{
 
-		PictureBrightnessFactor = value;
-		addStreetImage(m_needRotate, m_curPicPath);
+		m_brightnessValue = qBound(-100, value, 300);
+		refreshBrightness();
 	}
 
 	//添加病害
@@ -883,7 +860,11 @@ namespace hnApp
 		}
 		//获取图片的hnMile
 		//获取图片的hnMile
-		int mileIdx = m_nCurImageDmi / m_pictureInterval;
+		int mileIdx = currentImageIndex();
+		if (mileIdx < 0)
+		{
+			return;
+		}
 		QString key = m_listImage.at(mileIdx);
 		auto it =  this->m_pixPathStreetMilesMap.find(key);
 		if (it==this->m_pixPathStreetMilesMap.end())
@@ -896,8 +877,10 @@ namespace hnApp
 		auto yxInfo = hnDataManager::getDataManager()->getCurrentProjectStreetDiseases(currentMile, 1);
 		hnAddStreetDiseaseDialog dialog(ljInfo, yxInfo, this);
 		dialog.setCurrentHnMile(currentMile);
+		dialog.setImageSide(m_nViewType == STREET_LEFT_VIEW ? 0 : 1);
 		if (dialog.exec() == QDialog::Accepted)
 		{
+			update();
 			auto diseases = dialog.getSelectDiseases();
 			for (auto disease : qAsConst(diseases))
 			{
@@ -931,47 +914,20 @@ namespace hnApp
 		//this->mapTo(m_LoadPic, point);
 	}
 
-	QImage hnStreetCameraView::updateBrightness(QImage &image)
+	void hnStreetCameraView::refreshBrightness()
 	{
-
-		if (image.isNull())
+		if (m_originalStreetImage.isNull())
 		{
-			return QImage();
+			return;
 		}
-		QImage qImage = image;
-		if (qImage.format()!= QImage::Format_ARGB32&& qImage.format() != QImage::Format_RGB32)
+		const hnImageBrightness brightness;
+		m_sourceImageWithoutDisease = brightness.adjust(m_originalStreetImage, m_brightnessValue);
+		if (!m_LoadPic)
 		{
-			qImage = qImage.convertToFormat(QImage::Format_ARGB32);
+			m_LoadPic = new QPixmap;
 		}
-		//QImage转mat
-		cv::Mat mat(qImage.height(), qImage.width(), CV_8UC4, const_cast<uchar*>(qImage.constBits()), qImage.bytesPerLine());
-		 
-		if (mat.empty())
-		{
-			return image;
-		}
-
- 
-
-		//调整图片亮度
-		cv::Mat matBGR;
-		cv::cvtColor(mat, matBGR, cv::COLOR_RGBA2BGR);
-
-
-		cv::Mat adjustedImage;
-		matBGR.convertTo (adjustedImage, -1, 1.0, PictureBrightnessFactor);
-
-		//转换回RGBA
-		cv::Mat matRGBA;
-		cv::cvtColor(adjustedImage, matRGBA, cv::COLOR_BGR2RGBA);
-
-		 
-		 
-
-		//将修改后的mat转成QImage
-		QImage result(matRGBA.data, matRGBA.cols, matRGBA.rows, matRGBA.step, QImage::Format_ARGB32);
-
-		return result.copy();
+		*m_LoadPic = QPixmap::fromImage(m_sourceImageWithoutDisease);
+		updateDrawData();
 	}
 
 	QImage  hnStreetCameraView::getOriginalImage(QPoint mousePos, const QImage &tmpImageWithoutDisease, const int originalWidgetWidth, const int originalWidgetHeight)

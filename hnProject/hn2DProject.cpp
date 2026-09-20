@@ -10,6 +10,7 @@
 #include <QImage>
 #include <QImageReader>
 #include<QElapsedTimer>
+#include <cmath>
 namespace hnPro
 {
 	hn2DProject::hn2DProject()
@@ -251,7 +252,7 @@ namespace hnPro
 			//文本格式
 			//2115 2115    mile dmi
 			QString line = in.readLine();
-			QStringList lits = line.split(QStringLiteral(" "));
+			QStringList lits = line.simplified().split(QStringLiteral(" "), QString::SkipEmptyParts);
 			if (lits.size() < 2)
 			{
 				return;
@@ -318,67 +319,50 @@ namespace hnPro
 		}
 		QTextStream in(&markFile);
 		in.setCodec(QTextCodec::codecForName("UTF-8"));
-      
+
 		while (!in.atEnd())
 		{
 			hnMarkInfo markInfo;
 			//文本格式
 			//{0} {0} {1} 路面单元:{2}", mile, dmi, info
-			QString line = in.readLine();
-			QStringList lits = line.split(QStringLiteral(" "));
+			const QString line = in.readLine().simplified();
+			const QStringList lits = line.split(QStringLiteral(" "), QString::SkipEmptyParts);
 			if (lits.size() < 4)
 			{
 				continue;
 			}
-			QString mileStr = lits[0];
-			QString dmi = lits[2];
-			double realMile = 0;
-			if (is23DEquipment)
-			{ 
-				double realDmi = dmi.toDouble() - round(m_projectInfo.dBegEnclMile);  
-				 realMile = pro->enclToTrueMile(realDmi);
-			}
-			else
+			bool trueMileOk = false;
+			bool dmiOk = false;
+			const double sourceTrueMile = lits.at(0).toDouble(&trueMileOk);
+			const double rawDmi = lits.at(2).toDouble(&dmiOk);
+			if (!trueMileOk || !dmiOk || !std::isfinite(sourceTrueMile) || !std::isfinite(rawDmi))
 			{
-			 realMile = pro->enclToTrueMile(dmi.toDouble());
+				continue;
 			}
+			// 外业打标先按原始 DMI 入库，统一偏移修复只依据成果数据库执行。
+			const double localDmi = rawDmi;
+			double realMile = sourceTrueMile;
 			int realMilei = qRound(realMile);
 			QString mile = QString::number(realMilei);
-			QString context = lits[3];
-
-			QStringList lists1;
-			QString typeStr;
-			QString message;
-			lists1 = context.split(QStringLiteral("："));
-			if (lists1.size() > 1)
+			QString context = lits.mid(3).join(QStringLiteral(" "));
+			int separatorIndex = context.indexOf(QStringLiteral("："));
+			if (separatorIndex <= 0) separatorIndex = context.indexOf(QStringLiteral(":"));
+			if (separatorIndex <= 0)
 			{
-				typeStr = lists1[0];
-				message = lists1[1];
+				continue;
 			}
-			else
-			{
-				lists1 = context.split(QStringLiteral(":"));
-				typeStr = lists1[0];
-				message = lists1[1];
-			}
+			const QString typeStr = context.left(separatorIndex);
+			const QString message = context.mid(separatorIndex + 1);
 
 			hnCommon::ROAD_MARK_TYPE  type = getMarkType(typeStr);
 
 			markInfo.nType = type;
 			markInfo.dTrueMile = mile.toDouble();
-			if (is23DEquipment) //二三维外业采集的数据
-			{
-				 
-				markInfo.dEnclMile = dmi.toDouble() - round(m_projectInfo.dBegEnclMile);
-
-			}
-			else
-			{
-				markInfo.dEnclMile = dmi.toDouble();
-			}
+			markInfo.dEnclMile = localDmi;
 			//markInfo.strRemark = "";
 			//markInfo.strMark =  message.toLocal8Bit().data();
-			strcpy(markInfo.strMark, message.toLocal8Bit().data());
+			const QByteArray markText = message.toLocal8Bit();
+			qstrncpy(markInfo.strMark, markText.constData(), sizeof(markInfo.strMark));
 			
 			marksFromTxt.push_back(markInfo);
 		}
@@ -697,28 +681,44 @@ namespace hnPro
 			is23DEquipment = false;
 		}
 		//解析setting.ini文件 
+		if (m_strSettinginiPath.isEmpty() || !QFileInfo::exists(m_strSettinginiPath))
+		{
+			qWarning().noquote() << QStringLiteral("Setting.ini 不存在，停止解析设备参数：") << m_strSettinginiPath;
+			return;
+		}
 		QSettings *settings = new QSettings(m_strSettinginiPath, QSettings::IniFormat);
 		
 		settings->beginGroup(QString("WorkMode")); 
 		//检查组下是否存在子键
 		bool exists = !settings->childKeys().isEmpty(); 
 		if (!exists)
-		{ 
+		{
 			settings->endGroup();
-			delete settings; 
-			QFile* file = new QFile(m_strSettinginiPath);
-			if (file->open(QIODevice::ReadWrite)) 
+			delete settings;
+			settings = NULL;
+			QFile file(m_strSettinginiPath);
+			if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
 			{
-				QTextCodec* gb = QTextCodec::codecForName("GB2312");
-				QString content = gb->toUnicode(file->readAll()); 
-				content.replace(QStringLiteral("工作模式"), "WorkMode"); 
-				//写入
-				MyCommonMethods::writeAllLines(m_strSettinginiPath, content);
+				qWarning().noquote() << QStringLiteral("Setting.ini 无法读取，停止解析设备参数：") << m_strSettinginiPath;
+				return;
+			}
+			QTextCodec* gb = QTextCodec::codecForName("GB2312");
+			QString content = gb->toUnicode(file.readAll());
+			file.close();
+			content.replace(QStringLiteral("工作模式"), "WorkMode");
+			//写入
+			MyCommonMethods::writeAllLines(m_strSettinginiPath, content);
 
-				 settings = new QSettings(m_strSettinginiPath, QSettings::IniFormat);
-				settings->beginGroup(QString("WorkMode"));
-				exists = !settings->childKeys().isEmpty();
-			} 
+			settings = new QSettings(m_strSettinginiPath, QSettings::IniFormat);
+			settings->beginGroup(QString("WorkMode"));
+			exists = !settings->childKeys().isEmpty();
+			if (!exists)
+			{
+				settings->endGroup();
+				delete settings;
+				qWarning().noquote() << QStringLiteral("Setting.ini 缺少 WorkMode/工作模式 配置，停止解析设备参数：") << m_strSettinginiPath;
+				return;
+			}
 		}
 
 		_IsStreet = settings->value("Street").toBool();
@@ -758,15 +758,17 @@ namespace hnPro
 		//设置要读取的组名 
 		settings->beginGroup(QString("Parm"));
 
-		_RutDis = settings->value("RUT_Dis").toInt();
-		_RoadImgDis = settings->value("RoadDis").toInt();
-		_StreetImgDis = settings->value("StreetDis").toInt();
-		_StreeRightImgDis = settings->value("StreetDis2").toInt();
+		// 与二维软件保持一致：旧工程缺少间隔项时使用采集系统默认值，
+		// 避免成员初值被 QSettings 返回的 0 覆盖。
+		_RutDis = settings->value("RUT_Dis", 50).toInt();
+		_RoadImgDis = settings->value("RoadDis", 2).toInt();
+		_StreetImgDis = settings->value("StreetDis", 20).toInt();
+		_StreeRightImgDis = settings->value("StreetDis2", 0).toInt();
 		if (_StreeRightImgDis==0)
 		{
 			_StreeRightImgDis = _StreetImgDis;
 		}
-		_PanoImgDis = settings->value("PanoDis").toInt();
+		_PanoImgDis = settings->value("PanoDis", 20).toInt();
 		settings->endGroup();
 		delete settings;
 

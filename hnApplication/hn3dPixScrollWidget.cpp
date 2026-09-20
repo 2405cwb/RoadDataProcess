@@ -38,8 +38,6 @@ hn3dPixWidget * hn3dPixScrollWidget::getPixWidget()
 void hn3dPixScrollWidget::initConnect()
 {
 	connect(this, &hnContinuouslyBrowsePixWidget::signal_moveMouse, m_browsePixWidget, &hnBrowsePixWidget::slot_moveMouse);
-	connect(this, &hnContinuouslyBrowsePixWidget::signal_imageBrightnessChanged,
-		m_p3dImageViewWidget, &hn3dPixWidget::setSdkImageBrightness);
 }
 
 void hn3dPixScrollWidget::keyPressEvent(QKeyEvent *event)
@@ -61,7 +59,7 @@ bool hn3dPixScrollWidget::is2DView() const
 
 bool hn3dPixScrollWidget::stepOneImage()
 {
-	return m_p3dImageViewWidget && m_p3dImageViewWidget->stepSingleFrame(1);
+	return m_p3dImageViewWidget && m_p3dImageViewWidget->stepSingleFrame(-1);
 }
 
 void hn3dPixScrollWidget::mousePressEvent(QMouseEvent *event)

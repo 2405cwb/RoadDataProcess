@@ -47,7 +47,8 @@ void CustomBaiduMapView::shutdownWebEngine()
 
 	if (m_webChannel)
 	{
-		m_webChannel->deregisterObject(this);
+		// Qt 5.8 在网页端尚未初始化时单独注销对象会触发 SignalHandler::remove 断言。
+		// 页面已解绑，直接销毁整个通道，由其析构统一清理注册对象及信号连接。
 		delete m_webChannel;
 		m_webChannel = nullptr;
 	}

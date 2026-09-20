@@ -67,13 +67,28 @@ namespace hnApp
 	// 根据传入路径获取所有工程
 	bool hnDataManager::getAllProject(QString strFolder,  vector<hnProjectDataInfo>& vecProData, hnCommon::PROJECT_TYPE&nWorkType)
 	{
-
 		vector<QString> vecXmlFile;
 		vector<QString> vecTxtFile;
-		 nWorkType = PROJECT_2D_TYPE;
-		if (findFile(strFolder, "ProjectInfo.xml", vecXmlFile))
+		nWorkType = PROJECT_2D_TYPE;
+
+		// Most imports select the project directory itself. Check its metadata
+		// files directly so a 2D project does not recursively enumerate tens of
+		// thousands of road images once for XML and again for TXT.
+		const QDir projectRoot(strFolder);
+		const QString directXml = projectRoot.filePath("ProjectInfo.xml");
+		const QString directTxt = projectRoot.filePath("ProjectInfo.txt");
+		if (QFileInfo::exists(directXml))
 		{
-			nWorkType = PROJECT_23D_TYPE; //暂时默认为23d混合
+			vecXmlFile.push_back(QDir::cleanPath(directXml));
+			nWorkType = PROJECT_23D_TYPE;
+		}
+		else if (QFileInfo::exists(directTxt))
+		{
+			vecTxtFile.push_back(QDir::cleanPath(directTxt));
+		}
+		else if (findFile(strFolder, "ProjectInfo.xml", vecXmlFile))
+		{
+			nWorkType = PROJECT_23D_TYPE;
 		}
 		//
 		//这个地方需要考虑 是否应该根据目录结构自动判断每个项目是 哪种模式
@@ -112,8 +127,7 @@ namespace hnApp
 		else if (nWorkType == PROJECT_2D_TYPE) // 作业模式为纯2D模式
 		{
 			// 查找该文件夹下的所有ProjectInfo.txt文件
-			vector<QString> vecTxtFile;
-			if (!findFile(strFolder, "ProjectInfo.txt", vecTxtFile))
+			if (vecTxtFile.empty() && !findFile(strFolder, "ProjectInfo.txt", vecTxtFile))
 			{
 				return false;
 			}
@@ -130,7 +144,7 @@ namespace hnApp
 				}
 				//解析CamSetting文件
 				analysisCamSetting(vecTxtFile[i].replace("ProjectInfo.txt","CamSetting.ini"),curProData.proSetInfo.dRoadWidth);
-				curProData.proSetInfo.nWorkType == PROJECT_2D_TYPE;
+				curProData.proSetInfo.nWorkType = PROJECT_2D_TYPE;
 				vecProData.push_back(curProData);
 			}
 
@@ -1314,55 +1328,30 @@ namespace hnApp
 	// 查找所有类型文件
 	bool hnDataManager::findFile(QString strFolder, QString strFileName, vector<QString>& vecRetFile)
 	{
-		// 设置dirlujing;
-		QDir* dir = new QDir(strFolder);
-		QStringList filter;
-		//filter << QString("*.daq");
-
-		// 获取列表下所有文件信息;
-		QList<QFileInfo>* fileInfo = new QList<QFileInfo>(dir->entryInfoList(filter));
-		for (int i = 0; i < fileInfo->count(); i++)
+		const QDir dir(strFolder);
+		if (!dir.exists())
 		{
-			const QFileInfo info_tmp = fileInfo->at(i);
-			QString path_tmp = info_tmp.filePath();
-			if (info_tmp.fileName() == ".." || info_tmp.fileName() == ".")
-			{
-				continue;
-			}
-
-			if (info_tmp.isFile())
-			{
-				// 检查文件后缀;
-				int index = path_tmp.lastIndexOf('.');
-				if (index > 0)
-				{
-					QString strExp = path_tmp.right(path_tmp.length() - index - 1);
-					strExp = strExp.toLower();
-					if (path_tmp.contains(strFileName)) // 后缀判断;
-					{
-						vecRetFile.push_back(path_tmp);
-					}
-				}
-			}
-			else if (info_tmp.isDir())// 为文件夹;
-			{
-				// 迭代搜索;
-				findFile(path_tmp, strFileName, vecRetFile);
-			}
-		}// for (int i = 0;i < fileInfo->count();i++)
-
-		delete fileInfo;
-		delete dir;
-
-		if (vecRetFile.size() <= 0)
-		{
-			return false;
+			return !vecRetFile.empty();
 		}
 
-		return true;
-	}
+		// A ProjectInfo file identifies the project root. Once found, do not
+		// descend into RoadImg/StreetImg and enumerate every JPEG below it.
+		const QFileInfo directInfo(dir.filePath(strFileName));
+		if (directInfo.exists() && directInfo.isFile())
+		{
+			vecRetFile.push_back(QDir::cleanPath(directInfo.absoluteFilePath()));
+			return true;
+		}
 
-	// 解析工程配置文件
+		const QFileInfoList childDirs = dir.entryInfoList(
+			QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
+			QDir::Name);
+		for (const QFileInfo& childDir : childDirs)
+		{
+			findFile(childDir.absoluteFilePath(), strFileName, vecRetFile);
+		}
+		return !vecRetFile.empty();
+	}
 	bool hnDataManager::analysisXml(QString strXmlPath, vector<hnProjectDataInfo>& vecProData)
 	{
 
@@ -1433,6 +1422,13 @@ namespace hnApp
 						
 						curProjectDataInfo.proSetInfo = projectSetInfo;
 						curProjectDataInfo.proSetInfo.dLength = qAbs(projectSetInfo.dBegMile - projectSetInfo.dEndMile);
+						const QString qstrRoadStandard =
+							QString::fromLocal8Bit(curProjectDataInfo.proSetInfo.strRoadStandard);
+						const QString qstrRoadLevel =
+							QString::fromLocal8Bit(curProjectDataInfo.proSetInfo.strRoadLevel);
+						curProjectDataInfo.proSetInfo.nGradIndex =
+							getRoadLevel(HnProjectEnums::roadTypeQStringToEnum(qstrRoadStandard))
+								.indexOf(qstrRoadLevel);
 						//没有二维工程 纯三维
 						if (strlen(curProjectDataInfo.str2DProName) ==0)
 						{
@@ -1726,6 +1722,8 @@ namespace hnApp
 		QString strData = "";
 		QStringList listData;
 		string strValue = "";
+		QString currentSection;
+		bool hasTwoDimensionalSettingsSection = false;
 	/*	QTextStream in(&setFile);
 		while (!in.atEnd())
 		{
@@ -1735,6 +1733,16 @@ namespace hnApp
 		{
 			listData.clear();
 			strData = setFile.readLine(1024);
+			const QString qstrTrimmedLine = strData.trimmed();
+			if (qstrTrimmedLine.startsWith("[") && qstrTrimmedLine.endsWith("]"))
+			{
+				currentSection = qstrTrimmedLine.mid(1, qstrTrimmedLine.length() - 2);
+				if (currentSection == QString::fromLocal8Bit("\xB6\xFE\xC8\xFD\xCE\xAC\xC9\xE8\xD6\xC3\xD0\xC5\xCF\xA2"))
+				{
+					hasTwoDimensionalSettingsSection = true;
+				}
+				continue;
+			}
 
 			listData = strData.split(QStringLiteral("："));
 			bool hasValue = false;
@@ -1771,7 +1779,17 @@ namespace hnApp
 			std::size_t found2 = strValue.find("\n");
 			if (found2 != std::string::npos)
 			{
-				strValue = strValue.substr(0, found2);
+			strValue = strValue.substr(0, found2);
+			}
+			const QString qstrKey = listData[0].trimmed();
+			const bool isCollectionSection =
+				currentSection == QString::fromLocal8Bit("\xB9\xA4\xB3\xCC\xB2\xC9\xBC\xAF\xD0\xC5\xCF\xA2");
+			if (hasTwoDimensionalSettingsSection && isCollectionSection &&
+				(qstrKey.contains(QString::fromLocal8Bit("\xB5\xC0\xC2\xB7\xC0\xE0\xD0\xCD")) ||
+				qstrKey.contains(QString::fromLocal8Bit("\xB5\xC0\xC2\xB7\xBF\xED\xB6\xC8")) ||
+				qstrKey.contains(QString::fromLocal8Bit("\xB2\xA1\xBA\xA6\xBB\xE6\xD6\xC6\xC4\xA3\xCA\xBD"))))
+			{
+				continue;
 			}
 			if (listData[0].contains(QString::fromLocal8Bit("省")))
 			{
@@ -1887,8 +1905,16 @@ namespace hnApp
 		}
 
 	
+		const QString qstrRoadStandard =
+			QString::fromLocal8Bit(outProData.proSetInfo.strRoadStandard);
+		const QString qstrRoadLevel =
+			QString::fromLocal8Bit(outProData.proSetInfo.strRoadLevel);
+		outProData.proSetInfo.nGradIndex =
+			getRoadLevel(HnProjectEnums::roadTypeQStringToEnum(qstrRoadStandard))
+				.indexOf(qstrRoadLevel);
 		//读取校桩文件
 		QString MileStoneInfoPath = strProjectPath + "\\MileStoneCaliInfo.txt";
+
 		QFile mileStoneFile(MileStoneInfoPath);
 	 
 		if (mileStoneFile.exists())
@@ -1900,31 +1926,70 @@ namespace hnApp
 				while (!in.atEnd())
 				{
 					QString line = in.readLine();
-					QStringList dmiMileValue = line.split(' ');
+					QStringList dmiMileValue = line.simplified().split(QStringLiteral(" "), QString::SkipEmptyParts);
 					if (dmiMileValue.size() != 2)
 					{
 						continue;
 					}
-					double dmi = dmiMileValue[0].toDouble();
-					if (dmi == 0 || dmi == outProData.proSetInfo.dLength)
+					bool dmiOk = false;
+					bool mileOk = false;
+					const double dmi = dmiMileValue[0].toDouble(&dmiOk);
+					const double mile = dmiMileValue[1].toDouble(&mileOk);
+					if (!dmiOk || !mileOk || !std::isfinite(dmi) || !std::isfinite(mile))
+						continue;
+					// 桩号明显超出工程范围的外业校桩直接忽略，不影响后续正常记录。
+					const double minTrueMile = qMin(outProData.proSetInfo.dBegMile, outProData.proSetInfo.dEndMile);
+					const double maxTrueMile = qMax(outProData.proSetInfo.dBegMile, outProData.proSetInfo.dEndMile);
+					if (mile < minTrueMile - 1.0 || mile > maxTrueMile + 1.0)
 					{
-						//解决打标信息 中重复的 起点终点打标信息
 						continue;
 					}
-					double mile = dmiMileValue[1].toDouble();
-					hnMilePile curMilePile;
-					curMilePile.dEnclMile = dmi;
-					curMilePile.dTrueMile = mile;
-					outProData.vecMilePile.push_back(curMilePile);
+					bool duplicate = false;
+					for (const auto& pile : outProData.vecMilePile)
+					{
+						if (qAbs(pile.dTrueMile - mile) <= 0.001 && qAbs(pile.dEnclMile - dmi) <= 0.001)
+						{
+							duplicate = true;
+							break;
+						}
+					}
+					if (!duplicate)
+					{
+						hnMilePile curMilePile;
+						curMilePile.dEnclMile = dmi;
+						curMilePile.dTrueMile = mile;
+						outProData.vecMilePile.push_back(curMilePile);
+					}
 				}
 			}
+		}
 
+		// 标准终点不依赖外业校桩文件是否存在。
+		bool hasStandardEnd = false;
+		for (const auto& pile : outProData.vecMilePile)
+		{
+			if (qAbs(pile.dTrueMile - outProData.proSetInfo.dEndMile) <= 0.001 &&
+				qAbs(pile.dEnclMile - outProData.proSetInfo.dLength) <= 0.001)
+			{
+				hasStandardEnd = true;
+				break;
+			}
+		}
+		if (!hasStandardEnd)
+		{
 			hnMilePile curMilePile;
 			curMilePile.dEnclMile = outProData.proSetInfo.dLength;
 			curMilePile.dTrueMile = outProData.proSetInfo.dEndMile;
 			outProData.vecMilePile.push_back(curMilePile);
-			}
-			
+		}
+
+		// MILEAGE_PILE uses ID as its primary key. Assign IDs after all
+		// generated and imported piles have been collected to avoid overwriting
+		// every row with the default ID of zero during the initial database write.
+		for (int i = 0; i < outProData.vecMilePile.size(); ++i)
+		{
+			outProData.vecMilePile[i].nID = i;
+		}
 	}
 
 	

@@ -17,7 +17,7 @@ public:
 		bool isVMirror, int pixHeight, double roadWidth, int &minIndexUp, int &minIndexDown, int gYThreshold = 700, int gLeftRightpixelThreshold = 700);
 
 	bool BigFrameIsMergeable(const hnCommon::hnRoadDiseaseInfo &diseaseDown, const hnCommon::hnRoadDiseaseInfo &diseaseUp,
-		int pixHeight, int gYThreshold = 400, int gLeftRightpixelThreshold = 300);
+		int pixHeight, double imageInterval, int gYThreshold = 400, int gLeftRightpixelThreshold = 300);
 
 	double verticalMinDistance(const hnCommon::hnRoadDiseaseInfo & diseaseDown, const hnCommon::hnRoadDiseaseInfo & diseaseUp, int pixHeight, int &minIndexUp, int &minIndexDown);
 

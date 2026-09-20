@@ -32,6 +32,8 @@ using namespace hnApp;
 
 // 前置声明
 class QTreeView;
+class hnViewModeHint;
+class QPushButton;
 class QTreeWidget;
 class QStandardItemModel;
 class QStandardItem;
@@ -56,6 +58,7 @@ class hnWidget3DView;
 class hnView;
 class HnXRSettings;
 class statusBarWidget;
+class adjustImageWidget;
 class hnOutputExcelDialog;
 class hnOutExcelMileManage;
 class hnAboutInfoWidgets;
@@ -102,6 +105,15 @@ private:
 
 	// 读取布局;
 	void readLayout();
+	void setupWorkspaceFeedback();
+	void refreshWorkspaceFeedback();
+	void restoreDefaultWorkspace();
+	void finishEditing();
+	QLabel* m_projectStatus = nullptr;
+	QPushButton* m_openProjectHint = nullptr;
+	hnViewModeHint* m_road2dHint = nullptr;
+	hnViewModeHint* m_road3dHint = nullptr;
+	QByteArray m_factoryDockLayout;
 
 	// 创建视图
 	void createView();
@@ -149,6 +161,8 @@ private:
 
 	//初始化工程相关信息 
 	bool initProject();
+	void applyProjectImageAdjustments();
+	void saveProjectImageAdjustments(bool is2d, int brightness, int contrast, int sharpen);
 
 
 private slots:
@@ -163,6 +177,8 @@ private slots:
 
 	//导出简易工程
 	void slot_outSimpleProject();
+	void slot_exportRoutePhotos();
+	void slot_exportProjectLedger();
 
 	//gps桩号匹配
 	void slot_gpsMatching();
@@ -179,6 +195,9 @@ private slots:
 	// 采集打标
 	void slot_markInfoSlot();
 
+	// 从当前工程外业文本重新导入相对里程校桩和打标。
+	void slot_reimportMileagePilesAndMarks();
+
 	// 清除工程
 	void slot_clearProjectSlot();
 
@@ -187,6 +206,10 @@ private slots:
 
 	//打开设置界面
 	void slot_openConfigWidget();
+
+	// 打开软件本地用户配置目录
+	void slot_openUserDirectory();
+	void slot_openImageAdjustments();
 
 	//使用说明
 	void slot_oepnCourseDocument();
@@ -257,9 +280,15 @@ private slots:
 
 	//导入二维软件绘制识别病害
 	void slot_import2dDiseases();
+	void slot_mergeSimilarReports();
+	void slot_exportManualRoadDiseases();
+	void slot_exportRoadNegativeSamples();
+	void slot_exportRoadDiseaseImages();
+	void exportRoadDiseaseSamples(bool deleted);
 
 	//导出为二维软件病害
 	void slot_output2dDiseases();
+	void slot_outputCustomStreetDiseases();
 
 	//导入自动识别病害
 	void slot_importAidcDiseases();
@@ -277,6 +306,7 @@ private slots:
 		double& dGpsSeconds, double dGPSSubUTC = 0);
 
 	void slot_backupsDatabase();
+	void slot_viewResultData();
 
 	//槽函数 清空所有病害
 	void slot_clearAllDiseases();
@@ -288,7 +318,7 @@ private slots:
 	void slot_updateDiseaseDatabase();
 
 	//槽函数  景观帧序号变化时
-	void slot_streetWidgetFrameIdxChanged(int streetFrameIdx);
+	void slot_streetWidgetFrameIdxChanged(double streetFrameIdx);
 
 
 	//是否进行深度计算
@@ -309,6 +339,9 @@ private slots:
 
 	//导出国检转换中间数据
 	void slot_exportGjDatas();
+
+	//打开国检转换软件
+	void slot_openGjSoftware();
 
 	// 导入控制点
 	void slot_importCtrlPoints();
@@ -350,6 +383,9 @@ private:
 
 	//所有视图重新加载图片
 	void allWidgetLoadPictures();
+
+	// 根据工程类型更新仅适用于二三维工程的功能按钮显示状态。
+	void updateProjectTypeActionVisibility(PROJECT_TYPE projectType);
 
 	// 清空所有视图图片
 	void clearAllWidgetPixs();
@@ -413,6 +449,7 @@ private:
 
 	// 采集打标
 	QAction* m_markInfoAct;
+	QAction* m_reimportMileagePilesAndMarksAct;
 
 	// 清除工程
 	QAction* m_clearProjectAct;
@@ -431,6 +468,8 @@ private:
 
 	// 标准二三维视图
 	QAction* m_oDViewportAct;
+
+	QAction* m_imageAdjustAct;
 
 	//平整度 车辙等计算
 	QAction* m_calculateAct;
@@ -472,6 +511,7 @@ private:
 
 	//备份数据库
 	QAction * m_backupsDatabaseAct;
+	QAction * m_viewResultDataAct;
 
 	//清空病害
 	QAction* m_clearAllDiseasesAct;
@@ -518,14 +558,18 @@ private:
 	//导出国检转换数据
 	QAction * m_exportGJDatasAction;
 
+	QAction* m_exportGJSoftwareAction;
+
 	//高精度定位
 private:
 	//工程设置
 	QAction* m_config;
+	QAction* m_openUserDirectoryAct;
 
 	QAction* m_HelperAct;
 	QAction* m_outExcel;
 	statusBarWidget *m_statusBarWidget;
+	adjustImageWidget* m_adjustImageWidget;
 
 	QAction * m_AboutInfoAct;
 	

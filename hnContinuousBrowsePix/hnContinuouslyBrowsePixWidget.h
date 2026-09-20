@@ -92,8 +92,6 @@ private:
 signals:
 	//信号：发送等比例显示窗口image
 	void sig_mousePosImageChanged(QImage image);
-	// Embedded per-view brightness control, replacing the old popup pane.
-	void signal_imageBrightnessChanged(int value);
 
 //槽函数
 public slots:
@@ -104,6 +102,8 @@ public slots:
 
 	// 停止播放并恢复按钮状态，切换工程或到达序列末尾时调用。
 	void stopAutoPlay();
+	// 保存设置后同步正在播放的定时器，无需重新打开工程。
+	void setAutoPlayIntervalMs(int intervalMs);
 
 	
 	virtual void slot_BlockValueChanged(int value) = 0;
@@ -176,7 +176,7 @@ public:
 	// 自动滚动标志
 	bool m_autoPlay;
 
-	// 自动播放定时器，固定每秒前进一张图片。
+	// 自动播放定时器，间隔由用户设置控制。
 	QTimer* m_autoPlayTimer = nullptr;
 
 	protected:

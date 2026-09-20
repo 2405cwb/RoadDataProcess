@@ -1,5 +1,6 @@
 #include "hnImportAidcDiseases.h"
 #include <QTime>
+#include <limits>
 #include <QDebug>
 #include <QVector>
 #include "mergeAidcDiseases.h"
@@ -91,11 +92,30 @@ void hnImportAidcDiseases::import()
 	// 是否合并病害
 	if (this->m_isMerge)
 	{
-		//合并纵向裂缝、修补病害。
-		mergeAidcDiseases merge(roadWidth, pixHeight, isVMirror, this->m_isDiseaseMap, m_parent);
-		// 注意：自动识别的病害坐标是没有经过翻转的，所以要考虑翻转情况进行拼接
-		// 如果是第二张图拼接到第一张顶部，则是第二张最底部和第一张顶部判断距离，进行拼接
-		diseases = merge.mergeDiseases(diseases);
+		// 二维软件不会跨严重程度、路面类型或备注拼接，同一数据库表还要继续细分。
+		QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> mergedDiseases;
+		for (auto tableIt = diseases.constBegin(); tableIt != diseases.constEnd(); ++tableIt)
+		{
+			QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> groups;
+			for (const hnCommon::hnRoadDiseaseInfo& disease : tableIt.value())
+			{
+				const QString groupKey = QStringLiteral("%1|%2|%3")
+					.arg(disease.nLevel).arg(disease.nRSurfaceType)
+					.arg(QString::fromLocal8Bit(disease.strRemark));
+				groups[groupKey].push_back(disease);
+			}
+			for (auto groupIt = groups.constBegin(); groupIt != groups.constEnd(); ++groupIt)
+			{
+				QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> singleGroup;
+				singleGroup.insert(tableIt.key(), groupIt.value());
+				mergeAidcDiseases merge(roadWidth, pixHeight, isVMirror, this->m_isDiseaseMap, m_parent);
+				const std::vector<hnCommon::hnRoadDiseaseInfo> groupResult =
+					merge.mergeDiseases(singleGroup).value(tableIt.key());
+				mergedDiseases[tableIt.key()].insert(mergedDiseases[tableIt.key()].end(),
+					groupResult.begin(), groupResult.end());
+			}
+		}
+		diseases = mergedDiseases;
 	}
 
 	// 修改自动化模式数量，进行人工模式病害映射
@@ -161,7 +181,7 @@ void hnImportAidcDiseases::import()
 
 }
 
-void hnImportAidcDiseases::import2dDisease()
+bool hnImportAidcDiseases::import2dDisease()
 {
 #define DEBUG_DISEASE_MERGE 0		// 手动绘制病害进行合并的测试流程
 
@@ -172,7 +192,7 @@ void hnImportAidcDiseases::import2dDisease()
 		//提示用户完成
 		QMessageBox::warning(m_parent, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("文本结果不存在，请检查。"),
 			QString::fromLocal8Bit("确定"));
-		return;
+		return false;
 	}
 #endif
 
@@ -211,7 +231,7 @@ void hnImportAidcDiseases::import2dDisease()
 	QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases = this->transformDiseases();
 	if (diseases.isEmpty())
 	{
-		return;
+		return true;
 	}
 #endif
 
@@ -281,15 +301,13 @@ void hnImportAidcDiseases::import2dDisease()
 	// 替换一下，将数据写入其他表格
 	QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> Dmove;
 	Dmove.insert(QString::fromLocal8Bit("DisYB"), diseases.value("DisZXLF"));
-	this->writeDb(Dmove);
+	const bool writeSuccess = this->writeDb(Dmove);
 #else
 	// 添加自动识别的病害应先删除原本病害，这样才不会出现 ID冲突问题
 	//批量写入数据库
-	this->writeDb(diseases);
+	const bool writeSuccess = this->writeDb(diseases);
 #endif
-
-	//提示用户完成
-	QMessageBox::information(m_parent, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("导入数据库完成"));
+	return writeSuccess;
 }
 
 bool hnImportAidcDiseases::loadDb()
@@ -477,7 +495,27 @@ bool hnImportAidcDiseases::load2dDb()
 	QMapIterator<QString, QString> it(tableNamesAndDiseaseNames);
 	int disIndex = 0;
 
-	QVector<QPair<int, QString>> allDisTxts;
+	QMap<QString, double> imageDmiMap;
+	const QVector<hnMile> currentMiles = hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
+	const QString projectBasePath = hnDataManager::getDataManager()->getCurrentProject()->get2DProPath();
+	for (int mileIndex = 0; mileIndex < currentMiles.size(); ++mileIndex)
+	{
+		QString imagePath = currentMiles.at(mileIndex).picturePath;
+		if (imagePath.isEmpty())
+		{
+			continue;
+		}
+		if (!QFileInfo(imagePath).isAbsolute())
+		{
+			const QString directory = QStringLiteral("Image_%1").arg(mileIndex / 1000, 4, 10, QChar('0'));
+			imagePath = QDir(projectBasePath).filePath(QStringLiteral("RoadImg/Camera0/%1/%2")
+				.arg(directory, imagePath));
+		}
+		imageDmiMap.insert(QDir::cleanPath(QFileInfo(imagePath).absoluteFilePath()).toLower(),
+			currentMiles.at(mileIndex).dEnclMile);
+	}
+
+	QVector<QPair<double, QString>> allDisTxts;
 
 	for (disIndex = 0; disIndex < filePaths.size(); ++disIndex)
 	{
@@ -490,12 +528,20 @@ bool hnImportAidcDiseases::load2dDb()
 		
 		QString fileName = curFile.fileName();
 		int pictureIndex = fileName.split("_").first().toInt();
-		int curDmi = dirIndex*2000 + (pictureIndex)*2; 
+		const QString imagePath = filePath.left(filePath.size() - fileFix.size());
+		const QString imageKey = QDir::cleanPath(QFileInfo(imagePath).absoluteFilePath()).toLower();
+		double curDmi = imageDmiMap.value(imageKey, std::numeric_limits<double>::quiet_NaN());
+		if (qIsNaN(curDmi))
+		{
+			const double imageInterval = hnDataManager::getDataManager()->getCurrentProject()->
+				getCurProSetInfo().dRoadLength;
+			curDmi = (dirIndex * 1000 + pictureIndex) * imageInterval;
+		}
 
 		QStringList txts = MyCommonMethods::ReadAllLines(filePath, "utf-8");
 		for (auto& txt : txts)
 		{
-			allDisTxts.append(QPair<int,QString>(curDmi, txt));
+			allDisTxts.append(QPair<double, QString>(curDmi, txt));
 		}
 	}
 
@@ -510,8 +556,9 @@ bool hnImportAidcDiseases::load2dDb()
 		//读取文本 分析病害
 		for (auto& disSingleInfo : allDisTxts)
 		{
-			int curDmi = disSingleInfo.first;
-			QStringList disSingleInfoSplits = disSingleInfo.second. trimmed().split(' ');
+			double curDmi = disSingleInfo.first;
+			QStringList disSingleInfoSplits = disSingleInfo.second.trimmed().split(
+				QRegularExpression(QStringLiteral("\\s+")), QString::SkipEmptyParts);
 
 			if (m_frameType == 0)
 			{
@@ -521,9 +568,9 @@ bool hnImportAidcDiseases::load2dDb()
 					continue;
 				}
 				QString mark = "";
-				if (disSingleInfoSplits.size()>7)
+				if (disSingleInfoSplits.size() > 7)
 				{
-					mark = disSingleInfoSplits[7];
+					mark = disSingleInfoSplits.mid(7).join(QStringLiteral(" "));
 				}
 				QString curDisName = disSingleInfoSplits[4];
 				QStringList disNameSplit = curDisName.split(".");
@@ -575,7 +622,7 @@ bool hnImportAidcDiseases::load2dDb()
 				AidcDisease disease;
 				disease.disMark = mark;
 				disease.roadStandard = standard;
-				disease.roadSurfaceType = hnDataManager::getDataManager()->getRoadSurfaceFromStr(disSingleInfoSplits.last());
+				disease.roadSurfaceType = hnDataManager::getDataManager()->getRoadSurfaceFromStr(disSingleInfoSplits.at(6));
 
 				disease.drawType = m_frameType;
 
@@ -679,7 +726,7 @@ bool hnImportAidcDiseases::load2dDb()
 	return true;
 }
 
-void hnImportAidcDiseases::writeDb(QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases)
+bool hnImportAidcDiseases::writeDb(QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> diseases)
 {
 	// 进度条
 	QProgressDialog progressDialog(m_parent);
@@ -696,9 +743,14 @@ void hnImportAidcDiseases::writeDb(QMap<QString, std::vector<hnCommon::hnRoadDis
 
 	 
 
+	bool success = true;
 	for (auto iter = diseases.begin(); iter != diseases.end(); iter++)
 	{
-		hnApp::hnDataManager::getDataManager()-> getDiseaseService()->addDataAffairs(iter.key(), true,QVector<hnCommon::hnRoadDiseaseInfo>::fromStdVector( iter.value()));
+		if (!hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDataAffairs(
+			iter.key(), true, QVector<hnCommon::hnRoadDiseaseInfo>::fromStdVector(iter.value())))
+		{
+			success = false;
+		}
 		
 		//hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurretDiseaseVector()
 
@@ -707,6 +759,7 @@ void hnImportAidcDiseases::writeDb(QMap<QString, std::vector<hnCommon::hnRoadDis
 		progressDialog.setValue(progressValue);
 		QApplication::processEvents();
 	}
+	return success;
 }
 
 QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> hnImportAidcDiseases::transformDiseases()
@@ -827,6 +880,9 @@ QMap<QString, std::vector<hnCommon::hnRoadDiseaseInfo>> hnImportAidcDiseases::tr
 			{
 				continue;
 			}
+			const QByteArray remarkBytes = disease.disMark.toLocal8Bit();
+			strncpy_s(newDisease.strRemark, sizeof(newDisease.strRemark),
+				remarkBytes.constData(), _TRUNCATE);
 
 			//里程
 			newDisease.dDmi = disease.dmi;
@@ -1219,20 +1275,12 @@ double hnImportAidcDiseases::caculateLittleFrameDiseaseBeginMile(const AidcDisea
 
 	 
 
-	//算出每个像素代表多少米
-	double widthScale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioX;
-
-	//矩形宽度（米） 每个小矩形宽度是10cm 也就是0.1米
-	double rectWidth = 0.1;
-
-	//算出自动化模式边长 单位：像素
-	int sideLenth = rectWidth / widthScale;
-
 	//图片像素宽度
 	int imagePixelWidth = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().picPixelX;
 
-	//横向矩形的个数
-	int widthRectCount = imagePixelWidth / sideLenth;
+	//横向矩形的个数必须与二维软件及网格构造规则一致。
+	const double widthScale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioX;
+	int widthRectCount = qMax(1, static_cast<int>(imagePixelWidth * widthScale * 10.0));
 
 
 	//找到最上端的单元格
@@ -1294,20 +1342,12 @@ double hnImportAidcDiseases::caculateLittleFrameDiseaseEndMile(const AidcDisease
 	//获取纵向每像素代表多少米
 	double scale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioY;
 
-	//算出每个像素代表多少米
-	double widthScale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioX;
-
-	//矩形宽度（米） 每个小矩形宽度是10cm 也就是0.1米
-	double rectWidth = 0.1;
-
-	//算出自动化模式边长 单位：像素
-	int sideLenth = rectWidth / widthScale;
-
 	//图片像素宽度
 	int imagePixelWidth = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().picPixelX;
 
-	//横向矩形的个数
-	int widthRectCount = imagePixelWidth / sideLenth;
+	//横向矩形的个数必须与二维软件及网格构造规则一致。
+	const double widthScale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioX;
+	int widthRectCount = qMax(1, static_cast<int>(imagePixelWidth * widthScale * 10.0));
 
 
 	//找到最上端的单元格
@@ -1602,44 +1642,34 @@ QVector<QRect> hnImportAidcDiseases::createSingleImageLittleFrameRect()
 
 	QVector<QRect> dstRects;
 
-	//算出每个像素代表多少米
-	double widthScale = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().dRadioX;
+	const hnCommon::hnProjectSetInfo setting = hnApp::hnDataManager::getDataManager()->
+		getCurrentProject()->getCurProSetInfo();
+	const int imagePixelWidth = setting.picPixelX;
+	const int imagePixelHeight = setting.picPixelY;
+	if (imagePixelWidth <= 0 || imagePixelHeight <= 0 || setting.dRadioX <= 0.0 || setting.dRadioY <= 0.0)
+	{
+		return QVector<QRect>();
+	}
 
-	//矩形宽度（米） 每个小矩形宽度是10cm 也就是0.1米
-	double rectWidth = 0.1;
-
-	//算出自动化模式边长 单位：像素
-	int sideLenth = rectWidth / widthScale;
-
-	//图片像素宽度
-	int imagePixelWidth = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().picPixelX;
-
-	//横向矩形的个数
-	int widthRectCount = imagePixelWidth / sideLenth;
-
-	//图片像素高度
-	int imagePixelHeight = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().picPixelY;
-
-	
-
-	//纵向矩形的个数
-	int heightRectCount = imagePixelHeight / sideLenth;
-//	int heightRectCount = round(imagePixelHeight*1.0 / sideLenth);
+	// 与二维软件一致：横纵方向分别按实际分辨率建立10厘米网格。
+	const int widthRectCount = qMax(1, static_cast<int>(imagePixelWidth * setting.dRadioX * 10.0));
+	const int heightRectCount = qMax(1, static_cast<int>(imagePixelHeight * setting.dRadioY * 10.0));
+	const int cellWidth = qMax(1, qRound(imagePixelWidth * 1.0 / widthRectCount));
+	const int cellHeight = qMax(1, qRound(imagePixelHeight * 1.0 / heightRectCount));
 
 	//循环向目标的数据里面添加矩形
 	QRect rect;					//单个自动化模式的矩形
 	QPoint topLeftPoint;		//左上角的点
 	QPoint bottomRightPoint;	//右下角的点
-	//int tmpLenth = sideLenth - 1;
-	int tmpLenth = sideLenth;
 	for (int i = 0; i < heightRectCount; i++)
 	{
 		for (int j = 0; j < widthRectCount; j++)
 		{
 			//计算左上角的点
-			topLeftPoint = QPoint(j * tmpLenth, i * tmpLenth);
+			topLeftPoint = QPoint(j * cellWidth, i * cellHeight);
 			//计算右下角的点
-			bottomRightPoint = QPoint(j * tmpLenth + tmpLenth, i * tmpLenth + tmpLenth);
+			bottomRightPoint = QPoint(qMin(imagePixelWidth, (j + 1) * cellWidth),
+				qMin(imagePixelHeight, (i + 1) * cellHeight));
 			//得到矩形
 			rect = QRect(topLeftPoint, bottomRightPoint);
 			//插入数组
@@ -1678,8 +1708,9 @@ QVector<QRect> hnImportAidcDiseases::createLittleFrameRects(const AidcDisease & 
 			continue;
 		}
 
-		const int idx = str.toInt();
-		if (rects.size() > idx)
+		bool indexValid = false;
+		const int idx = str.toInt(&indexValid);
+		if (indexValid && idx >= 0 && rects.size() > idx)
 		{
 			result.push_back(rects.at(idx));
 		}

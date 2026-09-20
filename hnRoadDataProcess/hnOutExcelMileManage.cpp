@@ -1,4 +1,8 @@
 #include "hnOutExcelMileManage.h"
+#include "hnReportDiseaseSeverity.h"
+#include "hnCityReportSegmenter.h"
+#include <QtMath>
+#include "hnRuralEvaluationUnitMerger.h"
 #include "hnReportProjectInfo.h"
 #include <algorithm>
 #include "..\hnQtCommon\MyCommonMethods.h"
@@ -13,6 +17,54 @@
 #include <QMap>
 #include <QFileInfo>
 #include "..\hnApplication\hnDataManager.h"
+namespace
+{
+	QString irmDataError(
+		const QString& projectName,
+		const QString& metric,
+		const QString& side,
+		const QString& inputPath,
+		int observedCount,
+		int expectedCount,
+		bool isPartial)
+	{
+		const QString header =
+			QStringLiteral("工程：") + projectName
+			+ QStringLiteral("\r\n指标：") + metric
+			+ QStringLiteral("\r\n侧别：") + side
+			+ QStringLiteral("\r\n输入文件：")
+			+ QDir::toNativeSeparators(
+				QFileInfo(inputPath).absoluteFilePath());
+
+		if (isPartial)
+		{
+			return header
+				+ QStringLiteral("\r\n记录数：已读取 ")
+				+ QString::number(observedCount)
+				+ QStringLiteral("，预计 ")
+				+ QString::number(expectedCount)
+				+ QStringLiteral(
+					"。\r\n"
+					"数据不完整。"
+					"请执行：数据处理 -> 清空IRM结果 -> ")
+				+ QStringLiteral("【")
+				+ metric
+				+ QStringLiteral("】 -> IRM计算。");
+		}
+
+		return header
+			+ QStringLiteral(
+				"\r\n"
+				"文件缺失。"
+				"请核对/恢复上述文件；"
+				"若原始采集数据完整，请执行："
+				"数据处理 -> 清空IRM结果 -> ")
+			+ QStringLiteral("【")
+			+ metric
+			+ QStringLiteral("】 -> IRM计算。");
+	}
+}
+
 #include "MileAndDmi.h"
 #include "..\hnApplication\hnDiseaseService.h"
 #ifdef DEBUG
@@ -25,17 +77,23 @@ using namespace   hnPro;
 
 
 
-hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum standard, hnPro::hnProject * project,
-	 double sMile, double eMile, double xlslen, const MyQtCommon::MyEquipment& equip)
+hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum standard, hnPro::hnProject* project,
+	double sMile, double eMile, double xlslen, const MyQtCommon::MyEquipment& equip, bool ignoreMarksForExport)
 	:m_standard(standard),
 	m_sMile(sMile),
 	m_eMile(eMile),
 	m_xlslen(xlslen),
-	m_project(project), 
+	m_project(project),
 	m_equipMentList(equip),
-	m_iriOk(true), m_pbState(true), m_rutState(true),m_speedOk(true),m_mtdState(true),m_mpdState(true),m_gpsState(true),m_dataCompletion(false)
+	m_iriOk(true), m_pbState(true), m_rutState(true), m_speedOk(true), m_mtdState(true), m_mpdState(true), m_gpsState(true), m_jhxxState(true), m_dataCompletion(false)
 {
-	m_xrSetting = HnXRSettings::getInstance(); 
+	m_xrSetting = HnXRSettings::getInstance();
+	m_cityDistanceSegments = m_standard == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1;
+	m_useDmiFormat = m_xrSetting->outExcelFormatDmi && !m_cityDistanceSegments;
+	if (m_cityDistanceSegments)
+	{
+		m_xlslen = m_xrSetting->PartType_Dmi_Len > 0 ? m_xrSetting->PartType_Dmi_Len : 200;
+	}
 	//m_levels = hnApp::hnDataManager::getDataManager()->getRoadLevel(m_standard);
 	//获得配置信息
 	m_projectSet = project->getCurProSetInfo();
@@ -48,21 +106,39 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 		return;
 	}
 	//根据分段进行筛选  
-	if (m_direction ==-1)
+	if (m_direction == -1)
 	{
-		if (m_sMile  < m_eMile)
+		if (m_sMile < m_eMile)
 		{
-			double temp = 0; 
+			double temp = 0;
 			temp = m_sMile;
 			m_sMile = m_eMile;
 			m_eMile = temp;
 		}
 	}
 	QVector<hnMile> m_filteredmileVec = getMilesInRange(mils, m_direction, m_sMile, m_eMile);
+	if (m_cityDistanceSegments && m_filteredmileVec.isEmpty())
+	{
+		// 校桩记录可能稀疏；辅助十米区间仍从本次导出起点生成。
+		hnMile first = mils.first();
+		first.dTrueMile = m_sMile;
+		m_filteredmileVec.push_back(first);
+	}
 	//剩下步骤  设置各项指标参数
 	//根据用户分段区间进行分段如 10,100,1000
- 
-	if (m_xrSetting->outExcelFormatDmi)
+
+	auto marks = m_cityDistanceSegments ? cityReportMarks() : m_project->getCurrentMarkVector();
+	// 国检非 DR 成果必须忽略所有打标，包括农村公路材质边界。
+	if (ignoreMarksForExport) marks.clear();
+	if (m_cityDistanceSegments)
+	{
+		m_roadSplietVec = splitCityMile(marks);
+	}
+	else if (m_filteredmileVec.isEmpty() || m_xlslen <= 0)
+	{
+		return;
+	}
+	else if (m_useDmiFormat)
 	{
 		m_roadSplietVec = splitMile_dmi(m_filteredmileVec, m_xlslen);
 
@@ -71,31 +147,37 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 	{
 		m_roadSplietVec = splitMile(m_filteredmileVec, m_xlslen);
 
-	} 
+	}
 
+	if (m_roadSplietVec.isEmpty())
+	{
+		return;
+	}
 	//处理打标文件 对前一步分段进行处理
-	auto marks = m_project->getCurrentMarkVector();
-	if (m_xrSetting->outExcelFormatDmi)
-	{ 
-		for (auto & mark : marks)
-		{
-			
-		 double realMile = 	getCloseMile(mark.dEnclMile);
 
-		 mark.dTrueMile = realMile;
+	if (m_useDmiFormat && m_standard != HnProjectEnums::RuralRoadlowLevel)
+	{
+		for (auto& mark : marks)
+		{
+
+			double realMile = getCloseMile(mark.dEnclMile);
+
+			mark.dTrueMile = realMile;
 		}
 	}
-	if (!this->m_xrSetting->outMileWithMark)
+	// 农村路属性边界必须参与评定，不受打标备注输出选项控制。
+	if (!this->m_xrSetting->outMileWithMark
+		&& m_standard != HnProjectEnums::RuralRoadlowLevel && !m_cityDistanceSegments)
 	{
 		marks.clear();
-	} 
-	handelMark(m_roadSplietVec, marks);
+	}
+	handelMark(m_roadSplietVec, marks, qAbs(m_xlslen - 1000.0) < 0.001);
 
 	//添加车辙病害
 	if (m_equipMentList.ROAD
-		&&(m_project->getBaseStandard() == HnProjectEnums::DegreeRoad2018)||(m_project->getBaseStandard()== HnProjectEnums::CityRoad))
+		&& (m_project->getBaseStandard() == HnProjectEnums::DegreeRoad2018) || (m_project->getBaseStandard() == HnProjectEnums::CityRoad))
 	{
-		if (m_xrSetting->outExcelFormatDmi)
+		if (m_useDmiFormat)
 		{
 
 			m_roadSplit_rutDis10m_Vec = splitMile_dmi(m_filteredmileVec, 10);
@@ -106,11 +188,16 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 
 		}
 
-		//处理打标文件 对前一步分段进行处理
-		auto markRuts = m_project->getCurrentMarkVector();
-		if (m_xrSetting->outExcelFormatDmi)
+		if (m_roadSplietVec.isEmpty())
+	{
+		return;
+	}
+	//处理打标文件 对前一步分段进行处理
+		auto markRuts = m_cityDistanceSegments ? cityReportMarks() : m_project->getCurrentMarkVector();
+		if (ignoreMarksForExport) markRuts.clear();
+		if (m_useDmiFormat)
 		{
-			for (auto & mark : markRuts)
+			for (auto& mark : markRuts)
 			{
 
 				double realMile = getCloseMile(mark.dEnclMile);
@@ -118,30 +205,30 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 				mark.dTrueMile = realMile;
 			}
 		}
-		if (!this->m_xrSetting->outMileWithMark)
+		if (!this->m_xrSetting->outMileWithMark && !m_cityDistanceSegments)
 		{
 			markRuts.clear();
 		}
 		handelMark(m_roadSplit_rutDis10m_Vec, markRuts);
-		
+
 		if (m_xrSetting->czDisOutSelectExcel == 1 || (m_xrSetting->czDisOutSelectExcel == 2 && (m_project->getCurProSetInfo().nGradIndex > 1)))
-			{
-			QVector <double > sval; 
+		{
+			QVector <double > sval;
 			QVector<double >smile;
-				getRutDisVal(m_roadSplit_rutDis10m_Vec, sval,smile);
-				setRutDis(sval, smile);
-			}
-	
+			getRutDisVal(m_roadSplit_rutDis10m_Vec, sval, smile);
+			setRutDis(sval, smile);
+		}
+
 	}
 
-	m_dataCompletion =  handelRoadSplietVec(m_roadSplietVec);  
+	m_dataCompletion = handelRoadSplietVec(m_roadSplietVec);
 	//跳车需要十米分段
 	if (m_project->get2DProject()->_IsIRIMTD && m_equipMentList.JUMP)
 	{
-		
-		if (m_xrSetting->outExcelFormatDmi)
+
+		if (m_useDmiFormat)
 		{
-			 
+
 			m_roadSplit_pwi10m_Vec = splitMile_dmi(m_filteredmileVec, 10);
 		}
 		else
@@ -152,11 +239,12 @@ hnOutExcelMileManage::hnOutExcelMileManage(HnProjectEnums::StandardParmTypeEnum 
 
 		handelMark(m_roadSplit_pwi10m_Vec, marks);
 
-		m_pbState = writePbiValue(m_roadSplit_pwi10m_Vec);  
+		m_pbState = writePbiValue(m_roadSplit_pwi10m_Vec);
+		m_dataCompletion = m_dataCompletion && m_pbState;
 
 		handelPbiValues(m_roadSplietVec, m_roadSplit_pwi10m_Vec);
 		writeSpeedValue(m_roadSplit_pwi10m_Vec, 10);
-	} 
+	}
 }
 
 hnOutExcelMileManage::~hnOutExcelMileManage()
@@ -182,7 +270,7 @@ QVector<hnOutExcelMile> hnOutExcelMileManage::getRoadMessageVec()
 		{
 			QVector<hnOutExcelMile> result;
 			result.reserve(m_roadSplietVec.size());
-			for (auto it = m_roadSplietVec.rbegin(); it!= m_roadSplietVec.rend();++it)
+			for (auto it = m_roadSplietVec.rbegin(); it != m_roadSplietVec.rend(); ++it)
 			{
 				result.append(*it);
 			}
@@ -192,23 +280,23 @@ QVector<hnOutExcelMile> hnOutExcelMileManage::getRoadMessageVec()
 	return m_roadSplietVec;
 }
 
- QVector<hnOutExcelMile> hnOutExcelMileManage::getRoadMessage_10m_Vec()
- {
-	 if (m_xrSetting->outExcelNeedSort)
-	 {
-		 if (m_project->getCurProSetInfo().nLineType == -1)
-		 {
-			 QVector<hnOutExcelMile> result;
-			 result.reserve(m_roadSplit_pwi10m_Vec.size());
-			 for (auto it = m_roadSplit_pwi10m_Vec.rbegin(); it != m_roadSplit_pwi10m_Vec.rend(); ++it)
-			 {
-				 result.append(*it);
-			 }
-			 return result;
-		 }
-	 }
-	 
-	 return m_roadSplit_pwi10m_Vec;
+QVector<hnOutExcelMile> hnOutExcelMileManage::getRoadMessage_10m_Vec()
+{
+	if (m_xrSetting->outExcelNeedSort)
+	{
+		if (m_project->getCurProSetInfo().nLineType == -1)
+		{
+			QVector<hnOutExcelMile> result;
+			result.reserve(m_roadSplit_pwi10m_Vec.size());
+			for (auto it = m_roadSplit_pwi10m_Vec.rbegin(); it != m_roadSplit_pwi10m_Vec.rend(); ++it)
+			{
+				result.append(*it);
+			}
+			return result;
+		}
+	}
+
+	return m_roadSplit_pwi10m_Vec;
 }
 
 QVector<hnMile> hnOutExcelMileManage::getMilesInRange(const QVector<hnMile>& miles, int line, double sMile, double eMile)
@@ -222,7 +310,7 @@ QVector<hnMile> hnOutExcelMileManage::getMilesInRange(const QVector<hnMile>& mil
 			filteredMiles.push_back(*it);
 		}
 	}
-	if (filteredMiles.size()>1)
+	if (filteredMiles.size() > 1)
 	{
 		if (line == -1)
 		{
@@ -236,7 +324,7 @@ QVector<hnMile> hnOutExcelMileManage::getMilesInRange(const QVector<hnMile>& mil
 			filteredMiles[filteredMiles.size() - 1].dTrueMile = eMile;
 		}
 	}
-	
+
 	return filteredMiles;
 }
 
@@ -244,53 +332,49 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 {
 	bool hasLeftIRI = false;
 	bool hasRightIRI = false;
-	 
+
 	if (m_project->get2DProject()->_IsIRIMTD && m_equipMentList.IRI)
 	{
 		m_iriOk = writeIriValue(hasLeftIRI, hasRightIRI, m_xlslen);
 	}
-	if (m_equipMentList.SPEED && m_iriOk)
+	if (m_equipMentList.SPEED)
 	{
 		m_speedOk = writeSpeedValue(m_roadSplietVec, m_xlslen);
 	}
 	if (m_project->get2DProject()->_IsRut && m_equipMentList.RUT)
-	{ 
-		m_rutState = writeRutValue();
-	} 
-	if (m_equipMentList.MPD)
-	{ 
-	  m_mpdState=	writeMpdValue();
-	}
-	if (m_equipMentList.SMTD) 
 	{
-	   m_mtdState = 	writeMtdValue();
+		m_rutState = writeRutValue();
+	}
+	if (m_equipMentList.MPD)
+	{
+		m_mpdState = writeMpdValue();
+	}
+	if (m_equipMentList.SMTD)
+	{
+		m_mtdState = writeMtdValue();
 	}
 	if (m_equipMentList.JHXX)
 	{
-		writeJHXXValue( m_xlslen);
+		m_jhxxState = writeJHXXValue(m_xlslen);
 	}
 
 	if (m_equipMentList.GPS)
 	{
-		m_gpsState = writeGpsStrValue(); 
+		m_gpsState = writeGpsStrValue();
 	}
 
-    bool ok = m_iriOk && m_speedOk && m_rutState && m_mpdState&& m_mtdState&& m_gpsState;
-
-	 if (!ok)
-	 {
-		 return false;
-	 }
+	// 各指标只依赖自己的数据。车速是辅助输出列，缺失时不得阻断其他指标评分。
+	bool ok = m_iriOk && m_rutState && m_mpdState && m_mtdState && m_gpsState && m_jhxxState;
 
 	//将每段代表的hnMile赋值进去,计算指标得分
-	 QVector<hnCommon::hnRoadDiseaseInfo> diss;
+	QVector<hnCommon::hnRoadDiseaseInfo> diss;
 
 	//景观
 	QVector<hnCommon::hnRoadDiseaseInfo> streetDiss;
 	QMap<int, QVector<hnDiseaseSetInfo>> streetSettingInfoMap;
 	QString standard = HnProjectEnums::roadTypeEnumToQString(m_standard);
 	if (m_equipMentList.ROAD)
-	{ 
+	{
 
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(m_project);
 		//if (m_project->getCurProSetInfo().nDrawType==2)
@@ -302,52 +386,68 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 		//	//过滤路面材质不一样,绘制类型不一样,  道路宽度等不一样的病害
 		//	m_project->getDB()->getDiseaseTable()->readRoadDiseaseData(m_projectSet, m_project->getCurrentMileVector(), diss, m_project->getCurrentMarkVector(), m_project->getRoadSpace());
 		//}
-		
+
 		diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 
 
-		if (rutDiss.size()>0)
+		if (rutDiss.size() > 0)
 		{
 			diss.append(rutDiss);
 		}
-	
+
 
 	}
+	hnReportDiseaseSeverity severity;
+	severity.apply(diss, m_project);
 	if (m_equipMentList.STREET)
 	{
 
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->setProject(m_project);
-	//	m_project->getDB()->getDiseaseTable()->readStreetData(standard, m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
-		streetDiss = 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
+		//	m_project->getDB()->getDiseaseTable()->readStreetData(standard, m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
+		streetDiss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
 		QVector<hnDiseaseSetInfo> tciDiseaseSetInfos = hnApp::hnDataManager::getDataManager()->
 			getCurrentProjectStreetDiseases(m_project->getBaseStandard(), 1);
 
 		//m_project->getDB()->getDiseaseTable()->readStreetData(standard,m_project->getCurrentMileVector(), streetDiss, m_project->getCurProSetInfo().nLineType, m_project->getStreetSpace());
-		streetDiss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases(); 
+		streetDiss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
 		QVector<hnDiseaseSetInfo> sciDiseaseSetInfos = hnApp::hnDataManager::getDataManager()->
 			getCurrentProjectStreetDiseases(m_project->getBaseStandard(), 2);
 		streetSettingInfoMap.insert(1, tciDiseaseSetInfos);
 		streetSettingInfoMap.insert(2, sciDiseaseSetInfos);
 	}
 
-	
+
 	for (hnOutExcelMile& excelMile : miles)
 	{
-		if (!excelMile.StartCalculate(false))
+		const bool needsRoadParameters =
+			(m_iriOk && m_project->get2DProject()->_IsIRIMTD && m_equipMentList.IRI) ||
+			(m_rutState && m_project->get2DProject()->_IsRut && m_equipMentList.RUT) ||
+			(m_mpdState && m_equipMentList.MPD) ||
+			(m_mtdState && m_equipMentList.SMTD) ||
+			m_equipMentList.ROAD;
+		const bool parameterReady = !needsRoadParameters || excelMile.StartCalculate(false);
+		if (!parameterReady)
 		{
 			ok = false;
-			continue;
 		}
-		if (m_project->get2DProject()->_IsIRIMTD && m_equipMentList.IRI)
+		if (parameterReady && m_iriOk &&
+			m_project->get2DProject()->_IsIRIMTD && m_equipMentList.IRI)
 		{
-			excelMile.calculateRQIScore(hasLeftIRI, hasRightIRI);
+			if (!excelMile.calculateRQIScore(hasLeftIRI, hasRightIRI))
+			{
+				ok = false;
+			}
 		}
-		if (m_project->get2DProject()->_IsRut && m_equipMentList.RUT)
+		if (parameterReady && m_rutState &&
+			m_project->get2DProject()->_IsRut && m_equipMentList.RUT)
 		{
-			excelMile.calculateRUTScore();
-		} 
-		if (m_equipMentList.ROAD)  //涉及到 pci  病害的 都需要
-		{ 
+			if (!excelMile.calculateRUTScore())
+			{
+				ok = false;
+			}
+		}
+		if (parameterReady && m_equipMentList.ROAD)  //涉及到 pci  病害的 都需要
+		{
 			//if (m_xrSetting->czDisOutSelectExcel == 1 || (m_xrSetting->czDisOutSelectExcel == 2 && (m_project->getCurProSetInfo().nGradIndex > 1)))
 			//{
 			//	//计算车辙病害
@@ -360,7 +460,7 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 			//	 {
 			//	 }
 			//} 
-			if (m_project->getBaseStandard() == HnProjectEnums::CityRoad && (m_project->getProjectType() == PROJECT_23D_TYPE|| m_project->getProjectType()== PROJECT_2D_TYPE))
+			if (m_project->getBaseStandard() == HnProjectEnums::CityRoad && (m_project->getProjectType() == PROJECT_23D_TYPE || m_project->getProjectType() == PROJECT_2D_TYPE))
 			{
 				//城镇道路自动计算路况差病害
 				//1.先对病害进行排序
@@ -376,11 +476,11 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 		if (m_equipMentList.STREET) //涉及到景观的
 		{
 			//计算Tci
-			excelMile.calcaulateStreetScore(1,streetDiss, streetSettingInfoMap[1]);
+			excelMile.calcaulateStreetScore(1, streetDiss, streetSettingInfoMap[1]);
 			//计算Sci
-			excelMile.calcaulateStreetScore(2,streetDiss, streetSettingInfoMap[2]);
-		} 
-	}  
+			excelMile.calcaulateStreetScore(2, streetDiss, streetSettingInfoMap[2]);
+		}
+	}
 	return ok;
 #ifdef DEBUG
 
@@ -390,13 +490,13 @@ bool hnOutExcelMileManage::handelRoadSplietVec(QVector<hnOutExcelMile>& miles)
 		//qDebug() <<
 		QString mileInfo = mile;
 		mileList.push_back(mileInfo);
-	} 
+	}
 	//QString MilePath =project->get2;
 	QString path = m_project->get2DProject()->getBasePath() + "\\" + QString::number(m_xlslen) + QStringLiteral(" 分段测试文件.txt");
 	MyCommonMethods::writeAllLines(path, mileList, QTextCodec::codecForName("utf-8"));
 #endif // CWB_测试
 
-} 
+}
 
 void hnOutExcelMileManage::getLuKuangCha(QVector<hnCommon::hnRoadDiseaseInfo>& arrdis)
 {
@@ -416,15 +516,15 @@ void hnOutExcelMileManage::getLuKuangCha(QVector<hnCommon::hnRoadDiseaseInfo>& a
 	if (arrdis.size() > 0)
 	{
 		QVector<hnCommon::hnRoadDiseaseInfo> newDiss;
- 
+
 		hnCommon::hnRoadDiseaseInfo curdis;
-	
+
 		for (int i = 0; i < arrdis.size(); ++i)
 		{
 			curdis = arrdis[i];
-			QString disName =QString::fromLocal8Bit(curdis.strDisName);
-			if (disName.contains(QStringLiteral( "路框差")))
-			{  
+			QString disName = QString::fromLocal8Bit(curdis.strDisName);
+			if (disName.contains(QStringLiteral("路框差")))
+			{
 				double depth = 0;
 				if (m_project->getProjectType() == PROJECT_2D_TYPE)
 				{
@@ -440,7 +540,7 @@ void hnOutExcelMileManage::getLuKuangCha(QVector<hnCommon::hnRoadDiseaseInfo>& a
 					//}
 					newDiss.push_back(curdis);
 				}
-				else if(m_project->getProjectType() == PROJECT_23D_TYPE)
+				else if (m_project->getProjectType() == PROJECT_23D_TYPE)
 				{
 					depth = curdis.dDepth;
 					if (depth < thresh)
@@ -452,8 +552,8 @@ void hnOutExcelMileManage::getLuKuangCha(QVector<hnCommon::hnRoadDiseaseInfo>& a
 					{
 						newDiss.push_back(curdis);
 					}
-				} 
-				
+				}
+
 
 			}
 			else
@@ -483,7 +583,7 @@ bool hnOutExcelMileManage::LoadRutData()
 		}
 		RutParm rutLeftParm(rutLeftIniFileStr);
 		rutparm_L = rutLeftParm;
-		if (project->_RutMode ==1)
+		if (project->_RutMode == 1)
 		{
 			QString rutRightIniFileStr = project->getRightRutPath() + "\\rutcfg.ini";
 			QFile rutIniFile(rutRightIniFileStr);
@@ -493,14 +593,14 @@ bool hnOutExcelMileManage::LoadRutData()
 				return false;
 			}
 			RutParm rutRightParm(rutRightIniFileStr);
-			rutparm_R= rutRightParm;
+			rutparm_R = rutRightParm;
 		}
 		else
 		{
 			rutparm_R = rutLeftParm;
 		}
-		 
-		rutfilepaths_L = 	MyCommonMethods::getMyAllDirFile(rutLeftDataDirStr, QStringList( "*.dtw"));
+
+		rutfilepaths_L = MyCommonMethods::getMyAllDirFile(rutLeftDataDirStr, QStringList("*.dtw"));
 		if (project->_RutMode == 1)
 		{
 			rutfilePaths_R = MyCommonMethods::getMyAllDirFile(rutRightDataDirStr, QStringList("*.dtw"));
@@ -508,7 +608,7 @@ bool hnOutExcelMileManage::LoadRutData()
 		rbarr.resize(rutparm_L._hpixel * rutparm_L._pixsize);
 		profile.resize(rutparm_L._hpixel);
 		profileZ.resize(rutparm_L._hpixel);
-		profileZtmp.resize (rutparm_L._hpixel); 
+		profileZtmp.resize(rutparm_L._hpixel);
 	}
 	else
 	{
@@ -517,7 +617,7 @@ bool hnOutExcelMileManage::LoadRutData()
 	return true;
 }
 
-bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<double>& sRutVals, QVector<double>& sMiles)
+bool hnOutExcelMileManage::getRutDisVal(QVector<hnOutExcelMile>& miles, QVector<double>& sRutVals, QVector<double>& sMiles)
 {
 	QString resultPath = m_project->get2DProject()->getBasePath();
 	QString leftpath = resultPath + "\\Rut\\camera0\\orirut.txt";
@@ -537,7 +637,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("左侧"), leftpath, LStrs.size(), qRound(endDmi * 10.0), true);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
@@ -555,7 +655,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 	{
 		try
 		{
-			QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
+			QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("左侧"), leftpath, 0, 0, false);
 			string mes = message.toLocal8Bit();
 			reportExcelError(message);
 			//throw std::runtime_error(mes.c_str());
@@ -573,11 +673,11 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 
 			RStrs = MyCommonMethods::ReadAllLines(rightPath);
 			double endDmi = m_project->trueMileToEncl(m_project->getCurProSetInfo().dEndMile);
-			if (LStrs.size() / 10 < endDmi - endDmi / 5)
+			if (RStrs.size() / 10 < endDmi - endDmi / 5)
 			{
 				try
 				{
-					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
+					QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("右侧"), rightPath, RStrs.size(), qRound(endDmi * 10.0), true);
 					string mes = message.toLocal8Bit();
 					reportExcelError(message);
 					//	throw std::runtime_error(mes.c_str());
@@ -595,7 +695,7 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("右侧"), rightPath, 0, 0, false);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
@@ -632,9 +732,9 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 			int lvalnum = 0, rvalnum = 0, svalnum = 0;
 
 			QStringList tval;
-			double temp = m_project->get2DProject()->_DMIScale; 
-			startidx = (int)qRound(dimS*m_project->get2DProject()->_DMIScale / BaseLen);
-			endidx = (int)qRound(dimE * temp / BaseLen);
+			double temp = m_project->get2DProject()->_DMIScale;
+			startidx = MyCommonMethods::MathRoundToInt(dimS * m_project->get2DProject()->_DMIScale / BaseLen);
+			endidx = MyCommonMethods::MathRoundToInt(dimE * temp / BaseLen);
 			for (ValStridx = startidx; ValStridx < endidx; ++ValStridx)
 			{
 				if (m_project->get2DProject()->_RutMode == 1)
@@ -643,11 +743,11 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 					{
 						LStrLine = LStrs[ValStridx];
 						tval = LStrLine.split(',');
-						if (tval.size() <= 3)
+						if (tval.size() < 2)
 						{
 							continue;
 						}
-						ltval = qAbs(tval[1].toDouble());
+						ltval = qAbs(tval[1].toDouble()) + m_xrSetting->rutLeftCorrect;
 						suml += ltval;
 						++lvalnum;
 					}
@@ -655,11 +755,11 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 					{
 						RStrLine = RStrs[ValStridx];
 						tval = RStrLine.split(',');
-						if (tval.size() <= 3)
+						if (tval.size() < 2)
 						{
 							continue;
 						}
-						rtval = qAbs(tval[1].toDouble());
+						rtval = qAbs(tval[1].toDouble()) + m_xrSetting->rutRightCorrect;
 						sumr += rtval;
 						++rvalnum;
 					}
@@ -676,8 +776,8 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 						{
 							continue;
 						}
-						ltval = qAbs(tval[1].toDouble());
-						rtval = qAbs(tval[3].toDouble());
+						ltval = qAbs(tval[1].toDouble()) + m_xrSetting->rutLeftCorrect;
+						rtval = qAbs(tval[3].toDouble()) + m_xrSetting->rutRightCorrect;
 						suml += ltval;
 						sumr += rtval;
 						sums += qMax(ltval, rtval);
@@ -706,20 +806,20 @@ bool hnOutExcelMileManage::getRutDisVal( QVector<hnOutExcelMile>& miles,QVector<
 
 		}
 		else
-		{ 
+		{
 			sRutVals.push_back(0);
 			sMiles.push_back(miles[i].getStartMile());
 
-		}  
-	
-	}  
+		}
+
+	}
 	return true;
 }
 
 void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVector<double>sMiles)
 {
 	rutDiss.clear();
-	if (sRutVlas.size()==0)
+	if (sRutVlas.size() == 0)
 	{
 		return;
 	}
@@ -727,7 +827,7 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 	hnRoadTypeSetInfo setInfo;
 	hnApp::hnDataManager::getDataManager()->getRoadTypeSetInfo(m_standard, grad, ROAD_SURFACE_TYPE::ROAD_LQ_SURFACE, setInfo);
 	QVector<double> rutThresh;
-	if (setInfo.dRutThreslodDown!=0)
+	if (setInfo.dRutThreslodDown != 0)
 	{
 		rutThresh.resize(2);
 		rutThresh[0] = setInfo.dRutThreslodDown;
@@ -745,18 +845,18 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 	QVector<int> disdegree;
 	disdegree.resize(len);
 	bool bflag = false;
-	for (int i = 0 ; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		bflag = false;
-		for (int j  = rutThresh.size()-1;j>=0;--j)
+		for (int j = rutThresh.size() - 1; j >= 0; --j)
 		{
-			if (sRutVlas[i] >rutThresh[j])
+			if (sRutVlas[i] > rutThresh[j])
 			{
 				disdegree[i] = j;
 				bflag = true;
 				break;
 			}
-		
+
 		}
 		if (bflag)
 		{
@@ -766,9 +866,9 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 	}
 	QVector<QString> degreestr = { QStringLiteral("轻"), QStringLiteral("重") };
 	int oldtype = disdegree[0];
-	int dislen = 0; 
+	int dislen = 0;
 
-	for (int i = 1 ; i <len; ++i)
+	for (int i = 1; i < len; ++i)
 	{
 		if (oldtype == -1)
 		{
@@ -778,7 +878,7 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 		}
 		if (oldtype != disdegree[i])
 		{
-			dislen++; 
+			dislen++;
 			hnCommon::hnRoadDiseaseInfo tempdis;
 			tempdis.dMileage = m_project->trueMileToEncl(sMiles[i]);
 			tempdis.dDmi = m_project->trueMileToEncl(sMiles[i]);
@@ -794,14 +894,14 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 			tempdis.dRoadWidth = hnReportProjectInfo::roadWidth(m_project);
 			tempdis.diseaseWeight = 1;
 			strcpy(tempdis.strDiseaseTableName, "DisCZ");
-			if (m_project->getBaseStandard() == HnProjectEnums::CityRoad )
+			if (m_project->getBaseStandard() == HnProjectEnums::CityRoad)
 			{
 				tempdis.nLevel = 0;
 				strcpy(tempdis.strDisName, "车辙");
 			}
 			else
 			{
-				if (degreestr[oldtype] == QStringLiteral("轻") )
+				if (degreestr[oldtype] == QStringLiteral("轻"))
 				{
 					tempdis.nLevel = 1;
 					strcpy(tempdis.strDisName, "车辙.轻");
@@ -816,16 +916,16 @@ void hnOutExcelMileManage::setRutDis(const QVector<double>sRutVlas, const QVecto
 				dislen = 0;
 			}
 
-			
+
 		}
 	}
 }
 
-void hnOutExcelMileManage::handelPbiValues(QVector<hnOutExcelMile>& roadpart,const QVector<hnOutExcelMile>& mile_10m)
+void hnOutExcelMileManage::handelPbiValues(QVector<hnOutExcelMile>& roadpart, const QVector<hnOutExcelMile>& mile_10m)
 {
 	int maxormean = 0;
-	auto sett = m_project->get2DProject(); 
-	  
+	auto sett = m_project->get2DProject();
+
 	int startidx = 0, endidx = 0, ValStridx = 0;
 	int len = roadpart.size();
 	auto projectInfo = m_project->getCurProSetInfo();
@@ -833,14 +933,14 @@ void hnOutExcelMileManage::handelPbiValues(QVector<hnOutExcelMile>& roadpart,con
 	for (int i = 0; i < len; i++)
 	{
 
-		auto&  nowExcelMile = roadpart[i];
-		
+		auto& nowExcelMile = roadpart[i];
+
 		auto params = nowExcelMile.getRoadTypeSetInfo();
 		QString PBI_KFBZ = QString::fromLocal8Bit(params.strPBI_KFBZ);
 		QStringList kfbzStr = PBI_KFBZ.split(" ");
 
 		QVector<double>  thresh;
-		for each (auto var in kfbzStr)
+		for each(auto var in kfbzStr)
 		{
 			thresh.push_back(var.toDouble());
 		}
@@ -862,7 +962,7 @@ void hnOutExcelMileManage::handelPbiValues(QVector<hnOutExcelMile>& roadpart,con
 				endidx = tt;
 				break;
 			}
-		} 
+		}
 
 		for (ValStridx = startidx; ValStridx <= endidx; ValStridx++)
 		{
@@ -903,19 +1003,80 @@ void hnOutExcelMileManage::handelPbiValues(QVector<hnOutExcelMile>& roadpart,con
 
 			}
 		}
-	} 
+	}
 }
 
-QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>&  filteredmileVec, double xlsLen)
+QVector<hnCommon::hnMarkInfo> hnOutExcelMileManage::cityReportMarks() const
 {
-	
-	QVector<hnOutExcelMile> miles; 
+	QVector<hnCommon::hnMarkInfo> result;
+	QVector<hnCommon::hnMarkInfo> units;
+	const auto marks = m_project->getCurrentMarkVector();
+	for (auto mark : marks)
+	{
+		mark.dTrueMile = m_project->enclToTrueMile(mark.dEnclMile);
+		if (mark.nType == 1 && !m_xrSetting->roadCrossingShow)
+		{
+			units.push_back(mark);
+		}
+		else
+		{
+			result.push_back(mark);
+		}
+	}
+	// 与二维一致，成对的出入口取采集里程中点，再转换为桩号。
+	std::stable_sort(units.begin(), units.end(), [](const hnCommon::hnMarkInfo& a, const hnCommon::hnMarkInfo& b) { return a.dEnclMile < b.dEnclMile; });
+	for (int i = 1; i < units.size(); i += 2)
+	{
+		auto mark = units[i - 1];
+		mark.dEnclMile = qFloor(qAbs(units[i].dEnclMile - mark.dEnclMile) / 2.0) + mark.dEnclMile;
+		mark.dTrueMile = m_project->enclToTrueMile(mark.dEnclMile);
+		result.push_back(mark);
+	}
+	return result;
+}
+
+QVector<hnOutExcelMile> hnOutExcelMileManage::splitCityMile(const QVector<hnCommon::hnMarkInfo>& marks)
+{
+	std::vector<double> units;
+	for (const auto& mark : marks)
+	{
+		// 路口和材质重新起算；等级等属性由后续打标处理在原分段中截断。
+		if (mark.nType == 0 || mark.nType == 1)
+		{
+			units.push_back(mark.dTrueMile);
+		}
+	}
+	const auto boundaries = hnCityReportSegmenter().split(m_sMile, m_eMile, m_xlslen, units);
+	QVector<hnOutExcelMile> result;
+	hnMile mileInfo;
+	for (size_t i = 1; i < boundaries.size(); ++i)
+	{
+		hnOutExcelMile segment(m_project, m_standard);
+		segment.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
+		segment.setStartMile(boundaries[i - 1]);
+		segment.setEndMile(boundaries[i]);
+		segment.setStartDmi(m_project->trueMileToEncl(boundaries[i - 1]));
+		segment.setEndDmi(m_project->trueMileToEncl(boundaries[i]));
+		segment.setUnitStr(QString());
+		segment.RoadSurface = static_cast<ROAD_SURFACE_TYPE>(m_projectSet.nRSurfaceType);
+		segment.RoadSurfaceStr = segment.RoadSurface == 0 ? QStringLiteral("沥青") : segment.RoadSurface == 1 ? QStringLiteral("水泥") : QStringLiteral("砂石");
+		segment.RoadDegreestr = QString::fromLocal8Bit(m_projectSet.strRoadLevel);
+		segment.RoadGrad = mileInfo.GradStrToGrad(segment.RoadDegreestr);
+		result.push_back(segment);
+	}
+	return result;
+}
+
+QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& filteredmileVec, double xlsLen)
+{
+
+	QVector<hnOutExcelMile> miles;
 	hnMile firsthnMile = filteredmileVec.at(0);
 	double firstMile = firsthnMile.dTrueMile;
 	QString defaultRoadLevel = firsthnMile.roadGradStr;
 	int defaultRoadGrad = firsthnMile.roadGrad;
 	hnCommon::ROAD_SURFACE_TYPE defaultRoadType = firsthnMile.roadType;
-	double curmile = firstMile; 
+	double curmile = firstMile;
 	//根据分段区间初步分段
 	while (m_direction * (m_eMile - curmile) > 0)
 	{
@@ -923,20 +1084,20 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 		excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
 		if (m_direction > 0)
 		{
-			
+
 			curmile = ((int)(curmile / xlsLen) + m_direction) * xlsLen;
 		}
 		else
 		{
-			curmile = ((int)((curmile + xlsLen - 1) / xlsLen) + m_direction) *xlsLen;
+			curmile = ((int)((curmile + xlsLen - 1) / xlsLen) + m_direction) * xlsLen;
 		}
 		if (m_direction * (m_eMile - curmile) < 0)
 		{
 			curmile = m_eMile;
 		}
-		excelMile.setStartMile( firstMile);
-		excelMile.setEndMile( curmile);
-		
+		excelMile.setStartMile(firstMile);
+		excelMile.setEndMile(curmile);
+
 		excelMile.setStartDmi(m_project->trueMileToEncl(firstMile));
 		excelMile.setEndDmi(m_project->trueMileToEncl(curmile));
 		excelMile.setUnitStr("");
@@ -956,124 +1117,124 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 
 		//道路等级
 		excelMile.RoadDegreestr = QString::fromLocal8Bit(m_projectSet.strRoadLevel);
-     	excelMile.RoadGrad =  	firsthnMile.GradStrToGrad(excelMile.RoadDegreestr);
+		excelMile.RoadGrad = firsthnMile.GradStrToGrad(excelMile.RoadDegreestr);
 	}
 	return miles;
-} 
+}
 
- QVector<hnOutExcelMile> hnOutExcelMileManage::splitMile_dmi(const QVector<hnMile>& filteredmileVec, double xlsLen)
+QVector<hnOutExcelMile> hnOutExcelMileManage::splitMile_dmi(const QVector<hnMile>& filteredmileVec, double xlsLen)
 {
-	 //乾通 里程分段
-	 QVector<hnOutExcelMile> miles;
-	 hnMile firsthnMile = filteredmileVec.at(0);
-	 double firstMile = firsthnMile.dTrueMile;
-	 QString defaultRoadLevel = firsthnMile.roadGradStr;
-	 int defaultRoadGrad = firsthnMile.roadGrad;
-	 hnCommon::ROAD_SURFACE_TYPE defaultRoadType = firsthnMile.roadType;
-	 double curmile = firstMile;
-	 MileAndDmi firstMileAndDmi(m_project,curmile, curmile,0);
-	 //根据公里桩号分好区间
-	 
-	 QVector<MileAndDmi> oriSplit_1000;
-	 oriSplit_1000.push_back(firstMileAndDmi);
-	 int const_1000 = 1000;
-	 while (m_direction * (m_eMile - curmile) > 0)
-	 { 
-		 if (m_direction > 0)
-		 { 
-			 curmile = ((int)(curmile / const_1000) + m_direction) * const_1000;
-		 }
-		 else
-		 {
-			 curmile = ((int)((curmile + const_1000 - 1) / const_1000) + m_direction) *const_1000;
-		 }
-		 if (m_direction * (m_eMile - curmile) < 0)
-		 {
-			 curmile = m_eMile;
-		 } 
-		 double realDmi = m_project->trueMileToEncl(curmile);
-		 MileAndDmi curMileAndDmi(m_project,curmile, curmile,realDmi);
-		 oriSplit_1000.push_back(curMileAndDmi);
-	 }
-	  
-	 QVector<MileAndDmi> resultSplit_1000;
+	//乾通 里程分段
+	QVector<hnOutExcelMile> miles;
+	hnMile firsthnMile = filteredmileVec.at(0);
+	double firstMile = firsthnMile.dTrueMile;
+	QString defaultRoadLevel = firsthnMile.roadGradStr;
+	int defaultRoadGrad = firsthnMile.roadGrad;
+	hnCommon::ROAD_SURFACE_TYPE defaultRoadType = firsthnMile.roadType;
+	double curmile = firstMile;
+	MileAndDmi firstMileAndDmi(m_project, curmile, curmile, 0);
+	//根据公里桩号分好区间
 
-	  
-	 for (int i = 0; i < oriSplit_1000.size() - 1; ++i)
-	 {
-		 MileAndDmi sMile = oriSplit_1000.at(i);
-		 MileAndDmi eMile = oriSplit_1000.at(i + 1);
-		 //获得区间起点的里程
-		 double sDmi = m_project->trueMileToEncl (sMile.ReadMile);
-		 //获取区间终点的里程
-		 resultSplit_1000.push_back(sMile);
+	QVector<MileAndDmi> oriSplit_1000;
+	oriSplit_1000.push_back(firstMileAndDmi);
+	int const_1000 = 1000;
+	while (m_direction * (m_eMile - curmile) > 0)
+	{
+		if (m_direction > 0)
+		{
+			curmile = ((int)(curmile / const_1000) + m_direction) * const_1000;
+		}
+		else
+		{
+			curmile = ((int)((curmile + const_1000 - 1) / const_1000) + m_direction) * const_1000;
+		}
+		if (m_direction * (m_eMile - curmile) < 0)
+		{
+			curmile = m_eMile;
+		}
+		double realDmi = m_project->trueMileToEncl(curmile);
+		MileAndDmi curMileAndDmi(m_project, curmile, curmile, realDmi);
+		oriSplit_1000.push_back(curMileAndDmi);
+	}
 
-		 double eDmi = m_project->trueMileToEncl(eMile.ReadMile);
-		 double curDmi = sMile.ReadMile + m_direction*(eDmi - sDmi);
+	QVector<MileAndDmi> resultSplit_1000;
+
+
+	for (int i = 0; i < oriSplit_1000.size() - 1; ++i)
+	{
+		MileAndDmi sMile = oriSplit_1000.at(i);
+		MileAndDmi eMile = oriSplit_1000.at(i + 1);
+		//获得区间起点的里程
+		double sDmi = m_project->trueMileToEncl(sMile.ReadMile);
+		//获取区间终点的里程
+		resultSplit_1000.push_back(sMile);
+
+		double eDmi = m_project->trueMileToEncl(eMile.ReadMile);
+		double curDmi = sMile.ReadMile + m_direction * (eDmi - sDmi);
 		/* if (qAbs(curDmi - eMile.ReadMile)<1)
 		 {
 			 continue;
 		 }*/
 
-		 MileAndDmi curMileAndDmi(m_project, curDmi, 0, eDmi );
-		 resultSplit_1000.push_back(curMileAndDmi);
-	 } 
-	 QVector<MileAndDmi>result;
-	 if (xlsLen!=1000)
-	 {
-		 for (int i = 0; i < resultSplit_1000.size() - 1; i+=2)
-		 {
-			 MileAndDmi sMile = resultSplit_1000.at(i);
-			 MileAndDmi eDmi = resultSplit_1000.at(i + 1);
-			 double curmile = sMile.ShowMile; 
-			 result.push_back(sMile);
-			 int startIdx = 0;
-			 while (m_direction * (eDmi.ShowMile - curmile) > 0)
-			 {
-				
-				 if (m_direction > 0)
+		MileAndDmi curMileAndDmi(m_project, curDmi, 0, eDmi);
+		resultSplit_1000.push_back(curMileAndDmi);
+	}
+	QVector<MileAndDmi>result;
+	if (xlsLen != 1000)
+	{
+		for (int i = 0; i < resultSplit_1000.size() - 1; i += 2)
+		{
+			MileAndDmi sMile = resultSplit_1000.at(i);
+			MileAndDmi eDmi = resultSplit_1000.at(i + 1);
+			double curmile = sMile.ShowMile;
+			result.push_back(sMile);
+			int startIdx = 0;
+			while (m_direction * (eDmi.ShowMile - curmile) > 0)
+			{
+
+				if (m_direction > 0)
+				{
+					curmile = ((int)(curmile / xlsLen) + m_direction) * xlsLen;
+				}
+				else
+				{
+					curmile = ((int)((curmile + xlsLen - 1) / xlsLen) + m_direction) * xlsLen;
+				}
+				if (m_direction * (eDmi.ShowMile - curmile) < 0)
+				{
+					curmile = eDmi.ShowMile;
+				}
+				MileAndDmi curMileAndDmi(m_project, curmile, 0, sMile.Dmi + (m_direction * (curmile - sMile.ShowMile)));
+				/* if (startIdx == 0)
 				 {
-					 curmile = ((int)(curmile / xlsLen) + m_direction) * xlsLen;
+					 startIdx++;
 				 }
 				 else
 				 {
-					 curmile = ((int)((curmile + xlsLen - 1) / xlsLen) + m_direction) *xlsLen;
-				 }
-				 if (m_direction * (eDmi.ShowMile- curmile) < 0)
-				 {
-					curmile = eDmi.ShowMile;
-				 }
-				 MileAndDmi curMileAndDmi(m_project, curmile, 0,sMile.Dmi + (m_direction* (curmile- sMile.ShowMile) ));
-				 /* if (startIdx == 0)
-				  {
-					  startIdx++;
-				  }
-				  else
-				  {
-					  MileAndDmi lastMileAndDmi = result.last();
-					  result.push_back(lastMileAndDmi);
+					 MileAndDmi lastMileAndDmi = result.last();
+					 result.push_back(lastMileAndDmi);
 
-				  }*/
-				 result.push_back(curMileAndDmi);
-			 }
+				 }*/
+				result.push_back(curMileAndDmi);
+			}
 
-		 }
+		}
 
-	/*	 MileAndDmi allLastMileAndDmi = resultSplit_1000.last();
-		 result.push_back(allLastMileAndDmi);*/
-	 } 
-	 else
-	 {
-		 result = resultSplit_1000;
-	 }
-	  
-	 for (int i = 0 ; i < result.size()-1;i+=2)
-	 {
+		/*	 MileAndDmi allLastMileAndDmi = resultSplit_1000.last();
+			 result.push_back(allLastMileAndDmi);*/
+	}
+	else
+	{
+		result = resultSplit_1000;
+	}
+
+	for (int i = 0; i < result.size() - 1; i += 2)
+	{
 		hnOutExcelMile excelMile(m_project, m_standard);
 		excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
 		MileAndDmi sMile_Dmi = result[i];
 		MileAndDmi eMile_Dmi = result[i + 1];
-		 ////计算得到此时里程对应的真实桩号
+		////计算得到此时里程对应的真实桩号
 		excelMile.setStartMile(sMile_Dmi.ShowMile);
 		excelMile.setEndMile(eMile_Dmi.ShowMile);
 		excelMile.setStartDmi(sMile_Dmi.Dmi);
@@ -1086,34 +1247,35 @@ QVector<hnOutExcelMile>  hnOutExcelMileManage::splitMile(const QVector<hnMile>& 
 		excelMile.RoadGrad = defaultRoadGrad;
 		//excelMile.StartCalculate();
 		miles.push_back(excelMile);
-	 }
-	 int len = result.size();
-	 if (len %2 != 0)
-	 {
-		 hnOutExcelMile excelMile(m_project, m_standard);
-		 excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
-		 MileAndDmi sMile_Dmi = result[len-2];
-		 MileAndDmi eMile_Dmi = result[len-1];
-		 ////计算得到此时里程对应的真实桩号
-		 excelMile.setStartMile(sMile_Dmi.ShowMile);
-		 excelMile.setEndMile(eMile_Dmi.ShowMile);
-		 excelMile.setStartDmi(sMile_Dmi.Dmi);
-		 excelMile.setEndDmi(eMile_Dmi.Dmi);
+	}
+	int len = result.size();
+	if (len % 2 != 0)
+	{
+		hnOutExcelMile excelMile(m_project, m_standard);
+		excelMile.setSurveyWidth(hnReportProjectInfo::roadWidth(m_project));
+		MileAndDmi sMile_Dmi = result[len - 2];
+		MileAndDmi eMile_Dmi = result[len - 1];
+		////计算得到此时里程对应的真实桩号
+		excelMile.setStartMile(sMile_Dmi.ShowMile);
+		excelMile.setEndMile(eMile_Dmi.ShowMile);
+		excelMile.setStartDmi(sMile_Dmi.Dmi);
+		excelMile.setEndDmi(eMile_Dmi.Dmi);
 
-		 excelMile.setUnitStr("");
-		 excelMile.RoadSurface = defaultRoadType;
-		 excelMile.RoadDegreestr = defaultRoadLevel;
-		 excelMile.RoadSurfaceStr = defaultRoadType == 0 ? QStringLiteral("沥青") : defaultRoadType == 1 ? QStringLiteral("水泥") : QStringLiteral("砂石");
-		 excelMile.RoadGrad = defaultRoadGrad;
-		 //excelMile.StartCalculate();
-		 miles.push_back(excelMile);
-	 }
+		excelMile.setUnitStr("");
+		excelMile.RoadSurface = defaultRoadType;
+		excelMile.RoadDegreestr = defaultRoadLevel;
+		excelMile.RoadSurfaceStr = defaultRoadType == 0 ? QStringLiteral("沥青") : defaultRoadType == 1 ? QStringLiteral("水泥") : QStringLiteral("砂石");
+		excelMile.RoadGrad = defaultRoadGrad;
+		//excelMile.StartCalculate();
+		miles.push_back(excelMile);
+	}
 
 
-	 return miles;
+	return miles;
 }
 
-void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVector<hnCommon::hnMarkInfo> marks)
+void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles,
+	const QVector<hnCommon::hnMarkInfo> marks, bool evaluateKilometer)
 {
 	//由打标的信息，再将区间隔断 
 	//mark从小到大排序
@@ -1122,13 +1284,45 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 	QString strType = "";
 	QString markValue = "";
 	QString markFullMsg = "";
-	
-	if (marks.size() > 0)
+
+	QVector<hnCommon::hnMarkInfo> validMarks;
+	if (!miles.isEmpty())
 	{
-		curMark = marks.at(0);
+		const double minDmi = qMin(miles.first().getStartDmi(), miles.last().getEndDmi()) - 0.5;
+		const double maxDmi = qMax(miles.first().getStartDmi(), miles.last().getEndDmi()) + 0.5;
+		for (const auto& mark : marks)
+		{
+			if (mark.dEnclMile <= maxDmi && (mark.dEnclMile >= minDmi
+				|| m_standard == HnProjectEnums::RuralRoadlowLevel || m_cityDistanceSegments))
+			{
+				validMarks.push_back(mark);
+			}
+		}
+		std::stable_sort(validMarks.begin(), validMarks.end(), [](const hnCommon::hnMarkInfo& a, const hnCommon::hnMarkInfo& b) { return a.dEnclMile < b.dEnclMile; });
+		// 分段导出继承起点之前的属性；这些标记在起点生效，不生成范围外单元。
+		if (m_standard == HnProjectEnums::RuralRoadlowLevel || m_cityDistanceSegments)
+		{
+			for (auto& mark : validMarks)
+			{
+				if (mark.dEnclMile < miles.first().getStartDmi())
+				{
+					mark.dEnclMile = miles.first().getStartDmi();
+					mark.dTrueMile = miles.first().getStartMile();
+				}
+			}
+		}
+	}
+	if (validMarks.size() > 0)
+	{
+		curMark = validMarks.at(0);
 	}
 	else
 	{
+		// 无打标的路线也必须处理首尾不足500米的单元。
+		if (evaluateKilometer)
+		{
+			hnRuralEvaluationUnitMerger().merge(miles);
+		}
 		return;
 	}
 	auto curMile = miles[0];
@@ -1139,17 +1333,17 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 	HnProjectEnums::StandardParmTypeEnum standard = curMile.Type;
 	QString unitStr = curMile.getUnitStr();
 	hnMile temp;
-	for (int i=0,j=0;i<miles.size();i++)
+	for (int i = 0, j = 0; i < miles.size(); i++)
 	{
 		//0-路面材质；1-路面单元；2-路面等级; 3-路面标准；4-路面情况
-		while (j<marks.size()&&
-			(miles[i].getStartDmi()<= marks[j].dEnclMile&&miles[i].getEndDmi()> marks[j].dEnclMile)
-				)
+		while (j < validMarks.size() &&
+			(miles[i].getStartDmi() <= validMarks[j].dEnclMile && miles[i].getEndDmi() > validMarks[j].dEnclMile)
+			)
 		{
-			markValue = QString::fromLocal8Bit(marks[j].strMark);
-			switch (marks[j].nType)
+			markValue = QString::fromLocal8Bit(validMarks[j].strMark);
+			switch (validMarks[j].nType)
 			{
-			case  0: 
+			case  0:
 			{
 				int value = markValue == QStringLiteral("沥青") ? 0 : markValue == QStringLiteral("水泥") ? 1 : 2;
 				ROAD_SURFACE_TYPE surface = static_cast<ROAD_SURFACE_TYPE>(value);
@@ -1157,61 +1351,64 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 				{
 					hnOutExcelMile	newMile(m_project, miles[i].Type);
 					RoadSurface = surface;
-					
-				
+
+
 					double endDmi = miles[i].getEndDmi();
-					if (m_xrSetting->outExcelFormatDmi)
+					if (m_useDmiFormat)
 					{
 						//打标位置的桩号 等于上一段的桩号+里程差
-						double length = qAbs(m_project->trueMileToEncl(marks[j].dTrueMile) - miles[i].getStartDmi());
+						double length = qAbs(validMarks[j].dEnclMile - miles[i].getStartDmi());
 						double dmiMile = (length * m_direction) + miles[i].getStartMile();
-						newMile.setStartMile( dmiMile);
+						newMile.setStartMile(dmiMile);
 						newMile.setEndMile(miles[i].getEndMile());
 						miles[i].setEndMile(dmiMile);
 					}
 					else
 					{
-						newMile.setStartMile(marks[j].dTrueMile); 
+						newMile.setStartMile(validMarks[j].dTrueMile);
 						newMile.setEndMile(miles[i].getEndMile());
-						miles[i].setEndMile(marks[j].dTrueMile);
-						miles[i].setEndDmi(marks[j].dEnclMile);
+						miles[i].setEndMile(validMarks[j].dTrueMile);
+						miles[i].setEndDmi(validMarks[j].dEnclMile);
 					}
 
-					
-					newMile.setStartDmi(m_project->trueMileToEncl(marks[j].dTrueMile));
+
+					miles[i].setEndDmi(validMarks[j].dEnclMile);
+					newMile.setStartDmi(validMarks[j].dEnclMile);
 					newMile.setEndDmi(endDmi);
 					//更新当前分段的长度
 
 					//先赋值为前一个分段的值
 					initMarkMehtodExcelMile(newMile, miles[i]);
 					newMile.RoadSurface = RoadSurface;
-				
+
 					RoadSurfaceStr = RoadSurface == 0 ? QStringLiteral("沥青") : RoadSurface == 1 ? QStringLiteral("水泥") : QStringLiteral("砂石");
 					newMile.RoadSurfaceStr = RoadSurfaceStr;
-					miles.insert(i+1, newMile);
+					miles.insert(i + 1, newMile);
 				}
 				else
 				{
 					miles[i].RoadSurface = surface;
 					miles[i].RoadSurfaceStr = value == 0 ? QStringLiteral("沥青") : RoadSurface == 1 ? QStringLiteral("水泥") : QStringLiteral("砂石");
 				}
-			
-				break;	
+
+				break;
 			}
 			case  1:
 			{
-				if (m_xrSetting->outRoadUnitMark)
+				if (m_xrSetting->outRoadUnitMark
+					|| m_standard == HnProjectEnums::RuralRoadlowLevel || m_cityDistanceSegments)
 				{
 					QString value = markValue;
+					unitStr = value;
 
 					if (miles[i].getUnitStr() != value)
 					{
 						hnOutExcelMile	newMile(m_project, miles[i].Type);
 						double endDmi = miles[i].getEndDmi();
-						if (m_xrSetting->outExcelFormatDmi)
+						if (m_useDmiFormat)
 						{
 							//打标位置的桩号 等于上一段的桩号+里程差
-							double length = qAbs(m_project->trueMileToEncl(marks[j].dTrueMile) - miles[i].getStartDmi());
+							double length = qAbs(validMarks[j].dEnclMile - miles[i].getStartDmi());
 							double dmiMile = (length * m_direction) + miles[i].getStartMile();
 							newMile.setStartMile(dmiMile);
 							newMile.setEndMile(miles[i].getEndMile());
@@ -1219,18 +1416,19 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 						}
 						else
 						{
-							newMile.setStartMile(marks[j].dTrueMile);
-							newMile.setEndMile(miles[i].getEndMile()); 
-							miles[i].setEndMile(marks[j].dTrueMile);
-							miles[i].setEndDmi(marks[j].dEnclMile);
+							newMile.setStartMile(validMarks[j].dTrueMile);
+							newMile.setEndMile(miles[i].getEndMile());
+							miles[i].setEndMile(validMarks[j].dTrueMile);
+							miles[i].setEndDmi(validMarks[j].dEnclMile);
 						}
 
-						newMile.setStartDmi(m_project->trueMileToEncl(marks[j].dTrueMile));
+						miles[i].setEndDmi(validMarks[j].dEnclMile);
+						newMile.setStartDmi(validMarks[j].dEnclMile);
 						newMile.setEndDmi(endDmi);
 
 
 
-						initMarkMehtodExcelMile(newMile, miles[i]); 
+						initMarkMehtodExcelMile(newMile, miles[i]);
 						newMile.setUnitStr(value);
 						miles.insert(i + 1, newMile);
 					}
@@ -1241,19 +1439,19 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 				}
 				break;
 			}
-			
-			case  2: 
+
+			case  2:
 			{
 				if (miles[i].RoadDegreestr != markValue)
 				{
 					hnOutExcelMile	newMile(m_project, miles[i].Type);
-					
+
 					RoaddegreeStr = markValue;
 					double endDmi = miles[i].getEndDmi();
-					if (m_xrSetting->outExcelFormatDmi)
+					if (m_useDmiFormat)
 					{
 						//打标位置的桩号 等于上一段的桩号+里程差
-						double length = qAbs(m_project->trueMileToEncl(marks[j].dTrueMile) - miles[i].getStartDmi());
+						double length = qAbs(validMarks[j].dEnclMile - miles[i].getStartDmi());
 						double dmiMile = (length * m_direction) + miles[i].getStartMile();
 						newMile.setStartMile(dmiMile);
 						newMile.setEndMile(miles[i].getEndMile());
@@ -1261,45 +1459,50 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 					}
 					else
 					{
-						newMile.setStartMile(marks[j].dTrueMile);
+						newMile.setStartMile(validMarks[j].dTrueMile);
 						newMile.setEndMile(miles[i].getEndMile());
-					 
-						miles[i].setEndMile(marks[j].dTrueMile);
-						miles[i].setEndDmi(marks[j].dEnclMile);
+
+						miles[i].setEndMile(validMarks[j].dTrueMile);
+						miles[i].setEndDmi(validMarks[j].dEnclMile);
 					}
 
-					newMile.setStartDmi(m_project->trueMileToEncl(marks[j].dTrueMile));
+					miles[i].setEndDmi(validMarks[j].dEnclMile);
+					newMile.setStartDmi(validMarks[j].dEnclMile);
 					newMile.setEndDmi(endDmi);
 
 
 					//先赋值为前一个分段的值
 					initMarkMehtodExcelMile(newMile, miles[i]);
-					newMile.RoadDegreestr = markValue; 
+					newMile.RoadDegreestr = markValue;
 					newMile.RoadGrad = temp.GradStrToGrad(markValue);
+					// Road grade is a segment calculation property.  Do not duplicate it in the generic remark column;
+					// the original, stake-qualified grade marker is emitted separately when marker output is requested.
+					unitStr = newMile.getUnitStr();
 					RoadGrad = newMile.RoadGrad;
-					miles.insert(i+1, newMile);
+					miles.insert(i + 1, newMile);
 				}
 				else
 				{
 					miles[i].RoadDegreestr = markValue;
-				}	
-			 
+				}
+
 				break;
 			}
-				
+
 			case  3:
 			{
 				HnProjectEnums::StandardParmTypeEnum type = HnProjectEnums::roadTypeQStringToEnum(markValue);
+				standard = type;
 				if (miles[i].Type != type)
 				{
 					hnOutExcelMile	newMile(m_project, miles[i].Type);
 
-			 
+
 					double endDmi = miles[i].getEndDmi();
-					if (m_xrSetting->outExcelFormatDmi)
+					if (m_useDmiFormat)
 					{
 						//打标位置的桩号 等于上一段的桩号+里程差
-						double length = qAbs(m_project->trueMileToEncl(marks[j].dTrueMile) - miles[i].getStartDmi());
+						double length = qAbs(validMarks[j].dEnclMile - miles[i].getStartDmi());
 						double dmiMile = (length * m_direction) + miles[i].getStartMile();
 						newMile.setStartMile(dmiMile);
 						newMile.setEndMile(miles[i].getEndMile());
@@ -1307,37 +1510,38 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 					}
 					else
 					{
-						newMile.setStartMile(marks[j].dTrueMile);
+						newMile.setStartMile(validMarks[j].dTrueMile);
 						newMile.setEndMile(miles[i].getEndMile());
-						miles[i].setEndDmi(marks[j].dEnclMile);
-						miles[i].setEndMile(marks[j].dTrueMile);
+						miles[i].setEndDmi(validMarks[j].dEnclMile);
+						miles[i].setEndMile(validMarks[j].dTrueMile);
 					}
 
-					newMile.setStartDmi(m_project->trueMileToEncl(marks[j].dTrueMile));
+					miles[i].setEndDmi(validMarks[j].dEnclMile);
+					newMile.setStartDmi(validMarks[j].dEnclMile);
 					newMile.setEndDmi(endDmi);
 
 
 					//先赋值为前一个分段的值
 					initMarkMehtodExcelMile(newMile, miles[i]);
 					newMile.Type = type;
-					miles.insert(i+1, newMile);
+					miles.insert(i + 1, newMile);
 				}
 				else
 				{
 					miles[i].Type = type;
 				}
 				break;
-			 
-			} 
+
+			}
 			default:
-			 
+
 				break;
 			}
 			j++;
 		}
-		if (i+1<miles.size())
+		if (i + 1 < miles.size())
 		{
-			miles[i + 1].RoadDegreestr = RoaddegreeStr; 
+			miles[i + 1].RoadDegreestr = RoaddegreeStr;
 			miles[i + 1].RoadGrad = RoadGrad;
 
 			miles[i + 1].RoadSurface = RoadSurface;
@@ -1350,8 +1554,7 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 	}
 
 
-	if (miles.size() < 2) return;
-	for (int i = 0; i <miles.size() ; ++i)
+	for (int i = 0; i < miles.size(); ++i)
 	{
 		if (miles[i].getStartMile() == miles[i].getEndMile())
 		{
@@ -1359,58 +1562,67 @@ void hnOutExcelMileManage::handelMark(QVector<hnOutExcelMile>& miles , const QVe
 		}
 	}
 
-	//给备注添加信息
-	for (int  i = 0 ; i<miles.size();++i)
+	// 在备注带上桩号之前合并，避免备注差异被误认为路段属性发生变化。
+	if (evaluateKilometer)
 	{
-		for (int markIndex = 0 ;    markIndex<marks.size(); ++ markIndex)
-		 { 
-		
-		 
-				if (miles.at(i).getStartDmi() <=   marks.at(markIndex).dEnclMile
-					&& marks.at(markIndex).dEnclMile < miles.at(i).getEndDmi())
-				{
-					int qian = (int)(marks.at(markIndex).dTrueMile / 1000);
-					int bai = qRound(marks.at(markIndex).dTrueMile - qian * 1000);
-					QString mile = "K" + QString::number(qian) + "+" + QString::number(bai).rightJustified(3,'0');
-					QString markTypeStr = "";
-					QString markValue = QString::fromLocal8Bit(marks.at(markIndex).strMark);
-					switch (marks.at(markIndex).nType)//打标类型:0 - 路面材质；1 - 路面单元；2 - 路面等级; 3 - 路面标准
-					{
-					
-					case 0:
-						markTypeStr = QStringLiteral("路面材质 ") + markValue;
-						break;
-					case  1:
-						markTypeStr = QStringLiteral("路面单元 ") + markValue;
-						break;
-					case 2:
-						markTypeStr = QStringLiteral("路面等级 ") + markValue;
-						break;
-					case 3:
-						markTypeStr = QStringLiteral("路面标准 ") + markValue;
-						break;
-					case 4:
-						markTypeStr = QStringLiteral("路面情况 ") + markValue;
-						break;
-					default:
-						break;
-					}
-					if (miles[i].getUnitStr().isNull() || miles[i].getUnitStr() == "")
-					{
-						QString unitStr = miles[i].getUnitStr() + mile + ":" + markTypeStr; 
-
-						miles[i].setUnitStr(unitStr);
-					}
-					else
-					{
-						QString unitStr = miles[i].getUnitStr() + ("\n" + mile + ":" + markTypeStr);
-						miles[i].setUnitStr(unitStr);
-					}
-				 
-				} 
-		 }
+		hnRuralEvaluationUnitMerger().merge(miles);
 	}
-} 
+	if (!m_xrSetting->outMileWithMark)
+	{
+		return;
+	}
+	//给备注添加信息
+	for (int i = 0; i < miles.size(); ++i)
+	{
+		for (int markIndex = 0; markIndex < marks.size(); ++markIndex)
+		{
+
+
+			if (miles.at(i).getStartDmi() <= marks.at(markIndex).dEnclMile
+				&& marks.at(markIndex).dEnclMile < miles.at(i).getEndDmi())
+			{
+				int qian = (int)(marks.at(markIndex).dTrueMile / 1000);
+				int bai = qRound(marks.at(markIndex).dTrueMile - qian * 1000);
+				QString mile = "K" + QString::number(qian) + "+" + QString::number(bai).rightJustified(3, '0');
+				QString markTypeStr = "";
+				QString markValue = QString::fromLocal8Bit(marks.at(markIndex).strMark);
+				switch (marks.at(markIndex).nType)//打标类型:0 - 路面材质；1 - 路面单元；2 - 路面等级; 3 - 路面标准
+				{
+
+				case 0:
+					markTypeStr = QStringLiteral("路面材质 ") + markValue;
+					break;
+				case  1:
+					markTypeStr = QStringLiteral("路面单元 ") + markValue;
+					break;
+				case 2:
+					markTypeStr = QStringLiteral("路面等级 ") + markValue;
+					break;
+				case 3:
+					markTypeStr = QStringLiteral("路面标准 ") + markValue;
+					break;
+				case 4:
+					markTypeStr = QStringLiteral("路面情况 ") + markValue;
+					break;
+				default:
+					break;
+				}
+				if (miles[i].getUnitStr().isNull() || miles[i].getUnitStr() == "")
+				{
+					QString unitStr = miles[i].getUnitStr() + mile + ":" + markTypeStr;
+
+					miles[i].setUnitStr(unitStr);
+				}
+				else
+				{
+					QString unitStr = miles[i].getUnitStr() + ("\n" + mile + ":" + markTypeStr);
+					miles[i].setUnitStr(unitStr);
+				}
+
+			}
+		}
+	}
+}
 
 bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, double BaseLen)
 {
@@ -1433,10 +1645,10 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【平整度】计算到一半退出了软件\n请【清除结果——平整度】后重新【计算IRM】!");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("平整度"), QStringLiteral("左侧"), leftIriPath, lists.size(), qRound(endDmi / 10.0), true);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
-			//	throw std::runtime_error(mes.c_str());
+				//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
 			{
@@ -1447,7 +1659,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		for (QString line : lists)
 		{
 			QStringList split = line.split("\t");
-			if (split.size()<=1)
+			if (split.size() <= 1)
 			{
 				split = line.split(" ");
 			}
@@ -1464,11 +1676,11 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		try
 		{
 
-		     QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧平整度数据!\r\n请检查数据完整性，并重新计算IRM！");
-			 reportExcelError(message);
+			QString message = irmDataError(m_project->get2DProName(), QStringLiteral("平整度"), QStringLiteral("左侧"), leftIriPath, 0, 0, false);
+			reportExcelError(message);
 			string mes = message.toLocal8Bit();
 
-		//	throw std::runtime_error(mes.c_str());
+			//	throw std::runtime_error(mes.c_str());
 		}
 		catch (const std::exception& e)
 		{
@@ -1485,11 +1697,11 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 			hasRightIRI = true;
 			rists = MyCommonMethods::ReadAllLines(reftIriPath);
 			double endDmi = m_project->trueMileToEncl(m_project->getCurProSetInfo().dEndMile);
-			if (lists.size() * 10 < endDmi - endDmi / 5)
+			if (rists.size() * 10 < endDmi - endDmi / 5)
 			{
 				try
 				{
-					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【平整度】计算到一半退出了软件\n请【清除结果——平整度】后重新【计算IRM】!");
+					QString message = irmDataError(m_project->get2DProName(), QStringLiteral("平整度"), QStringLiteral("右侧"), reftIriPath, rists.size(), qRound(endDmi / 10.0), true);
 					string mes = message.toLocal8Bit();
 					reportExcelError(message);
 					//throw std::runtime_error(mes.c_str());
@@ -1519,10 +1731,10 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧平整度数据!\r\n请检查数据完整性，并重新计算IRM！");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("平整度"), QStringLiteral("右侧"), reftIriPath, 0, 0, false);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
-			//	throw std::runtime_error(mes.c_str());
+				//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
 			{
@@ -1535,7 +1747,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 	{
 		return false;
 	}
-   BaseLen = 10;
+	BaseLen = 10;
 	int len = m_roadSplietVec.size();
 	std::unique_ptr<double[]> lval(new double[len]);
 	std::unique_ptr<double[]>rval(new double[len]);
@@ -1550,8 +1762,8 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 		int lvalnum = 0, rvalnum = 0;
 		auto v1 = m_roadSplietVec[i].getStartDmi();
 		auto v2 = m_roadSplietVec[i].getEndDmi();
-		startidx = (int)qRound((v1 - 0.5) / BaseLen);
-		endidx = (int)qRound( v2/ BaseLen);
+		startidx = MyCommonMethods::MathRoundToInt((v1 - 0.5) / BaseLen);
+		endidx = MyCommonMethods::MathRoundToInt(v2 / BaseLen);
 		if (startidx >= endidx)
 		{
 			if (startidx < lValue.size())
@@ -1588,9 +1800,10 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 					if (ValStridx < RValue.size())
 					{
 						lastvalR = RValue[ValStridx];
+						sumr += lastvalR;
+						++rvalnum;
 					}
-					sumr += lastvalR;
-					++rvalnum;
+
 				}
 			}
 		}
@@ -1664,7 +1877,7 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 
 	QVector<double> lValues;
 	double lastHasValue = 0;
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(lval[i]) < 0.0001)
 		{
@@ -1676,12 +1889,12 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 			lastHasValue = lval[i];
 		}
 
-		m_roadSplietVec[i].setLeftIriValue ( lValues[i]);
+		m_roadSplietVec[i].setLeftIriValue(lValues[i]);
 	}
 	QVector<double> rValues;
 	if (m_project->get2DProject()->_IsDIRIMTD)
 	{
-		for (int i=0; i < len; ++i)
+		for (int i = 0; i < len; ++i)
 		{
 			if (qAbs(rval[i]) < 0.0001)
 			{
@@ -1693,18 +1906,20 @@ bool hnOutExcelMileManage::writeIriValue(bool& hasLeftIRI, bool& hasRightIRI, do
 				lastHasValue = rval[i];
 			}
 
-			m_roadSplietVec[i].setRightIriValue( rValues[i]);
+			m_roadSplietVec[i].setRightIriValue(rValues[i]);
 		}
 	}
 
 	return true;
 }
 
-bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double BaseLen)
+bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles, double BaseLen)
 {
-	bool hasValue =false;
+	bool hasValue = false;
 	QString  resultPath = m_project->get2DProject()->getIRIPath();
-	QString speedPath = resultPath + "\\DAQ0\\" + "Speed_" + QString::number(10) + "m.txt";
+	const QString leftSpeedPath = resultPath + "\\DAQ0\\" + "Speed_" + QString::number(10) + "m.txt";
+	const QString rightSpeedPath = resultPath + "\\DAQ1\\" + "Speed_" + QString::number(10) + "m.txt";
+	QString speedPath = leftSpeedPath;
 	QFile file(speedPath);
 	QStringList  lists;
 	QVector<double >lValue;
@@ -1715,22 +1930,22 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 		for (QString line : lists)
 		{
 			QStringList split = line.split(" ");
-			if (split.size()<=1)
+			if (split.size() <= 1)
 			{
 				split = line.split("\t");
 			}
 			if (split.size() > 1)
 			{
-				 
-				double value = split.at(1).toDouble( );
-				 if (split.at(1).compare("inf",Qt::CaseInsensitive)==0||value<0)
-				 {
-					 lValue.push_back(0);
-				 }
-				 else
-				 {
-					 lValue.push_back(value);
-				 } 
+
+				double value = split.at(1).toDouble();
+				if (split.at(1).compare("inf", Qt::CaseInsensitive) == 0 || value < 0)
+				{
+					lValue.push_back(0);
+				}
+				else
+				{
+					lValue.push_back(value);
+				}
 				hasValue = true;
 			}
 		}
@@ -1738,11 +1953,11 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 	}
 	if (m_project->get2DProject()->_IsDIRIMTD)
 	{
-		speedPath = resultPath + "\\DAQ1\\" + "Speed_" + QString::number(m_xlslen) + "m.txt";
+		speedPath = rightSpeedPath;
 		lists = MyCommonMethods::ReadAllLines(speedPath);
 		for (QString line : lists)
 		{
-			QStringList split = line.split(" ");	
+			QStringList split = line.split(" ");
 			if (split.size() <= 1)
 			{
 				split = line.split("\t");
@@ -1751,7 +1966,7 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 			{
 				hasValue = true;
 				double value = split.at(1).toDouble();
-				if (split.at(1).compare("inf", Qt::CaseInsensitive) == 0 || value<0)
+				if (split.at(1).compare("inf", Qt::CaseInsensitive) == 0 || value < 0)
 				{
 					RValue.push_back(0);
 				}
@@ -1764,7 +1979,15 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 	}
 	if (!hasValue)
 	{
-
+		QStringList checkedPaths;
+		checkedPaths.append(leftSpeedPath);
+		if (m_project->get2DProject()->_IsDIRIMTD)
+		{
+			checkedPaths.append(rightSpeedPath);
+		}
+		reportExcelError(m_project->get2DProName()
+			+ QStringLiteral("\r\n未读取到车速数据，车速列将留空，不影响其他指标计算。\r\n检查文件：")
+			+ checkedPaths.join(QStringLiteral("\r\n")));
 		return false;
 	}
 	int len = m_roadSplietVec.size();
@@ -1780,9 +2003,9 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 		QStringList tmtd;
 		int lvalnum = 0, rvalnum = 0;
 		double sdmi = m_roadSplietVec[i].getStartDmi();
-		double edmi =  m_roadSplietVec[i].getEndDmi();
-		startidx = (int)qRound((sdmi- 0.5) / BaseLen);
-		endidx = (int)qRound((edmi) / BaseLen);
+		double edmi = m_roadSplietVec[i].getEndDmi();
+		startidx = MyCommonMethods::MathRoundToInt((sdmi - 0.5) / BaseLen);
+		endidx = MyCommonMethods::MathRoundToInt((edmi) / BaseLen);
 		if (startidx >= endidx)
 		{
 			if (startidx < lValue.size())
@@ -1837,7 +2060,7 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 		{
 			lval[i] = suml;
 		}
-		 if (rvalnum > 0)
+		if (rvalnum > 0)
 		{
 			rval[i] = sumr;
 		}
@@ -1867,7 +2090,7 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 
 	QVector<double> lValues;
 	double lastHasValue = 0;
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(lval[i]) < 0.0001)
 		{
@@ -1884,7 +2107,7 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 	QVector<double> rValues;
 	if (m_project->get2DProject()->_IsDIRIMTD)
 	{
-		for (int i=0; i < len; ++i)
+		for (int i = 0; i < len; ++i)
 		{
 			if (qAbs(rval[i]) < 0.0001)
 			{
@@ -1895,13 +2118,13 @@ bool hnOutExcelMileManage::writeSpeedValue(QVector<hnOutExcelMile>& miles,double
 				rValues.push_back(rval[i]);
 				lastHasValue = rval[i];
 			}
-			double value = (miles[i].getSpeed() + rValues[i] )/ 2;
-			
+			double value = (miles[i].getSpeed() + rValues[i]) / 2;
+
 			double minValue = qMin(lValues[i], rValues[i]);
 
 			miles[i].setSpeed(minValue);
 		}
-	} 
+	}
 	return true;
 }
 
@@ -1924,19 +2147,19 @@ bool  hnOutExcelMileManage::writePbiValue(QVector<hnOutExcelMile>& miles)
 			miles[i].StartCalculate(true);
 			if (values1.size() > i)
 			{
-			   // 涂工 20230816 人工纠正因子
-			  QStringList splits =  	m_xrSetting->MpdInterveneFAactor.split(',');
+				// 涂工 20230816 人工纠正因子
+				QStringList splits = m_xrSetting->MpdInterveneFAactor.split(',');
 
 				if (values1[i] < 50)
-					{
-						values1[i] = values1[i] * splits.first().toDouble();
-					}
+				{
+					values1[i] = values1[i] * splits.first().toDouble();
+				}
 				if (values1[i] < 80 && values1[i] >= 50)
 				{
-					values1[i] =  values1[i] * splits.last().toDouble();
+					values1[i] = values1[i] * splits.last().toDouble();
 				}
-			
-				if (i == miles.size()-1)
+
+				if (i == miles.size() - 1)
 				{
 					int ddd = 0;
 				}
@@ -1954,14 +2177,14 @@ bool  hnOutExcelMileManage::writePbiValue(QVector<hnOutExcelMile>& miles)
 		QVector<double> values2;
 		try
 		{
-			readPbiValueFromFile(miles, reftValues, values2 );
+			readPbiValueFromFile(miles, reftValues, values2);
 
 		}
 		catch (exception ex)
 		{
 			throw ex;
-		} 
-	 
+		}
+
 		for (int i = 0; i < miles.size(); ++i)
 		{
 
@@ -1975,22 +2198,22 @@ bool  hnOutExcelMileManage::writePbiValue(QVector<hnOutExcelMile>& miles)
 				}
 				if (values2[i] < 80 && values2[i] >= 50)
 				{
-					values2[i] = splits.last().toDouble()* values2[i];
+					values2[i] = splits.last().toDouble() * values2[i];
 				}
 				miles[i].setRightPbValue(values2.at(i));
 			}
-		} 
+		}
 		//计算PBI 
 		ok = true;
 	}
 
-	for (int i = 0; i < miles.size(); ++i)
-	{
-		miles[i].calculatePBIScore(); 
-	}
 	if (!ok)
 	{
 		return false;
+	}
+	for (int i = 0; i < miles.size(); ++i)
+	{
+		miles[i].calculatePBIScore();
 	}
 	return true;
 }
@@ -2024,10 +2247,10 @@ bool hnOutExcelMileManage::writeJHXXValue(double BaseLen)
 		bool crossValid = true;
 	};
 	QVector<GeometryReportRow> geometryRows;
-	for (int i = 0 ; i < datas.size() ;++i)
+	for (int i = 0; i < datas.size(); ++i)
 	{
 		QStringList split = datas[i].split(',');
-		if (split.size() <4)
+		if (split.size() < 4)
 			continue;
 		bool mileageOk = false, curvatureOk = false, longitudinalOk = false, crossOk = false;
 		GeometryReportRow row;
@@ -2045,7 +2268,7 @@ bool hnOutExcelMileManage::writeJHXXValue(double BaseLen)
 	}
 	std::sort(geometryRows.begin(), geometryRows.end(), [](const GeometryReportRow& left, const GeometryReportRow& right) {
 		return left.mileage < right.mileage;
-	});
+		});
 
 	// 新文件使用质量侧车文件；历史四列文件没有质量文件时保持全部数值有效。
 	const QString qualityPath = QDir(resultDirectory).filePath(QStringLiteral("Geoalig_10m.quality.csv"));
@@ -2172,20 +2395,20 @@ void hnOutExcelMileManage::readPbiValueFromFile(QVector<hnOutExcelMile>& miles, 
 		oriDataD[i] = (nextDataD[i - 2] + nextDataD[i - 1] + nextDataD[i] + nextDataD[i + 1] + nextDataD[i + 2]) / 5;
 	}
 	//QStringList temp;
-	int i = 0; 
+	int i = 0;
 	for (hnOutExcelMile& excelMile : miles)
 	{
 		i++;
-		if (i == miles.size()-1)
+		if (i == miles.size() - 1)
 		{
 			int t = 3;
 		}
 		bool HasData = false;
 		//获得分段的 起始里程和终止里程
 		double sMile = excelMile.getStartDmi();
-		double eMile =excelMile.getEndDmi();
-	 
-		int startidx = qRound( sMile/ pluselen);
+		double eMile = excelMile.getEndDmi();
+
+		int startidx = qRound(sMile / pluselen);
 		int endidx = qRound(eMile / pluselen);
 		if (endidx >= oriDataD.size())
 		{
@@ -2202,15 +2425,15 @@ void hnOutExcelMileManage::readPbiValueFromFile(QVector<hnOutExcelMile>& miles, 
 				if (ValStridx % skipnum == 0)
 				{
 					//temp.append(debugDatas[ValStridx]);
-				  hval = oriDataD.at(ValStridx); 
-				 
+					hval = oriDataD.at(ValStridx);
+
 					max = qMax(hval, max);
 					min = qMin(hval, min);
 				}
 			}
 			catch (...)
 			{
-				
+
 			}
 		}
 		if (HasData)
@@ -2248,7 +2471,7 @@ bool hnOutExcelMileManage::writeRutValue()
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("左侧"), leftpath, LStrs.size(), qRound(endDmi * 10.0), true);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
@@ -2266,7 +2489,7 @@ bool hnOutExcelMileManage::writeRutValue()
 	{
 		try
 		{
-			QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少左侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
+			QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("左侧"), leftpath, 0, 0, false);
 			string mes = message.toLocal8Bit();
 			reportExcelError(message);
 			//throw std::runtime_error(mes.c_str());
@@ -2277,21 +2500,21 @@ bool hnOutExcelMileManage::writeRutValue()
 		}
 	}
 	QFile file1(rightPath);
-	if (m_project->get2DProject()->_RutMode==1)
+	if (m_project->get2DProject()->_RutMode == 1)
 	{
 		if (file1.exists())
 		{
 
 			RStrs = MyCommonMethods::ReadAllLines(rightPath);
 			double endDmi = m_project->trueMileToEncl(m_project->getCurProSetInfo().dEndMile);
-			if (LStrs.size() / 10 < endDmi - endDmi / 5)
+			if (RStrs.size() / 10 < endDmi - endDmi / 5)
 			{
 				try
 				{
-					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【车辙】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
+					QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("右侧"), rightPath, RStrs.size(), qRound(endDmi * 10.0), true);
 					string mes = message.toLocal8Bit();
 					reportExcelError(message);
-				//	throw std::runtime_error(mes.c_str());
+					//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
 				{
@@ -2306,7 +2529,7 @@ bool hnOutExcelMileManage::writeRutValue()
 		{
 			try
 			{
-				QString message = m_project->get2DProName() + QStringLiteral("\r\n缺少右侧车辙数据!\r\n请检查数据完整性，并重新计算IRM！");
+				QString message = irmDataError(m_project->get2DProName(), QStringLiteral("车辙"), QStringLiteral("右侧"), rightPath, 0, 0, false);
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
 				//throw std::runtime_error(mes.c_str());
@@ -2324,7 +2547,7 @@ bool hnOutExcelMileManage::writeRutValue()
 	}
 	//const double BaseLen = 10;
 	int len = m_roadSplietVec.size();
- 
+
 	QVector<double>lval(len);
 	QVector<double>rval(len);
 	QVector<double>sval(len);
@@ -2342,8 +2565,8 @@ bool hnOutExcelMileManage::writeRutValue()
 		double temp = m_project->get2DProject()->_DMIScale;
 		double dimS = m_roadSplietVec[i].getStartDmi();
 		auto dimE = m_roadSplietVec[i].getEndDmi();
-		startidx = (int)qRound(dimS*m_project->get2DProject()->_DMIScale / BaseLen);
-		endidx = (int)qRound(dimE * temp / BaseLen);
+		startidx = MyCommonMethods::MathRoundToInt(dimS * m_project->get2DProject()->_DMIScale / BaseLen);
+		endidx = MyCommonMethods::MathRoundToInt(dimE * temp / BaseLen);
 		for (ValStridx = startidx; ValStridx < endidx; ++ValStridx)
 		{
 			if (m_project->get2DProject()->_RutMode == 1)
@@ -2352,11 +2575,11 @@ bool hnOutExcelMileManage::writeRutValue()
 				{
 					LStrLine = LStrs[ValStridx];
 					tval = LStrLine.split(',');
-					if (tval.size() <= 3)
+					if (tval.size() < 2)
 					{
 						continue;
 					}
-					ltval = qAbs(tval[1].toDouble());
+					ltval = qAbs(tval[1].toDouble()) + m_xrSetting->rutLeftCorrect;
 					suml += ltval;
 					++lvalnum;
 				}
@@ -2364,11 +2587,11 @@ bool hnOutExcelMileManage::writeRutValue()
 				{
 					RStrLine = RStrs[ValStridx];
 					tval = RStrLine.split(',');
-					if (tval.size() <= 3)
+					if (tval.size() < 2)
 					{
 						continue;
 					}
-					rtval = qAbs(tval[1].toDouble());
+					rtval = qAbs(tval[1].toDouble()) + m_xrSetting->rutRightCorrect;
 					sumr += rtval;
 					++rvalnum;
 				}
@@ -2381,12 +2604,12 @@ bool hnOutExcelMileManage::writeRutValue()
 				{
 					LStrLine = LStrs[ValStridx];
 					tval = LStrLine.split(',');
-					if (tval.size()<=3)
+					if (tval.size() <= 3)
 					{
 						continue;
 					}
-					ltval = qAbs(tval[1].toDouble());
-					rtval = qAbs(tval[3].toDouble());
+					ltval = qAbs(tval[1].toDouble()) + m_xrSetting->rutLeftCorrect;
+					rtval = qAbs(tval[3].toDouble()) + m_xrSetting->rutRightCorrect;
 					suml += ltval;
 					sumr += rtval;
 					sums += qMax(ltval, rtval);
@@ -2414,7 +2637,7 @@ bool hnOutExcelMileManage::writeRutValue()
 	}
 	QVector<double> lValues;
 	double lastHasValue = 0;
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(lval[i]) < 0.0001)
 		{
@@ -2426,11 +2649,11 @@ bool hnOutExcelMileManage::writeRutValue()
 			lastHasValue = lval[i];
 		}
 
-		m_roadSplietVec[i].setLeftRutValue(lValues[i]) ;
+		m_roadSplietVec[i].setLeftRutValue(lValues[i]);
 	}
 	QVector<double> rValues;
 
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(rval[i]) < 0.0001)
 		{
@@ -2448,7 +2671,7 @@ bool hnOutExcelMileManage::writeRutValue()
 		if (m_xrSetting->rutOutMode == 0)
 			m_roadSplietVec[i].setjudgeRutValue(qMax(lValues[i], rValues[i]));
 		if (m_xrSetting->rutOutMode == 1)
-			m_roadSplietVec[i].setjudgeRutValue((lValues[i]+rValues[i])/2);
+			m_roadSplietVec[i].setjudgeRutValue((lValues[i] + rValues[i]) / 2);
 	}
 	QVector<double> sValues;
 
@@ -2469,7 +2692,7 @@ bool hnOutExcelMileManage::writeRutValue()
 			m_roadSplietVec[i].setjudgeRutValue(sValues[i]);
 		}
 	}
-	
+
 	return true;
 }
 
@@ -2490,16 +2713,16 @@ bool hnOutExcelMileManage::writeMtdValue()
 	{
 		lists = MyCommonMethods::ReadAllLines(lPath);
 
-		 
-	
-		if (lists.size()* 10 < endDmi - endDmi / 5)
+
+
+		if (lists.size() * 10 < endDmi - endDmi / 5)
 		{
 			try
 			{
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
-			//	throw std::runtime_error(mes.c_str());
+				//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
 			{
@@ -2532,7 +2755,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【右侧构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
 					reportExcelError(message);
-				//	throw std::runtime_error(mes.c_str());
+					//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
 				{
@@ -2552,23 +2775,23 @@ bool hnOutExcelMileManage::writeMtdValue()
 				}
 			}
 		}
-		
-		
-		
+
+
+
 		if (m_project->get2DProject()->_IsMMTD)
 		{
 			file.setFileName(cPath);
 			if (file.exists())
 			{
 				lists = MyCommonMethods::ReadAllLines(cPath);
-				if (lists.size()*10 < endDmi - endDmi / 5)
+				if (lists.size() * 10 < endDmi - endDmi / 5)
 				{
 					try
 					{
 						QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【中间构造深度MTD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 						string mes = message.toLocal8Bit();
 						reportExcelError(message);
-					//	throw std::runtime_error(mes.c_str());
+						//	throw std::runtime_error(mes.c_str());
 					}
 					catch (const std::exception& e)
 					{
@@ -2597,19 +2820,19 @@ bool hnOutExcelMileManage::writeMtdValue()
 	int len = m_roadSplietVec.size();
 	QVector<double>  lval(len);
 	QVector<double> rval(len);
-	QVector<double> cval(len); 
+	QVector<double> cval(len);
 	QString LStrLine, RStrLine, CStrLine;
 	int startidx = 0, endidx = 0, ValStridx = 0;
-	double lastvalL = 0, lastvalR = 0,lastvalM = 0;
-	double BaseLen =10;
+	double lastvalL = 0, lastvalR = 0, lastvalM = 0;
+	double BaseLen = 10;
 	for (int i = 0; i < len; i++)
 	{
-		double suml = 0, sumr = 0,sumc = 0 ;
-	
-		int lvalnum = 0, rvalnum = 0,cvalnum=0;
+		double suml = 0, sumr = 0, sumc = 0;
+
+		int lvalnum = 0, rvalnum = 0, cvalnum = 0;
 		QStringList tmtd;
-		startidx = (int)qRound((m_roadSplietVec[i].getStartDmi() - 0.5) / BaseLen);
-		endidx = (int)qRound(m_roadSplietVec[i].getEndDmi() / BaseLen);
+		startidx = MyCommonMethods::MathRoundToInt((m_roadSplietVec[i].getStartDmi() - 0.5) / BaseLen);
+		endidx = MyCommonMethods::MathRoundToInt(m_roadSplietVec[i].getEndDmi() / BaseLen);
 		if (startidx >= endidx)
 		{
 			if (startidx < lValue.size())
@@ -2629,9 +2852,9 @@ bool hnOutExcelMileManage::writeMtdValue()
 					++rvalnum;
 				}
 			}
-			if (cValue.size()>0&&startidx<cValue.size())
+			if (cValue.size() > 0 && startidx < cValue.size())
 			{
-				lastvalM = qAbs(cValue [startidx]);
+				lastvalM = qAbs(cValue[startidx]);
 
 				sumc += lastvalM;
 				++cvalnum;
@@ -2644,12 +2867,12 @@ bool hnOutExcelMileManage::writeMtdValue()
 			{
 				if (ValStridx < lValue.size())
 				{
-					if (ValStridx>=lValue.size())
+					if (ValStridx >= lValue.size())
 					{
 						continue;
 					}
 					lastvalL = qAbs(lValue[ValStridx]);
-					
+
 					suml += lastvalL;
 					++lvalnum;
 				}
@@ -2661,7 +2884,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 					}
 					else
 					{
-						 continue;
+						continue;
 					}
 					sumr += lastvalR;
 					++rvalnum;
@@ -2673,7 +2896,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 					{
 						continue;
 					}
-					lastvalM =qAbs(cValue[ValStridx]) ;
+					lastvalM = qAbs(cValue[ValStridx]);
 
 					sumc += lastvalM;
 					++cvalnum;
@@ -2719,9 +2942,9 @@ bool hnOutExcelMileManage::writeMtdValue()
 			{
 				rval[i] = i > 0 ? rval[i - 0] : 0;
 			}
-			if (cValue.size()>0)
+			if (cValue.size() > 0)
 			{
-				if (cvalnum>0)
+				if (cvalnum > 0)
 				{
 					cval[i] = sumc;
 				}
@@ -2769,7 +2992,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 
 	QVector<double> lValues;
 	double lastHasValue = 0;
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(lval[i]) < 0.0001)
 		{
@@ -2786,7 +3009,7 @@ bool hnOutExcelMileManage::writeMtdValue()
 	QVector<double> rValues;
 	if (m_project->get2DProject()->_IsDIRIMTD)
 	{
-		for (int i=0; i < len; ++i)
+		for (int i = 0; i < len; ++i)
 		{
 			if (qAbs(rval[i]) < 0.0001)
 			{
@@ -2798,15 +3021,15 @@ bool hnOutExcelMileManage::writeMtdValue()
 				lastHasValue = rval[i];
 			}
 
-			m_roadSplietVec[i].setRightMtdValue ( rValues[i]);
+			m_roadSplietVec[i].setRightMtdValue(rValues[i]);
 		}
 	}
 	QVector<double>cValues;
 	if (m_project->get2DProject()->_IsMMTD)
 	{
-		if (cValue.size()>0)
+		if (cValue.size() > 0)
 		{
-			for (int i=0; i < len; ++i)
+			for (int i = 0; i < len; ++i)
 			{
 				if (qAbs(cval[i]) < 0.0001)
 				{
@@ -2821,8 +3044,8 @@ bool hnOutExcelMileManage::writeMtdValue()
 			}
 
 		}
-		 
-		
+
+
 	}
 
 	return true;
@@ -2854,14 +3077,14 @@ bool hnOutExcelMileManage::writeMpdValue()
 				QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 				string mes = message.toLocal8Bit();
 				reportExcelError(message);
-			//	throw std::runtime_error(mes.c_str());
+				//	throw std::runtime_error(mes.c_str());
 			}
 			catch (const std::exception& e)
 			{
 				std::cerr << e.what() << std::endl;
 			}
 
-		} 
+		}
 		for (QString line : lists)
 		{
 			QStringList split = line.split(" ");
@@ -2897,7 +3120,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 					QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【右侧磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 					string mes = message.toLocal8Bit();
 					reportExcelError(message);
-				//	throw std::runtime_error(mes.c_str());
+					//	throw std::runtime_error(mes.c_str());
 				}
 				catch (const std::exception& e)
 				{
@@ -2937,14 +3160,14 @@ bool hnOutExcelMileManage::writeMpdValue()
 			if (file.exists())
 			{
 				lists = MyCommonMethods::ReadAllLines(cPath);
-				if (lists.size()* 10 < endDmi - endDmi / 5)
+				if (lists.size() * 10 < endDmi - endDmi / 5)
 				{
 					try
 					{
 						QString message = m_project->get2DProName() + QStringLiteral("\r\n上次【计算IRM】中【中间磨耗MPD】计算到一半退出了软件\n请【清除结果——车辙】后重新【计算IRM】!");
 						string mes = message.toLocal8Bit();
-					reportExcelError(message);
-					//	throw std::runtime_error(mes.c_str());
+						reportExcelError(message);
+						//	throw std::runtime_error(mes.c_str());
 					}
 					catch (const std::exception& e)
 					{
@@ -2982,8 +3205,8 @@ bool hnOutExcelMileManage::writeMpdValue()
 		return false;
 	}
 	int len = m_roadSplietVec.size();
-//	std::unique_ptr<double[]> lval(new double[len]);
-//	std::unique_ptr<double[]>rval(new double[len]);
+	//	std::unique_ptr<double[]> lval(new double[len]);
+	//	std::unique_ptr<double[]>rval(new double[len]);
 	QVector<double> cval(len);
 	QVector<double> rval(len);
 	QVector<double> lval(len);
@@ -2997,8 +3220,8 @@ bool hnOutExcelMileManage::writeMpdValue()
 
 		int lvalnum = 0, rvalnum = 0, cvalnum = 0;
 		QStringList tmtd;
-		startidx = (int)qRound((m_roadSplietVec[i].getStartDmi() - 0.5) / BaseLen);
-		endidx = (int)qRound(m_roadSplietVec[i].getEndDmi()/ BaseLen);
+		startidx = MyCommonMethods::MathRoundToInt((m_roadSplietVec[i].getStartDmi() - 0.5) / BaseLen);
+		endidx = MyCommonMethods::MathRoundToInt(m_roadSplietVec[i].getEndDmi() / BaseLen);
 		if (startidx >= endidx)
 		{
 			if (startidx < lValue.size())
@@ -3144,7 +3367,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 
 	QVector<double> lValues;
 	double lastHasValue = 0;
-	for (int i=0; i < len; ++i)
+	for (int i = 0; i < len; ++i)
 	{
 		if (qAbs(lval[i]) < 0.0001)
 		{
@@ -3156,12 +3379,12 @@ bool hnOutExcelMileManage::writeMpdValue()
 			lastHasValue = lval[i];
 		}
 
-		m_roadSplietVec[i].setLeftMpdValue ( lValues[i]);
+		m_roadSplietVec[i].setLeftMpdValue(lValues[i]);
 	}
 	QVector<double> rValues;
 	if (m_project->get2DProject()->_IsDIRIMTD)
 	{
-		for (int i=0; i < len; ++i)
+		for (int i = 0; i < len; ++i)
 		{
 			if (qAbs(rval[i]) < 0.0001)
 			{
@@ -3173,7 +3396,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 				lastHasValue = rval[i];
 			}
 
-			m_roadSplietVec[i].setRightMpdValue (rValues[i]);
+			m_roadSplietVec[i].setRightMpdValue(rValues[i]);
 		}
 	}
 	QVector<double>cValues;
@@ -3181,7 +3404,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 	{
 		if (cValue.size() > 0)
 		{
-			for (int i=0; i < len; ++i)
+			for (int i = 0; i < len; ++i)
 			{
 				if (qAbs(cval[i]) < 0.0001)
 				{
@@ -3193,7 +3416,7 @@ bool hnOutExcelMileManage::writeMpdValue()
 					lastHasValue = cval[i];
 				}
 
-				m_roadSplietVec[i].setCenterMpdValue (cValues[i]);
+				m_roadSplietVec[i].setCenterMpdValue(cValues[i]);
 			}
 
 		}
@@ -3204,11 +3427,11 @@ bool hnOutExcelMileManage::writeMpdValue()
 }
 
 bool hnOutExcelMileManage::writeGpsStrValue()
-{ 
-	QString gps2MileFilePath  = m_project->get2DProject()->getBasePath()+"\\GPS2Mile.txt"; 
+{
+	QString gps2MileFilePath = m_project->get2DProject()->getBasePath() + "\\GPS2Mile.txt";
 	QStringList datas = MyCommonMethods::ReadAllLines(gps2MileFilePath);
 
-	if (datas.size() <= 0 )
+	if (datas.size() <= 0)
 	{
 		QString message = m_project->get2DProName() + QStringLiteral("\r\n是否未进行GPS桩号匹配或执行失败!");
 		string mes = message.toLocal8Bit();
@@ -3217,16 +3440,16 @@ bool hnOutExcelMileManage::writeGpsStrValue()
 	}
 
 	QVector<_EXCELGPS_> gpsInfos;
-	for (int i = 0; i < datas.size() ; ++i)
+	for (int i = 0; i < datas.size(); ++i)
 	{
-	      gpsInfos.push_back(_EXCELGPS_(datas[i]));
+		gpsInfos.push_back(_EXCELGPS_(datas[i]));
 	}
 
 	int gi = 0;
 	int len = m_roadSplietVec.size();
 	int direction = m_project->get2DProject()->_Direction;
-	
-	fillRoadSplitVec(gpsInfos, m_roadSplietVec, direction); 
+
+	fillRoadSplitVec(gpsInfos, m_roadSplietVec, direction);
 	return true;
 
 
@@ -3237,6 +3460,7 @@ void hnOutExcelMileManage::initMarkMehtodExcelMile(hnOutExcelMile& newMile, cons
 	//newMile.RoadLength = qAbs(newMile.getStartMile() - newMile.getEndMile());
 	newMile.RoadDegreestr = mile.RoadDegreestr;
 	newMile.RoadSurface = mile.RoadSurface;
+	newMile.RoadSurfaceStr = mile.RoadSurfaceStr;
 	newMile.setUnitStr(mile.getUnitStr());
 	newMile.RoadGrad = mile.RoadGrad;
 	newMile.setSurveyWidth(mile.getSurveyWidth());
@@ -3245,62 +3469,62 @@ void hnOutExcelMileManage::initMarkMehtodExcelMile(hnOutExcelMile& newMile, cons
 
 _EXCELGPS_ hnOutExcelMileManage::findNearestGps(const QVector<_EXCELGPS_>& gpsInfos, double targetMile, int line)
 {
-	if (gpsInfos.isEmpty()) 
+	if (gpsInfos.isEmpty())
 	{
 		return nullptr;
-	} 
-		//查找第一个大于或者等于目标桩号的位置
-		auto it = std::lower_bound(gpsInfos.begin(), gpsInfos.end(), targetMile, [line](const _EXCELGPS_&gps, double mile) {
-			 
-			if (line==1)
-			{
-				return gps._mile < mile;
-			}
-			else
-			{
-				return gps._mile > mile;
-			}
-			
-		});
+	}
+	//查找第一个大于或者等于目标桩号的位置
+	auto it = std::lower_bound(gpsInfos.begin(), gpsInfos.end(), targetMile, [line](const _EXCELGPS_& gps, double mile) {
 
-		//处理边界清空
-		if (it == gpsInfos.begin())
+		if (line == 1)
 		{
-			return (*it);
-		}
-		if (it == gpsInfos.end())
-		{
-			return (*(it - 1));
-		}
-
-		//比较it和it-1 找到最接近的点
-		const _EXCELGPS_& nextGps = *it;
-		const _EXCELGPS_ &prevGps = *(it-1);
-
-		if (std::abs(nextGps._mile-targetMile) <std::abs(prevGps._mile-targetMile))
-		{
-			return nextGps;
+			return gps._mile < mile;
 		}
 		else
 		{
-			return prevGps;
-		} 
+			return gps._mile > mile;
+		}
+
+		});
+
+	//处理边界清空
+	if (it == gpsInfos.begin())
+	{
+		return (*it);
+	}
+	if (it == gpsInfos.end())
+	{
+		return (*(it - 1));
+	}
+
+	//比较it和it-1 找到最接近的点
+	const _EXCELGPS_& nextGps = *it;
+	const _EXCELGPS_& prevGps = *(it - 1);
+
+	if (std::abs(nextGps._mile - targetMile) < std::abs(prevGps._mile - targetMile))
+	{
+		return nextGps;
+	}
+	else
+	{
+		return prevGps;
+	}
 }
 
-void hnOutExcelMileManage::fillRoadSplitVec(QVector<_EXCELGPS_>gpsInfos, QVector<hnOutExcelMile>&roadSplitVec, int line)
+void hnOutExcelMileManage::fillRoadSplitVec(QVector<_EXCELGPS_>gpsInfos, QVector<hnOutExcelMile>& roadSplitVec, int line)
 {
 
-	for (auto& roadSplit:roadSplitVec)
+	for (auto& roadSplit : roadSplitVec)
 	{
 		//查找起点最近的gps信息
-		 _EXCELGPS_ sGps = findNearestGps(gpsInfos, m_project->enclToTrueMile( roadSplit.getStartDmi()), line);
-		
+		_EXCELGPS_ sGps = findNearestGps(gpsInfos, m_project->enclToTrueMile(roadSplit.getStartDmi()), line);
+
 		{
 			roadSplit.setStartGpsInfo(sGps);
 		}
 		//查找起点最近的gps信息
-		 _EXCELGPS_ eGps = findNearestGps(gpsInfos, m_project->enclToTrueMile( roadSplit.getEndDmi()), line);
-	
+		_EXCELGPS_ eGps = findNearestGps(gpsInfos, m_project->enclToTrueMile(roadSplit.getEndDmi()), line);
+
 		{
 			roadSplit.setEndGpsInfo(eGps);
 		}
@@ -3310,17 +3534,17 @@ void hnOutExcelMileManage::fillRoadSplitVec(QVector<_EXCELGPS_>gpsInfos, QVector
 
 double hnOutExcelMileManage::getCloseMile(const double& value)
 {
-	
+
 	if (m_roadSplietVec.isEmpty())
 	{
 		return 0;
 	}
 
 	auto it = std::lower_bound(m_roadSplietVec.begin(), m_roadSplietVec.end(), value, [](const hnOutExcelMile& mile, double val)
-	{
-		return mile.getStartDmi() < val;
-	
-	});
+		{
+			return mile.getStartDmi() < val;
+
+		});
 	if (it == m_roadSplietVec.begin())
 	{
 		return -1;

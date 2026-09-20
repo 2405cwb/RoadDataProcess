@@ -30,11 +30,13 @@ hnOutExcelMile::hnOutExcelMile(hnPro::hnProject * project, HnProjectEnums::Stand
    CenterMtdValue = 0;
 	LeftMtdValue=0;
 	RightMtdValue=0;
+	m_hasMtdValue = false;
 	PwiValueStr="";
 	 PwiEvaluateStr="";
 	 LeftMpdValue=0;
 	 RightMpdValue=0;
 	 CenterMpdValue=0;
+	 m_hasMpdValue = false;
 	 MpdValueStr="";
 	 MpdEvaluateStr="";
 	 Direction = -1;
@@ -67,11 +69,13 @@ hnOutExcelMile::hnOutExcelMile() :m_project(nullptr)
 	PCIExcelStr="";
 	LeftMtdValue = 0;
 	RightMtdValue = 0; 
+	m_hasMtdValue = false;
 	PwiValueStr = "";
 	PwiEvaluateStr = "";
 	LeftMpdValue = 0;
 	RightMpdValue = 0;
 	CenterMpdValue = 0;
+	m_hasMpdValue = false;
 	MpdValueStr = "";
 	MpdEvaluateStr = "";
 	RoadGrad = -1;
@@ -228,7 +232,12 @@ QString hnOutExcelMile::getIriExcelStr()
  }
 
   QString hnOutExcelMile::getPciEvaluateStr(QString colStr,int row)
- { 
+	{
+		PciEvaluateStr.clear();
+		if (PCIExcelStr.isEmpty())
+		{
+			return PciEvaluateStr;
+		}
 		 QStringList pciLevels = QString::fromLocal8Bit(m_roadTypeSetInfo.strPCILevel).split(' ');
 
 		 switch (Type)
@@ -270,6 +279,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
   QString hnOutExcelMile::getMtdEvaluateStr(QString colStr, int row)
   {
+	  MtdEvaluateStr.clear();
+	  if (!m_hasMtdValue)
+	  {
+		  return MtdEvaluateStr;
+	  }
 	  /*
 	  "=IF(F{0}>={1},\"A\",IF(F{0}>={2},\"B\",IF(F{0}>={3},\"C\",\"D\")))"
 	  */ 
@@ -431,11 +445,13 @@ QString hnOutExcelMile::getIriExcelStr()
   void hnOutExcelMile::setLeftMtdValue(double value)
   {
 	  LeftMtdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMtdValue = true;
   }
 
   void hnOutExcelMile::setRightMtdValue(double value)
   {
 	  RightMtdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMtdValue = true;
   }
 
 
@@ -445,6 +461,7 @@ QString hnOutExcelMile::getIriExcelStr()
   void hnOutExcelMile::setCenterMtdValue(double value)
   {
 	  this->CenterMtdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMtdValue = true;
   }
 
   double hnOutExcelMile::getLeftMtdValue()
@@ -482,16 +499,19 @@ QString hnOutExcelMile::getIriExcelStr()
   void hnOutExcelMile::setLeftMpdValue(double value)
   {
 	  LeftMpdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMpdValue = true;
   }
 
   void hnOutExcelMile::setRightMpdValue(double value)
   {
 	  RightMpdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMpdValue = true;
   }
 
   void hnOutExcelMile::setCenterMpdValue(double value)
   {
 	  CenterMpdValue = MyCommonMethods::rountToNDecimalPlaces(value, m_xrSetting->sheetRoundingOffNum);
+	  m_hasMpdValue = true;
   }
 
   
@@ -519,10 +539,6 @@ QString hnOutExcelMile::getIriExcelStr()
 
   QString hnOutExcelMile::getRutExcelStr()
   {
-	  if (RutExcelStr.isEmpty())
-	  {
-		  return "100";
-	  }
 	  return RutExcelStr;
   }
 
@@ -533,7 +549,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
   QString hnOutExcelMile::getRutEvaluateStr(QString colStr, int row)
   {//rut
-	   
+		  RutEvaluateStr.clear();
+		  if (RutExcelStr.isEmpty())
+		  {
+			  return RutEvaluateStr;
+		  }
 		  QStringList levels = QString::fromLocal8Bit(m_roadTypeSetInfo.strRDILevel).split(' ');
 		  if (levels.size() > 4)
 		  { 
@@ -546,6 +566,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
    QString hnOutExcelMile::getIriEvaluateStr(QString colStr, int row)
  {
+	 IriEvaluateStr.clear();
+	 if (IriExcelStr.isEmpty())
+	 {
+		 return IriEvaluateStr;
+	 }
 	 QStringList levels = QString::fromLocal8Bit(m_roadTypeSetInfo.strRQILevel).split(' ');
 	 switch (m_project->getBaseStandard())
 	 {
@@ -604,6 +629,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
  QString hnOutExcelMile::getPwiValueStr()
  {
+	 PwiValueStr.clear();
+	 if (!m_hasMtdValue)
+	 {
+		 return PwiValueStr;
+	 }
 	 double wr = getMtdWrValue(); 
 	 double a1 = m_roadTypeSetInfo.dPWI_a1; 
 	 if (a1 == 0)
@@ -671,6 +701,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
  QString hnOutExcelMile::getPwiEvaluateStr()
  {
+	 PwiEvaluateStr.clear();
+	 if (!m_hasMtdValue)
+	 {
+		 return PwiEvaluateStr;
+	 }
 	 double wr = getMtdWrValue(); 
 	 double pwiValue = 100 - m_roadTypeSetInfo.dPWI_a0*pow(wr, m_roadTypeSetInfo.dPWI_a1);
 	 
@@ -686,6 +721,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
  QString hnOutExcelMile::getMpdValueStr(QString colStr, int row)
  {
+	 MpdValueStr.clear();
+	 if (!m_hasMpdValue)
+	 {
+		 return MpdValueStr;
+	 }
 	 MpdValueStr = QStringLiteral("=100-%1*POWER(%2%4,%3)")
 		 . arg(QString::number(m_roadTypeSetInfo.dPWI_a0))
 		 .arg(colStr)
@@ -696,6 +736,11 @@ QString hnOutExcelMile::getIriExcelStr()
 
  QString hnOutExcelMile::getMpdEvaluateStr(QString colStr, int row)
  {
+	 MpdEvaluateStr.clear();
+	 if (!m_hasMpdValue)
+	 {
+		 return MpdEvaluateStr;
+	 }
 	 QStringList levels = QString::fromLocal8Bit(m_roadTypeSetInfo.strRDILevel).split(' ');
 	 if (levels.size() > 4)
 	 {
@@ -905,7 +950,7 @@ bool hnOutExcelMile::StartCalculate(bool onlyInitSetInfo /*= false */)
 		Type, RoadDegreestr, RoadSurface, drawType, m_roadTypeSetInfo);
 	if (!found)
 	{
-		reportCalculationError(QStringLiteral("找不到道路计算参数，已停止该类型分段的 DR/PCI 计算：规范=%1，等级=%2，路面=%3，作业模式=%4")
+		reportCalculationError(QStringLiteral("找不到道路计算参数，已停止该类型分段的指标计算：规范=%1，等级=%2，路面=%3，作业模式=%4")
 			.arg(HnProjectEnums::roadTypeEnumToQString(Type))
 			.arg(RoadDegreestr)
 			.arg(RoadSurfaceStr)
@@ -913,14 +958,6 @@ bool hnOutExcelMile::StartCalculate(bool onlyInitSetInfo /*= false */)
 		return false;
 	}
 
-	if ((Type == HnProjectEnums::DegreeRoad2018 || Type == HnProjectEnums::RuralRoadlowLevel) &&
-		(!hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a0) || !hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a1) ||
-		m_roadTypeSetInfo.dPCI_a0 <= 0.0 || m_roadTypeSetInfo.dPCI_a1 <= 0.0))
-	{
-		reportCalculationError(QStringLiteral("道路计算参数中的 PCI 系数无效，已停止该类型分段计算：规范=%1，等级=%2，路面=%3")
-			.arg(HnProjectEnums::roadTypeEnumToQString(Type)).arg(RoadDegreestr).arg(RoadSurfaceStr));
-		return false;
-	}
 	return true;
 }
 
@@ -929,6 +966,14 @@ bool hnOutExcelMile::calculateDrScore(double fallbackWidth, QVector<hnCommon::hn
 	m_roadDisVec.clear();
 	setDrScore(0.0);
 	PCIExcelStr.clear();
+	if ((Type == HnProjectEnums::DegreeRoad2018 || Type == HnProjectEnums::RuralRoadlowLevel) &&
+		(!hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a0) || !hnDrPci::isFinite(m_roadTypeSetInfo.dPCI_a1) ||
+		m_roadTypeSetInfo.dPCI_a0 <= 0.0 || m_roadTypeSetInfo.dPCI_a1 <= 0.0))
+	{
+		reportCalculationError(QStringLiteral("道路计算参数中的 PCI 系数无效，已停止当前分段的 DR/PCI 计算：规范=%1，等级=%2，路面=%3")
+			.arg(HnProjectEnums::roadTypeEnumToQString(Type)).arg(RoadDegreestr).arg(RoadSurfaceStr));
+		return false;
+	}
 
 	const double segmentLength = getRoadLength();
 	double surveyWidth = SurveyWidth;
@@ -998,8 +1043,8 @@ bool hnOutExcelMile::calculateDrScore(double fallbackWidth, QVector<hnCommon::hn
 		}
 		PCIExcelStr = QStringLiteral("=100-%2*POWER(%1,%3)")
 			.arg(QString::number(getDRScore(), 'g', 15))
-			.arg(QString::number(m_roadTypeSetInfo.dPCI_a0, 'g', 15))
-			.arg(QString::number(m_roadTypeSetInfo.dPCI_a1, 'g', 15));
+			.arg(QString::number(m_roadTypeSetInfo.dPCI_a0, 'g', 6))
+			.arg(QString::number(m_roadTypeSetInfo.dPCI_a1, 'g', 6));
 		return true;
 	}
 	case HnProjectEnums::CityRoad:
@@ -1100,6 +1145,19 @@ bool hnOutExcelMile::calculateDrScore(double fallbackWidth, QVector<hnCommon::hn
 }
 bool hnOutExcelMile::calculateRQIScore(bool hasleftValue,bool hasRightValue)
 {
+	IriExcelStr.clear();
+	if (!hnDrPci::isFinite(m_roadTypeSetInfo.dRQI_a0) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRQI_a1))
+	{
+		reportCalculationError(QStringLiteral("道路计算参数中的 RQI 系数无效，已停止当前分段的 RQI 计算：规范=%1，等级=%2，路面=%3")
+			.arg(HnProjectEnums::roadTypeEnumToQString(Type)).arg(RoadDegreestr).arg(RoadSurfaceStr));
+		return false;
+	}
+	if (!hasleftValue && !hasRightValue)
+	{
+		reportCalculationError(QStringLiteral("当前分段没有可用的 IRI 数据，无法计算 RQI。"));
+		return false;
+	}
 	//计算rqi
 	if (m_xrSetting->IRIExcelSide == 2)
 	{
@@ -1107,11 +1165,14 @@ bool hnOutExcelMile::calculateRQIScore(bool hasleftValue,bool hasRightValue)
 		{
 			if (hasleftValue&& hasRightValue)
 			{
-				judgeIirValue = (LeftIriValue + RightIriValue) / 2, m_xrSetting->sheetRoundingOffNum;
+				judgeIirValue = MyCommonMethods::rountToNDecimalPlaces(
+					(LeftIriValue + RightIriValue) / 2.0, m_xrSetting->sheetRoundingOffNum);
 			}
 			else
 			{
-				MyCommonMethods::rountToNDecimalPlaces((LeftIriValue + RightIriValue) /1, m_xrSetting->sheetRoundingOffNum); ; 
+				const double iriValue = hasleftValue ? LeftIriValue : RightIriValue;
+				judgeIirValue = MyCommonMethods::rountToNDecimalPlaces(
+					iriValue, m_xrSetting->sheetRoundingOffNum);
 			}
 			
 		}
@@ -1123,12 +1184,27 @@ bool hnOutExcelMile::calculateRQIScore(bool hasleftValue,bool hasRightValue)
 	}
 	else if (m_xrSetting->IRIExcelSide == 0)
 	{
+		if (!hasleftValue)
+		{
+			reportCalculationError(QStringLiteral("RQI 设置为使用左侧 IRI，但左侧 IRI 数据不存在。"));
+			return false;
+		}
 		judgeIirValue = LeftIriValue;
 
 	}
 	else if (m_xrSetting->IRIExcelSide == 1)
 	{
+		if (!hasRightValue)
+		{
+			reportCalculationError(QStringLiteral("RQI 设置为使用右侧 IRI，但右侧 IRI 数据不存在。"));
+			return false;
+		}
 		judgeIirValue = RightIriValue;
+	}
+	if (!hnDrPci::isFinite(judgeIirValue) || judgeIirValue < 0.0)
+	{
+		reportCalculationError(QStringLiteral("当前分段的 IRI 值无效，无法计算 RQI。"));
+		return false;
 	}
 	switch (m_project->getBaseStandard())
 	{
@@ -1157,6 +1233,24 @@ bool hnOutExcelMile::calculatePBIScore()
 
 bool hnOutExcelMile::calculateRUTScore()
 {
+	RutExcelStr.clear();
+	RutMaxExcelStr.clear();
+	if (!hnDrPci::isFinite(judgeRutValue) || judgeRutValue < 0.0 ||
+		!hnDrPci::isFinite(RutMaxValue) || RutMaxValue < 0.0 ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_RDa) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_RDb) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_a) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_b) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_a0) ||
+		!hnDrPci::isFinite(m_roadTypeSetInfo.dRDI_a1) ||
+		m_roadTypeSetInfo.dRDI_RDa < 0.0 ||
+		m_roadTypeSetInfo.dRDI_RDb <= m_roadTypeSetInfo.dRDI_RDa ||
+		m_roadTypeSetInfo.dRDI_a0 < 0.0 || m_roadTypeSetInfo.dRDI_a1 < 0.0)
+	{
+		reportCalculationError(QStringLiteral("车辙值或 RDI 参数无效，已停止当前分段的 RDI 计算：规范=%1，等级=%2，路面=%3")
+			.arg(HnProjectEnums::roadTypeEnumToQString(Type)).arg(RoadDegreestr).arg(RoadSurfaceStr));
+		return false;
+	}
 	switch (Type)
 	{
 	case HnProjectEnums::None:
@@ -1213,32 +1307,39 @@ bool hnOutExcelMile::calcaulateStreetScore(int type, QVector<hnCommon::hnRoadDis
 {
 	
 	m_streetDisManageMap.clear();
-	double sDmi = 0;
-	double eDmi = 0;
-	sDmi = StartDmi;
-	eDmi =EndDmi;
-for (auto dis : diss)
+	m_streetDisVec.clear();
+	if (type == 1)
 	{
-		if (dis.ndiseaseType == type)
+		m_streetYXDisManageVec.clear();
+	}
+	else if (type == 2)
+	{
+		m_streetLjDisManageVec.clear();
+	}
+
+	// 先按当前道路标准建立病害配置映射，历史数据按名称重新归类。
+	for (const auto& dis : disSetting)
+	{
+		StreetDiseaseManage manamge;
+		manamge.StreetDis = dis;
+		QString disName = QString::fromLocal8Bit(dis.strDiseaseTypeName);
+		m_streetDisManageMap.insert(disName, manamge);
+	}
+
+	double sDmi = StartDmi;
+	double eDmi = EndDmi;
+	for (const auto& dis : diss)
+	{
+		// 自定义景观仅记录，不参与标准扣分，重名也不归入标准病害。
+		if (dis.ndiseaseType == 3) continue;
+		if (dis.dDmi >= sDmi && dis.dDmi < eDmi)
 		{
-			if (dis.dDmi >= sDmi&&dis.dDmi < eDmi)
+			QString disName = QString::fromLocal8Bit(dis.strDisName);
+			if (m_streetDisManageMap.contains(disName))
 			{
 				m_streetDisVec.push_back(dis);
 			}
 		}
-
-	} 
-	QString preDisName;
-	
-	for (auto dis : disSetting)
-	{
-		StreetDiseaseManage manamge;
-		manamge.StreetDis = dis; 
-		QString disName =QString::fromLocal8Bit(  dis.strDiseaseTypeName);
-		m_streetDisManageMap.insert(disName, manamge);
-		
-		 
-		preDisName = QString::fromLocal8Bit( manamge.StreetDis.strDiseaseName) ;
 	}
 	//计算病害得分
 	for (auto dis: m_streetDisVec)
@@ -1268,7 +1369,6 @@ for (auto dis : diss)
 					if (disName == extraStr&& dis.dArea != 0)
 					{
 						Sci = 0;
-						return true;
 
 					}
 				}
@@ -1363,6 +1463,27 @@ for (auto dis : diss)
 		this->setSciValue(tclval);
 	}
 
+	for (auto dis : m_streetDisVec)
+	{
+		QString disName = QString::fromLocal8Bit(dis.strDisName);
+		 
+		if (this->Type == HnProjectEnums::DegreeRoad2018)
+		{
+			if (type == 2)
+			{
+				QString  extraStr = QStringLiteral("路基构造物损坏.重");
+				if (disName == extraStr && dis.dArea != 0)
+				{
+					Sci = 0;
+				 
+					this->setSciValue(Sci);
+				}
+			} 
+		}
+
+
+	}
+	 
 
 	return true;
 }

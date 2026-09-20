@@ -14,7 +14,10 @@ class IrmActualTimeShow : public QWidget
 public:
 	IrmActualTimeShow(QWidget *parent);
 	~IrmActualTimeShow();
+signals:
+	void requestCalculation();
 public slots:
+	void resetData();
 //更新IRI界面
 void slot_updateIriFormSlots(double mile,double dmi);
 void selectLengthTextChanged(const QString& str);
@@ -34,9 +37,10 @@ private:
 	
 	//更新横纵坐标
 	void updateValueAxis(int sIndex,int eSindex, QChart* chart,const QVector<double>& datas );
-	hnPro::hnProject * curProject;
+	hnPro::hnProject * curProject = nullptr;
 
-	hnPro::hn2DProject* cur2DProject;
+	hnPro::hn2DProject* cur2DProject = nullptr;
+	QLabel* m_emptyHint = nullptr;
 
 	//当前用户设定区间  10m一个点
 	int curUserLength = 100;

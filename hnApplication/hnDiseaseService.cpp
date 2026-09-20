@@ -6,12 +6,14 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <algorithm>
+#include <limits>
 
 hnDiseaseService::hnDiseaseService(QObject* parent)
 	: QObject(parent)
 {
 	m_project = 0;
 	m_allDiseaseCacheValid = false;
+	m_diseaseRangeIndexValid = false;
 }
 
 void hnDiseaseService::setProject(hnPro::hnProject* project)
@@ -33,6 +35,7 @@ void hnDiseaseService::invalidateCache()
 {
 	m_allDiseaseCacheValid = false;
 	m_allDiseaseCache.clear();
+	invalidateDiseaseRangeIndex();
 }
 
 void hnDiseaseService::ensureAllDiseaseCache()
@@ -56,6 +59,7 @@ void hnDiseaseService::ensureAllDiseaseCache()
 	std::sort(m_allDiseaseCache.begin(), m_allDiseaseCache.end());
 
 	m_allDiseaseCacheValid = true;
+	rebuildDiseaseRangeIndex();
 
 	qDebug() << "[DiseaseService] load all diseases:"
 		<< timer.elapsed()
@@ -63,6 +67,99 @@ void hnDiseaseService::ensureAllDiseaseCache()
 		<< m_allDiseaseCache.size();
 }
 
+void hnDiseaseService::invalidateDiseaseRangeIndex()
+{
+	m_diseaseRangeIndexValid = false;
+	m_diseaseRangeIndex.clear();
+	m_diseaseRangePrefixMaxEnd.clear();
+}
+
+void hnDiseaseService::rebuildDiseaseRangeIndex()
+{
+	m_diseaseRangeIndex.clear();
+	m_diseaseRangePrefixMaxEnd.clear();
+	m_diseaseRangeIndex.reserve(m_allDiseaseCache.size());
+	m_diseaseRangePrefixMaxEnd.reserve(m_allDiseaseCache.size());
+
+	for (int i = 0; i < m_allDiseaseCache.size(); ++i)
+	{
+		const hnCommon::hnRoadDiseaseInfo& disease = m_allDiseaseCache.at(i);
+		double diseaseBegin = disease.dDmiStart;
+		double diseaseEnd = disease.dDmiEnd;
+		if (diseaseBegin <= 0.0 && diseaseEnd <= 0.0)
+		{
+			diseaseBegin = disease.dMileage;
+			diseaseEnd = disease.dMileage;
+		}
+		if (diseaseBegin > diseaseEnd)
+		{
+			std::swap(diseaseBegin, diseaseEnd);
+		}
+		DiseaseRangeIndexEntry entry;
+		entry.beginMile = diseaseBegin;
+		entry.endMile = diseaseEnd;
+		entry.cacheIndex = i;
+		m_diseaseRangeIndex.push_back(entry);
+	}
+
+	std::sort(m_diseaseRangeIndex.begin(), m_diseaseRangeIndex.end(),
+		[](const DiseaseRangeIndexEntry& left, const DiseaseRangeIndexEntry& right)
+		{
+			if (left.beginMile != right.beginMile) return left.beginMile < right.beginMile;
+			if (left.endMile != right.endMile) return left.endMile < right.endMile;
+			return left.cacheIndex < right.cacheIndex;
+		});
+
+	double prefixMaxEnd = -(std::numeric_limits<double>::max)();
+	for (const DiseaseRangeIndexEntry& entry : qAsConst(m_diseaseRangeIndex))
+	{
+		prefixMaxEnd = qMax(prefixMaxEnd, entry.endMile);
+		m_diseaseRangePrefixMaxEnd.push_back(prefixMaxEnd);
+	}
+	m_diseaseRangeIndexValid = true;
+}
+
+void hnDiseaseService::getDiseasesInRange(double beginMile, double endMile, double margin,
+	int diseaseTypeFilter, QVector<hnCommon::hnRoadDiseaseInfo>& result)
+{
+	ensureAllDiseaseCache();
+	if (!m_diseaseRangeIndexValid)
+	{
+		rebuildDiseaseRangeIndex();
+	}
+	result.clear();
+	if (m_diseaseRangeIndex.isEmpty())
+	{
+		return;
+	}
+
+	double viewBegin = qMin(beginMile, endMile) - margin;
+	double viewEnd = qMax(beginMile, endMile) + margin;
+	const auto upper = std::upper_bound(m_diseaseRangeIndex.cbegin(), m_diseaseRangeIndex.cend(), viewEnd,
+		[](double value, const DiseaseRangeIndexEntry& entry) { return value < entry.beginMile; });
+	const int upperCount = static_cast<int>(upper - m_diseaseRangeIndex.cbegin());
+	if (upperCount <= 0)
+	{
+		return;
+	}
+	const auto first = std::lower_bound(m_diseaseRangePrefixMaxEnd.cbegin(),
+		m_diseaseRangePrefixMaxEnd.cbegin() + upperCount, viewBegin);
+	const int firstIndex = static_cast<int>(first - m_diseaseRangePrefixMaxEnd.cbegin());
+	for (int i = firstIndex; i < upperCount; ++i)
+	{
+		const DiseaseRangeIndexEntry& entry = m_diseaseRangeIndex.at(i);
+		if (entry.endMile < viewBegin)
+		{
+			continue;
+		}
+		const hnCommon::hnRoadDiseaseInfo& disease = m_allDiseaseCache.at(entry.cacheIndex);
+		if (diseaseTypeFilter == 1 && disease.ndiseaseType == 0)
+		{
+			continue;
+		}
+		result.push_back(disease);
+	}
+}
  QVector<hnCommon::hnRoadDiseaseInfo>& hnDiseaseService::getAllDiseases()
 {
 	ensureAllDiseaseCache();
@@ -91,51 +188,14 @@ void hnDiseaseService::getRoadDiseasesInRange(
 	double endMile,
 	QVector<hnCommon::hnRoadDiseaseInfo>& result)
 {
-	ensureAllDiseaseCache();
-
-	result.clear();
-
-	QElapsedTimer timer;
-	timer.start();
-
-	for (int i = 0; i < m_allDiseaseCache.size(); ++i)
-	{
-		const hnCommon::hnRoadDiseaseInfo& disease = m_allDiseaseCache.at(i);
-
-		if (isDiseaseInMileRange(disease, beginMile, endMile))
-		{
-			result.push_back(disease);
-		}
-	}
-
-	/*qDebug() << "[DiseaseService] filterRoad diseases:"
-		<< timer.elapsed()
-		<< "ms, result:"
-		<< result.size();*/
+	// Preserve the historical road-view behavior (all disease types are
+	// returned here); the caller applies its existing render filter.
+	getDiseasesInRange(beginMile, endMile, 10.0, -1, result);
 }
-
 void hnDiseaseService::getStreetDiseaseInRange(double beginMile, double endMile, QVector<hnCommon::hnRoadDiseaseInfo>& result)
 {
-	ensureAllDiseaseCache();
-
-	result.clear();
-
-	QElapsedTimer timer;
-	timer.start();
-	QVector<hnCommon::hnRoadDiseaseInfo> diss = getAllStreetDiseases();
-	for (int i = 0; i < diss.size(); ++i)
-	{
-		const hnCommon::hnRoadDiseaseInfo& disease = diss.at(i);
-
-		if (isDiseaseInMileRange(disease, beginMile, endMile,0))
-		{
-			result.push_back(disease);
-		}
-	}
-
- 
+	getDiseasesInRange(beginMile, endMile, 0.0, 1, result);
 }
-
 bool hnDiseaseService::isDiseaseInMileRange(
 	const hnCommon::hnRoadDiseaseInfo& disease,
 	double beginMile,
@@ -401,6 +461,7 @@ bool hnDiseaseService::deleteOneDisease(hnCommon::hnRoadDiseaseInfo& disease)
 			if (isSameDisease(m_allDiseaseCache.at(i),disease))
 			{
 				m_allDiseaseCache.remove(i);
+				invalidateDiseaseRangeIndex();
 				break;
 			}
 		}
@@ -477,6 +538,7 @@ bool hnDiseaseService::updateDisease(
 		 if (index >=0)
 		 {
 			 m_allDiseaseCache[index] = disease;
+			 invalidateDiseaseRangeIndex();
 		 }
 		 else
 		 {

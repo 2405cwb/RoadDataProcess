@@ -63,7 +63,7 @@
          </property>
          <layout class="QGridLayout" name="gridLayout_13">
           <item row="0" column="0">
-           <widget class="QLabel" name="label_9">
+           <widget class="QLabel" name="autoPlayIntervalLabel">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -71,30 +71,62 @@
              </sizepolicy>
             </property>
             <property name="text">
-             <string>图片退回阈值:</string>
+             <string>自动播放每张间隔：</string>
             </property>
            </widget>
           </item>
           <item row="0" column="1">
-           <widget class="QScrollBar" name="horizontalScrollBar">
+           <widget class="QSpinBox" name="autoPlayIntervalSpinBox">
+            <property name="toolTip">
+             <string>数值越小播放越快。1000毫秒为每秒一张；点击“确定”保存并应用于二维、三维自动播放。</string>
+            </property>
+            <property name="suffix">
+             <string> 毫秒</string>
+            </property>
             <property name="minimum">
-             <number>5</number>
+             <number>200</number>
             </property>
             <property name="maximum">
-             <number>15</number>
+             <number>3000</number>
             </property>
             <property name="value">
-             <number>10</number>
+             <number>1000</number>
             </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="invertedAppearance">
-             <bool>false</bool>
+            <property name="singleStep">
+             <number>100</number>
             </property>
            </widget>
           </item>
           <item row="1" column="0" colspan="2">
+           <layout class="QHBoxLayout" name="autoPlaySpeedLayout">
+            <item><widget class="QLabel" name="autoPlaySlowLabel"><property name="text"><string>慢</string></property></widget></item>
+            <item>
+             <widget class="QSlider" name="autoPlaySpeedSlider">
+              <property name="minimum"><number>200</number></property>
+              <property name="maximum"><number>3000</number></property>
+              <property name="singleStep"><number>100</number></property>
+              <property name="pageStep"><number>200</number></property>
+              <property name="value"><number>1000</number></property>
+              <property name="orientation"><enum>Qt::Horizontal</enum></property>
+              <property name="invertedAppearance"><bool>true</bool></property>
+              <property name="invertedControls"><bool>true</bool></property>
+              <property name="toolTip"><string>向右更快，向左更慢；点击“确定”后保存并应用。</string></property>
+             </widget>
+            </item>
+            <item><widget class="QLabel" name="autoPlayFastLabel"><property name="text"><string>快</string></property></widget></item>
+           </layout>
+          </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QLabel" name="autoPlayIntervalHint">
+            <property name="text">
+             <string>向右拖动更快；每张0.2～3秒，默认1秒。点击“确定”保存，取消不生效。</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0" colspan="2">
            <widget class="QCheckBox" name="wheelScrollOneImageCheckBox">
             <property name="text">
              <string>滚轮或方向键每次跳转一张图片（普通图片/Pack）</string>
@@ -215,134 +247,38 @@
            <property name="title">
             <string>快捷键说明</string>
            </property>
-           <layout class="QGridLayout" name="gridLayout">
-            <item row="7" column="0">
-             <widget class="QLabel" name="label_22">
-              <property name="text">
-               <string>自动化模式病害框选绘制</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="1">
-             <widget class="QLabel" name="label_2">
-              <property name="text">
-               <string>F1</string>
-              </property>
-             </widget>
-            </item>
-            <item row="1" column="1">
-             <widget class="QLabel" name="label_4">
-              <property name="text">
-               <string>F2|病害列表右键删除|界面选中后Delete</string>
-              </property>
-             </widget>
-            </item>
-            <item row="1" column="0">
-             <widget class="QLabel" name="label_3">
-              <property name="text">
-               <string>删除病害</string>
-              </property>
-             </widget>
-            </item>
-            <item row="6" column="1">
-             <widget class="QLabel" name="label_19">
-              <property name="text">
-               <string>上下左右箭头</string>
-              </property>
-             </widget>
-            </item>
-            <item row="5" column="1">
-             <widget class="QLabel" name="label_18">
-              <property name="text">
-               <string>空格键</string>
-              </property>
-             </widget>
-            </item>
-            <item row="9" column="0">
-             <widget class="QLabel" name="label_23">
-              <property name="text">
-               <string>切换自动化模式病害绘制模式(拖动/线性)</string>
-              </property>
-             </widget>
-            </item>
-            <item row="2" column="1">
-             <widget class="QLabel" name="label_6">
-              <property name="text">
-               <string>F3</string>
-              </property>
-             </widget>
-            </item>
-            <item row="9" column="1">
-             <widget class="QLabel" name="label_24">
-              <property name="text">
-               <string>B</string>
-              </property>
-             </widget>
-            </item>
-            <item row="4" column="0">
-             <widget class="QLabel" name="label_11">
-              <property name="text">
-               <string>放大镜</string>
-              </property>
-             </widget>
-            </item>
-            <item row="7" column="1">
-             <widget class="QLabel" name="label_21">
-              <property name="text">
-               <string>R</string>
-              </property>
-             </widget>
-            </item>
-            <item row="5" column="0">
-             <widget class="QLabel" name="label_14">
-              <property name="text">
-               <string>自动浏览图像</string>
-              </property>
-             </widget>
-            </item>
-            <item row="3" column="1">
-             <widget class="QLabel" name="label_8">
-              <property name="text">
-               <string>Shift + U</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="0">
-             <widget class="QLabel" name="label">
-              <property name="text">
-               <string>添加病害</string>
-              </property>
-             </widget>
-            </item>
-            <item row="4" column="1">
-             <widget class="QLabel" name="label_12">
-              <property name="text">
-               <string>Shift + Alt + M</string>
-              </property>
-             </widget>
-            </item>
-            <item row="3" column="0">
-             <widget class="QLabel" name="label_7">
-              <property name="text">
-               <string>合并病害</string>
-              </property>
-             </widget>
-            </item>
-            <item row="6" column="0">
-             <widget class="QLabel" name="label_20">
-              <property name="text">
-               <string>景观病害浏览</string>
-              </property>
-             </widget>
-            </item>
-            <item row="2" column="0">
-             <widget class="QLabel" name="label_5">
-              <property name="text">
-               <string>编辑病害</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+            <layout class="QGridLayout" name="gridLayout">
+             <item row="0" column="0"><widget class="QLabel" name="shortcutAction0"><property name="text"><string>添加病害模式</string></property></widget></item>
+             <item row="0" column="1"><widget class="QLabel" name="shortcutKey0"><property name="text"><string>F1</string></property></widget></item>
+             <item row="1" column="0"><widget class="QLabel" name="shortcutAction1"><property name="text"><string>删除病害模式</string></property></widget></item>
+             <item row="1" column="1"><widget class="QLabel" name="shortcutKey1"><property name="text"><string>F2</string></property></widget></item>
+             <item row="2" column="0"><widget class="QLabel" name="shortcutAction2"><property name="text"><string>编辑病害（单击修改类型）</string></property></widget></item>
+             <item row="2" column="1"><widget class="QLabel" name="shortcutKey2"><property name="text"><string>F3</string></property></widget></item>
+             <item row="3" column="0"><widget class="QLabel" name="shortcutAction3"><property name="text"><string>合并病害</string></property></widget></item>
+             <item row="3" column="1"><widget class="QLabel" name="shortcutKey3"><property name="text"><string>F4</string></property></widget></item>
+             <item row="4" column="0"><widget class="QLabel" name="shortcutAction4"><property name="text"><string>编辑模式：整体移动面状病害</string></property></widget></item>
+             <item row="4" column="1"><widget class="QLabel" name="shortcutKey4"><property name="text"><string>按住病害主体拖动</string></property></widget></item>
+             <item row="5" column="0"><widget class="QLabel" name="shortcutAction5"><property name="text"><string>编辑模式：调整面状病害大小</string></property></widget></item>
+             <item row="5" column="1"><widget class="QLabel" name="shortcutKey5"><property name="text"><string>拖动四角控制点</string></property></widget></item>
+             <item row="6" column="0"><widget class="QLabel" name="shortcutAction6"><property name="text"><string>前后/左右浏览图像</string></property></widget></item>
+             <item row="6" column="1"><widget class="QLabel" name="shortcutKey6"><property name="text"><string>W/S、A/D 或方向键</string></property></widget></item>
+             <item row="7" column="0"><widget class="QLabel" name="shortcutAction7"><property name="text"><string>快速浏览图像</string></property></widget></item>
+             <item row="7" column="1"><widget class="QLabel" name="shortcutKey7"><property name="text"><string>Shift + 浏览键</string></property></widget></item>
+             <item row="8" column="0"><widget class="QLabel" name="shortcutAction8"><property name="text"><string>视图恢复适应窗口</string></property></widget></item>
+             <item row="8" column="1"><widget class="QLabel" name="shortcutKey8"><property name="text"><string>空格键</string></property></widget></item>
+             <item row="9" column="0"><widget class="QLabel" name="shortcutAction9"><property name="text"><string>以鼠标位置缩放视图</string></property></widget></item>
+             <item row="9" column="1"><widget class="QLabel" name="shortcutKey9"><property name="text"><string>Ctrl + 鼠标滚轮</string></property></widget></item>
+             <item row="10" column="0"><widget class="QLabel" name="shortcutAction10"><property name="text"><string>自动化模式线性绘制</string></property></widget></item>
+             <item row="10" column="1"><widget class="QLabel" name="shortcutKey10"><property name="text"><string>B</string></property></widget></item>
+             <item row="11" column="0"><widget class="QLabel" name="shortcutAction11"><property name="text"><string>自动化模式框选绘制</string></property></widget></item>
+             <item row="11" column="1"><widget class="QLabel" name="shortcutKey11"><property name="text"><string>R</string></property></widget></item>
+             <item row="12" column="0"><widget class="QLabel" name="shortcutAction12"><property name="text"><string>结束自动化线性绘制</string></property></widget></item>
+             <item row="12" column="1"><widget class="QLabel" name="shortcutKey12"><property name="text"><string>N</string></property></widget></item>
+             <item row="13" column="0"><widget class="QLabel" name="shortcutAction13"><property name="text"><string>结束设计模式线状病害</string></property></widget></item>
+             <item row="13" column="1"><widget class="QLabel" name="shortcutKey13"><property name="text"><string>Enter</string></property></widget></item>
+             <item row="14" column="0"><widget class="QLabel" name="shortcutAction14"><property name="text"><string>二三维里程校正</string></property></widget></item>
+             <item row="14" column="1"><widget class="QLabel" name="shortcutKey14"><property name="text"><string>Shift + C</string></property></widget></item>
+            </layout>
           </widget>
          </item>
          <item>
@@ -448,22 +384,6 @@
  </tabstops>
  <resources/>
  <connections>
-  <connection>
-   <sender>okButton</sender>
-   <signal>clicked()</signal>
-   <receiver>hnProjectConfig</receiver>
-   <slot>accept()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>257</x>
-     <y>644</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>96</x>
-     <y>254</y>
-    </hint>
-   </hints>
-  </connection>
   <connection>
    <sender>cancelButton</sender>
    <signal>clicked()</signal>

@@ -7,6 +7,7 @@
 #include <QSettings>
 #include <QImage>
 #include <algorithm>
+#include <cmath>
 #include <QTextCodec>
 #include "..\hnQtCommon\MyCommonMethods.h"
 #include "configService.h"
@@ -18,10 +19,419 @@
 #include <QHostInfo>
 #include "../hnQtCommon/BaseException.h"
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QElapsedTimer>
+#include <QDateTime>
 namespace hnPro
 {
-	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0), m_bNeedImportFieldMilePilesToResultDb(false), m_bNeedImportFieldMarksToResultDb(false)
+	// 成果库是否需要修复由实际校桩状态判断，外业文本只用于恢复或完整重建。
+	// 当前成果库的统一约定：工程起点桩号对应的 EnclMile 必须为 0，
+	// 其余校桩和打标使用相对于工程起点的 DMI，病害数据不参与本流程。
+	static double getProjectDmiLength(const hnProjectSetInfo& setting)
+	{
+		if (std::isfinite(setting.dEndEnclMile) && setting.dEndEnclMile > 0.0)
+			return setting.dEndEnclMile;
+		if (std::isfinite(setting.dLength) && setting.dLength > 0.0)
+			return setting.dLength;
+		return qAbs(setting.dEndMile - setting.dBegMile);
+	}
+
+	static bool isStandardStartPile(const hnMilePile& pile, double projectStartMile)
+	{
+		return qAbs(pile.dTrueMile - projectStartMile) <= 1.0 && qAbs(pile.dEnclMile) <= 0.001;
+	}
+
+	static bool isStandardEndPile(const hnMilePile& pile, double projectEndMile, double projectLength)
+	{
+		return qAbs(pile.dTrueMile - projectEndMile) <= 1.0 && qAbs(pile.dEnclMile - projectLength) <= 0.001;
+	}
+
+	static bool hasStandardAnchors(const vector<hnMilePile>& piles, double projectStartMile,
+		double projectEndMile, double projectLength, bool& hasStart, bool& hasEnd)
+	{
+		hasStart = false;
+		hasEnd = false;
+		for (const auto& pile : piles)
+		{
+			if (!std::isfinite(pile.dTrueMile) || !std::isfinite(pile.dEnclMile))
+				return false;
+			if (isStandardStartPile(pile, projectStartMile)) hasStart = true;
+			if (isStandardEndPile(pile, projectEndMile, projectLength)) hasEnd = true;
+		}
+		return true;
+	}
+
+	static bool containsSameMilePile(const vector<hnMilePile>& piles, double trueMile, double enclMile)
+	{
+		for (const auto& pile : piles)
+		{
+			if (qAbs(pile.dTrueMile - trueMile) <= 0.001 && qAbs(pile.dEnclMile - enclMile) <= 0.001)
+				return true;
+		}
+		return false;
+	}
+
+	static void appendMilePile(vector<hnMilePile>& piles, double trueMile, double enclMile, int& nextId)
+	{
+		if (containsSameMilePile(piles, trueMile, enclMile)) return;
+		hnMilePile pile;
+		pile.nID = nextId++;
+		pile.dTrueMile = trueMile;
+		pile.dEnclMile = enclMile;
+		piles.push_back(pile);
+	}
+
+	// 只有成果库缺少标准起点或终点时，才读取 MileStoneCaliInfo.txt 恢复外业校桩。
+	// 文件只作为原始记录来源，不比较首尾跨度，也不参与偏移量猜测。
+	// 偏移扣减完成后再次按“真实桩号 + 相对 DMI”去重，避免外业起点与标准起点同时变为起点零值。
+	// 标准起终点固定排在前两项，其余校桩保留原有附加字段，并统一重新分配连续唯一 ID。
+	static bool normalizeMilePilesAfterOffset(const vector<hnMilePile>& sourcePiles,
+		double projectStartMile, double projectEndMile, double projectLength, double offset,
+		vector<hnMilePile>& normalizedPiles)
+	{
+		normalizedPiles.clear();
+		const double zeroTolerance = 0.001;
+		const hnMilePile* standardStart = nullptr;
+		const hnMilePile* standardEnd = nullptr;
+		for (const auto& pile : sourcePiles)
+		{
+			if (!standardStart && isStandardStartPile(pile, projectStartMile)) standardStart = &pile;
+			if (!standardEnd && isStandardEndPile(pile, projectEndMile, projectLength)) standardEnd = &pile;
+		}
+		if (!standardStart || !standardEnd) return false;
+
+		hnMilePile startPile = *standardStart;
+		startPile.nID = 0;
+		startPile.dTrueMile = projectStartMile;
+		startPile.dEnclMile = 0.0;
+		normalizedPiles.push_back(startPile);
+
+		hnMilePile endPile = *standardEnd;
+		endPile.nID = 1;
+		endPile.dTrueMile = projectEndMile;
+		endPile.dEnclMile = projectLength;
+		normalizedPiles.push_back(endPile);
+
+		for (const auto& sourcePile : sourcePiles)
+		{
+			if (isStandardStartPile(sourcePile, projectStartMile) ||
+				isStandardEndPile(sourcePile, projectEndMile, projectLength))
+			{
+				continue;
+			}
+
+			hnMilePile correctedPile = sourcePile;
+			if (offset > zeroTolerance) correctedPile.dEnclMile -= offset;
+			if (containsSameMilePile(normalizedPiles, correctedPile.dTrueMile, correctedPile.dEnclMile))
+			{
+				continue;
+			}
+			correctedPile.nID = static_cast<int>(normalizedPiles.size());
+			normalizedPiles.push_back(correctedPile);
+		}
+
+		if (normalizedPiles.size() != sourcePiles.size()) return true;
+		for (int i = 0; i < static_cast<int>(normalizedPiles.size()); ++i)
+		{
+			if (sourcePiles[i].nID != normalizedPiles[i].nID ||
+				qAbs(sourcePiles[i].dTrueMile - normalizedPiles[i].dTrueMile) > zeroTolerance ||
+				qAbs(sourcePiles[i].dEnclMile - normalizedPiles[i].dEnclMile) > zeroTolerance)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// 无论外业文本是否存在，都先在内存中补齐标准起点和终点。
+	static void ensureStandardAnchors(vector<hnMilePile>& piles, double projectStartMile,
+		double projectEndMile, double projectLength)
+	{
+		int nextId = 0;
+		for (const hnMilePile& pile : piles) nextId = qMax(nextId, pile.nID + 1);
+		appendMilePile(piles, projectStartMile, 0.0, nextId);
+		appendMilePile(piles, projectEndMile, projectLength, nextId);
+	}
+
+	// 偏移只由成果库中同一工程起点桩号的“标准 0 + 唯一正 DMI”共同确定。
+	static bool findDatabaseStartOffset(const vector<hnMilePile>& piles, double projectStartMile,
+		double& offset, QString* errorMessage)
+	{
+		bool hasZeroStart = false;
+		vector<double> candidates;
+		for (const hnMilePile& pile : piles)
+		{
+			if (!std::isfinite(pile.dTrueMile) || !std::isfinite(pile.dEnclMile))
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("成果库校桩存在无效数值，无法判断 DMI 状态。");
+				return false;
+			}
+			if (qAbs(pile.dTrueMile - projectStartMile) > 1.0) continue;
+			if (qAbs(pile.dEnclMile) <= 0.001)
+			{
+				hasZeroStart = true;
+				continue;
+			}
+			if (pile.dEnclMile < 0.0)
+			{
+				if (errorMessage)
+					*errorMessage = QStringLiteral("工程起点校桩存在负 DMI=%1，数据状态异常，未自动修复。")
+						.arg(pile.dEnclMile, 0, 'f', 6);
+				return false;
+			}
+			bool duplicate = false;
+			for (double value : candidates)
+			{
+				if (qAbs(value - pile.dEnclMile) <= 0.001)
+				{
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate) candidates.push_back(pile.dEnclMile);
+		}
+
+		if (!hasZeroStart)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果库没有工程起点桩号对应的 DMI=0 标准起点校桩。");
+			return false;
+		}
+		if (candidates.size() > 1)
+		{
+			QStringList values;
+			for (double value : candidates) values << QString::number(value, 'f', 3);
+			if (errorMessage)
+				*errorMessage = QStringLiteral("工程起点存在多个不同的非零 DMI 候选（%1），数据可能混合，未自动修复。")
+					.arg(values.join(QStringLiteral(", ")));
+			return false;
+		}
+		offset = candidates.empty() ? 0.0 : candidates.front();
+		return true;
+	}
+
+	// 从 MileStoneCaliInfo.txt 读取原始校桩；文件缺失、为空或没有工程起点记录时按零偏移处理。
+	static bool readFieldMilePileSource(const QString& filePath, double projectStartMile,
+		double projectEndMile, vector<hnMilePile>& sourcePiles, double& sourceOffset,
+		bool* sourceHasStartPile, QString* errorMessage)
+	{
+		sourcePiles.clear();
+		sourceOffset = 0.0;
+		if (sourceHasStartPile) *sourceHasStartPile = false;
+		QFile file(filePath);
+		if (!file.exists())
+		{
+			// 没有外业校桩文件等同于空文件，后续仍生成标准起终点并读取打标。
+			return true;
+		}
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("无法读取校桩文件：%1").arg(filePath);
+			return false;
+		}
+
+		const double minTrueMile = qMin(projectStartMile, projectEndMile);
+		const double maxTrueMile = qMax(projectStartMile, projectEndMile);
+		vector<double> startCandidates;
+		QTextStream in(&file);
+		while (!in.atEnd())
+		{
+			const QString text = in.readLine().simplified();
+			if (text.isEmpty()) continue;
+			const QStringList fields = text.split(QStringLiteral(" "), QString::SkipEmptyParts);
+			if (fields.size() != 2)
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("MileStoneCaliInfo.txt 存在格式错误的记录：%1").arg(text);
+				return false;
+			}
+			bool dmiOk = false;
+			bool trueMileOk = false;
+			const double dmi = fields.at(0).toDouble(&dmiOk);
+			const double trueMile = fields.at(1).toDouble(&trueMileOk);
+			// 仅忽略桩号明显越界的记录；格式错误及无效数值仍按原规则处理。
+			if (trueMileOk && std::isfinite(trueMile) &&
+				(trueMile < minTrueMile - 1.0 || trueMile > maxTrueMile + 1.0))
+			{
+				continue;
+			}
+			if (!dmiOk || !trueMileOk || !std::isfinite(dmi) || !std::isfinite(trueMile))
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("MileStoneCaliInfo.txt 存在无效或越界记录：%1").arg(text);
+				return false;
+			}
+			hnMilePile pile;
+			pile.dTrueMile = trueMile;
+			pile.dEnclMile = dmi;
+			sourcePiles.push_back(pile);
+			if (qAbs(trueMile - projectStartMile) <= 1.0)
+			{
+				bool duplicate = false;
+				for (double value : startCandidates)
+				{
+					if (qAbs(value - dmi) <= 0.001)
+					{
+						duplicate = true;
+						break;
+					}
+				}
+				if (!duplicate) startCandidates.push_back(dmi);
+			}
+		}
+		if (sourcePiles.empty())
+		{
+			// 空文件或仅包含空白行表示没有外业校桩，偏移保持为零。
+			return true;
+		}
+		if (startCandidates.empty())
+		{
+			// 外业未记录起点校桩表示工程从相对 DMI 0 开始，不属于异常数据。
+			sourceOffset = 0.0;
+			return true;
+		}
+		if (sourceHasStartPile) *sourceHasStartPile = true;
+		if (startCandidates.size() > 1)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("MileStoneCaliInfo.txt 包含多个不同的工程起点校桩，无法安全确定 DMI 偏移。");
+			return false;
+		}
+		if (startCandidates.front() < -0.001)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("MileStoneCaliInfo.txt 的工程起点校桩 DMI 不能为负数。");
+			return false;
+		}
+		sourceOffset = qAbs(startCandidates.front()) <= 0.001 ? 0.0 : startCandidates.front();
+		return true;
+	}
+
+	// 根据外业校桩源构造只包含相对 DMI、唯一锚点和连续 ID 的最终集合。
+	static bool buildRelativeMilePilesFromField(const vector<hnMilePile>& sourcePiles,
+		double sourceOffset, double projectStartMile, double projectEndMile,
+		double projectLength, vector<hnMilePile>& finalPiles, QString* errorMessage)
+	{
+		vector<hnMilePile> workingPiles;
+		int nextId = 0;
+		appendMilePile(workingPiles, projectStartMile, 0.0, nextId);
+		appendMilePile(workingPiles, projectEndMile, projectLength, nextId);
+		for (const hnMilePile& sourcePile : sourcePiles)
+		{
+			const double relativeDmi = sourcePile.dEnclMile - sourceOffset;
+			if (!std::isfinite(relativeDmi) || relativeDmi < -0.001 ||
+				relativeDmi > projectLength + 0.001)
+			{
+				if (errorMessage)
+					*errorMessage = QStringLiteral("校桩转换为相对里程后越界：桩号=%1，原DMI=%2，偏移=%3。")
+						.arg(sourcePile.dTrueMile, 0, 'f', 3)
+						.arg(sourcePile.dEnclMile, 0, 'f', 3)
+						.arg(sourceOffset, 0, 'f', 3);
+				return false;
+			}
+			appendMilePile(workingPiles, sourcePile.dTrueMile,
+				qAbs(relativeDmi) <= 0.001 ? 0.0 : relativeDmi, nextId);
+		}
+
+		if (!normalizeMilePilesAfterOffset(workingPiles, projectStartMile,
+			projectEndMile, projectLength, 0.0, finalPiles))
+		{
+			finalPiles = workingPiles;
+		}
+		return true;
+	}
+
+	// 读取打标文本并使用校桩文件确定的相同偏移生成相对 DMI。
+	static bool buildRelativeMarksFromField(hn2DProject* project2D, hnProject* project,
+		double sourceOffset, double projectStartMile, double projectEndMile,
+		double projectLength, vector<hnMarkInfo>& finalMarks, QString* errorMessage)
+	{
+		finalMarks.clear();
+		if (!project2D || !project)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("二维工程尚未初始化，无法读取打标文件。");
+			return false;
+		}
+
+		const QString filePath = project2D->getMarkFilePath();
+		QFile file(filePath);
+		if (!file.exists() || !file.open(QIODevice::ReadOnly))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("无法读取打标文件：%1").arg(filePath);
+			return false;
+		}
+		const qint64 sourceSize = file.size();
+		file.close();
+
+		vector<hnMarkInfo> sourceMarks;
+		project2D->add2dMarkInfo(sourceMarks, project);
+		if (sourceMarks.empty() && sourceSize > 0)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("RoadStatuMarkInfo.txt 没有可导入的有效记录：%1").arg(filePath);
+			return false;
+		}
+
+		const double minTrueMile = qMin(projectStartMile, projectEndMile);
+		const double maxTrueMile = qMax(projectStartMile, projectEndMile);
+		for (hnMarkInfo mark : sourceMarks)
+		{
+			double relativeDmi = mark.dEnclMile;
+			if (qAbs(relativeDmi) > 0.001) relativeDmi -= sourceOffset;
+			if (!std::isfinite(mark.dTrueMile) || !std::isfinite(relativeDmi) ||
+				mark.dTrueMile < minTrueMile - 1.0 || mark.dTrueMile > maxTrueMile + 1.0 ||
+				relativeDmi < -0.001 || relativeDmi > projectLength + 0.001)
+			{
+				if (errorMessage)
+					*errorMessage = QStringLiteral("打标转换为相对里程后越界：桩号=%1，原DMI=%2，偏移=%3。")
+						.arg(mark.dTrueMile, 0, 'f', 3)
+						.arg(mark.dEnclMile, 0, 'f', 3)
+						.arg(sourceOffset, 0, 'f', 3);
+				return false;
+			}
+			mark.nID = static_cast<int>(finalMarks.size());
+			mark.dEnclMile = qAbs(relativeDmi) <= 0.001 ? 0.0 : relativeDmi;
+			finalMarks.push_back(mark);
+		}
+		return true;
+	}
+
+	// 数据发生变化前创建只读备份，调用方在事务提交后保留该路径供人工恢复。
+	static bool createResultDbBackup(const QString& databasePath, QString& backupPath,
+		QString* errorMessage)
+	{
+		backupPath = databasePath + QStringLiteral(".dmi-repair-backup-") +
+			QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMddhhmmsszzz"));
+		if (!QFile::copy(databasePath, backupPath))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("创建成果库备份失败，数据库未修改：%1").arg(backupPath);
+			backupPath.clear();
+			return false;
+		}
+		QFile::setPermissions(backupPath,
+			QFile::ReadOwner | QFile::ReadUser | QFile::ReadGroup | QFile::ReadOther);
+		return true;
+	}
+
+	static bool hasValidMarkSource(const QString& filePath)
+	{
+		QFile file(filePath);
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return false;
+		if (file.size() == 0) return true;
+		QTextStream in(&file);
+		in.setCodec(QTextCodec::codecForName("UTF-8"));
+		while (!in.atEnd())
+		{
+			const QStringList fields = in.readLine().simplified().split(
+				QStringLiteral(" "), QString::SkipEmptyParts);
+			bool dmiOk = false;
+			if (fields.size() >= 4) fields.at(2).toDouble(&dmiOk);
+			if (dmiOk && (fields.at(3).contains(QStringLiteral(":")) ||
+				fields.at(3).contains(QStringLiteral("："))))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	hnProject::hnProject() :m_pDbSqlite(NULL), m_p2DProject(NULL), m_p3DProject(NULL), m_current3dDmi(0)
 	{
 		m_xrSetting = HnXRSettings::getInstance();
 	}
@@ -35,8 +445,6 @@ namespace hnPro
 	bool hnProject::openProject(hnProjectDataInfo& curProDataInfo)
 	{
 		m_roadSpace = 2;
-		m_bNeedImportFieldMilePilesToResultDb = false;
-		m_bNeedImportFieldMarksToResultDb = false;
 		//景观图像间距
 		m_leftStreetSpce = 10;
 		m_rightStreetSpce = 10;
@@ -65,9 +473,20 @@ namespace hnPro
 		//单独二维工程的时候 m_str2DProPath不用在处理
 		if (!dir2D.exists())
 		{
-			 
-			m_str2DProPath = m_strProjectPath;
-			dir2D.setPath (m_str2DProPath);
+			if (curProDataInfo.proSetInfo.nWorkType == PROJECT_TYPE::PROJECT_2D_TYPE)
+			{
+				m_str2DProPath = m_strProjectPath;
+				dir2D.setPath(m_str2DProPath);
+			}
+			else if (!m_str2DProName.isEmpty())
+			{
+				QMessageBox::critical(QApplication::activeWindow(),
+					QStringLiteral("数据错误"),
+					QStringLiteral("工程数据不完整。\n\nProjectInfo.xml 中指定的二维工程目录不存在：\n%1\n\n请检查“二维工程名”是否与实际文件夹名称一致。")
+					.arg(m_str2DProPath),
+					QMessageBox::Ok);
+				return false;
+			}
 		}
 	
 		
@@ -199,8 +618,10 @@ namespace hnPro
 				}
 				if (m_p2DProject)
 				{
-					//首次创建成果库时，将外业文本导入成果库；后续打开以成果库为准。
-					import2DFieldDataToResultDb();
+					// 首次创建时先导入原始打标，再统一检查校桩完整性和 DMI 偏移。
+					QString dmiRepairError;
+					if (!ensureResultDbDmiNormalized(&dmiRepairError))
+						QMessageBox::warning(QApplication::activeWindow(), QStringLiteral("校桩与打标自检"), dmiRepairError);
 					initMileList();
 				}
 			}
@@ -278,8 +699,6 @@ namespace hnPro
 	{
 		if (m_p2DProject)
 		{
-			//首次创建成果库时，将外业文本导入成果库；后续打开以成果库为准。
-			import2DFieldDataToResultDb();
 			initMileList();
 		}
 
@@ -522,8 +941,6 @@ namespace hnPro
 			//成果db
 			if (getResultDB(dbDirPath, dbFilePath, false))
 			{
-				const QString importFlagPath = dbDirPath + "/FieldSourceImported.flag";
-				const bool hasImportFlag = QFile::exists(importFlagPath);
 				strTemp = dbFilePath.toLocal8Bit();
 
 				// 读取数据库
@@ -553,6 +970,48 @@ namespace hnPro
 					}
 
 				}
+				// The open-project dialog writes these user selections to ProjectInfo.txt.
+				// Existing result databases must be synchronized before runtime settings are used;
+				// otherwise the old database values silently override the user's selections.
+				bool projectSettingsChanged = false;
+				// 旧成果库只修复非法方向值，避免覆盖已经正确的上行/下行。
+				const bool databaseLineTypeInvalid = m_projectInfo.nLineType != 1 && m_projectInfo.nLineType != -1;
+				const bool projectLineTypeValid = curProDataInfo.proSetInfo.nLineType == 1 || curProDataInfo.proSetInfo.nLineType == -1;
+				if (databaseLineTypeInvalid && projectLineTypeValid)
+				{
+					m_projectInfo.nLineType = curProDataInfo.proSetInfo.nLineType;
+					projectSettingsChanged = true;
+				}
+				if (m_projectInfo.nDrawType != curProDataInfo.proSetInfo.nDrawType)
+				{
+					m_projectInfo.nDrawType = curProDataInfo.proSetInfo.nDrawType;
+					projectSettingsChanged = true;
+				}
+				if (strcmp(m_projectInfo.strRoadStandard, curProDataInfo.proSetInfo.strRoadStandard) != 0)
+				{
+					strcpy(m_projectInfo.strRoadStandard, curProDataInfo.proSetInfo.strRoadStandard);
+					projectSettingsChanged = true;
+				}
+				if (!qFuzzyCompare(m_projectInfo.dRoadWidth + 1.0, curProDataInfo.proSetInfo.dRoadWidth + 1.0))
+				{
+					m_projectInfo.dRoadWidth = curProDataInfo.proSetInfo.dRoadWidth;
+					projectSettingsChanged = true;
+				}
+				if (m_projectInfo.nRSurfaceType != curProDataInfo.proSetInfo.nRSurfaceType)
+				{
+					m_projectInfo.nRSurfaceType = curProDataInfo.proSetInfo.nRSurfaceType;
+					projectSettingsChanged = true;
+				}
+				if (strcmp(m_projectInfo.strRoadLevel, curProDataInfo.proSetInfo.strRoadLevel) != 0)
+				{
+					strcpy(m_projectInfo.strRoadLevel, curProDataInfo.proSetInfo.strRoadLevel);
+					projectSettingsChanged = true;
+				}
+				m_projectInfo.nGradIndex = curProDataInfo.proSetInfo.nGradIndex;
+				if (projectSettingsChanged && !m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo))
+				{
+					return false;
+				}
 				if (!m_pDbSqlite->m_markerInfoTable.readData(m_vecMarkInfo))
 				{
 					return false;
@@ -562,44 +1021,10 @@ namespace hnPro
 				bool milePileLoadedFromDb = m_pDbSqlite->m_milePileTable.readData(m_vecMileagePile);
 				if (!milePileLoadedFromDb)
 				{
-					//如果db文件存在但是找不到有效工程信息 则重新写入一次
-					m_pDbSqlite->m_milePileTable.clearData();
-					m_vecMileagePile = curProDataInfo.vecMilePile; //得到xml文件里面的 较桩数据 
-					if (!m_pDbSqlite->m_milePileTable.writeData(m_vecMileagePile))
-					{
-						return false;
-					}
+					// 已有成果库即使校桩表为空，也不能在备份前直接写入；统一恢复流程稍后处理。
+					m_vecMileagePile.clear();
 				}
-				if (!hasImportFlag)
-				{
-					if (m_vecMarkInfo.empty())
-					{
-						m_bNeedImportFieldMarksToResultDb = true;
-					}
-					if (!milePileLoadedFromDb)
-					{
-						m_bNeedImportFieldMilePilesToResultDb = true;
-					}
-					if (m_bNeedImportFieldMarksToResultDb || m_bNeedImportFieldMilePilesToResultDb)
-					{
-						int ret = QMessageBox::question(QApplication::activeWindow(), QStringLiteral("旧成果库迁移"),
-							QStringLiteral("当前成果库没有外业导入标记，是否从外业 Dmi2Mile.txt / RoadStatuMarkInfo.txt 补充缺失的较桩或打标工作副本？\n选择否将保留当前成果库内容。"),
-							QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-						if (ret != QMessageBox::Yes)
-						{
-							m_bNeedImportFieldMarksToResultDb = false;
-							m_bNeedImportFieldMilePilesToResultDb = false;
-						}
-					}
-					if (!m_bNeedImportFieldMarksToResultDb && !m_bNeedImportFieldMilePilesToResultDb)
-					{
-						QFile importFlag(importFlagPath);
-						if (importFlag.open(QIODevice::WriteOnly | QIODevice::Text))
-						{
-							importFlag.close();
-						}
-					}
-				}
+
 				/*	if (!m_pDbSqlite->m_diseaseTable.readAllData(m_vecDisData))
 				{
 				return false;
@@ -611,16 +1036,7 @@ namespace hnPro
 				m_pDbSqlite->executeDB(tableCmd.createCtrlPointTableCmd.c_str());
 
 
-				//判断 配置信息是否有更新 有更新则写入 
-				if (curProDataInfo.proSetInfo.dRoadWidth != m_projectInfo.dRoadWidth
-					|| strcmp(curProDataInfo.proSetInfo.strRoadStandard, m_projectInfo.strRoadStandard) != 0
-					|| curProDataInfo.proSetInfo.nDrawType != m_projectInfo.nDrawType
-					|| strcmp(curProDataInfo.proSetInfo.strRoadLevel, m_projectInfo.strRoadLevel) != 0
-					)
-				{
-					m_pDbSqlite->m_projectSetTable.writeData(curProDataInfo.proSetInfo);
-					m_projectInfo = curProDataInfo.proSetInfo;
-				}
+				// Existing result databases own their project settings at runtime.
 			}
 			else
 			{
@@ -653,8 +1069,6 @@ namespace hnPro
 
 				m_pDbSqlite->m_projectSetTable.writeData(curProDataInfo.proSetInfo);
 				m_projectInfo = curProDataInfo.proSetInfo;
-				m_bNeedImportFieldMilePilesToResultDb = true;
-				m_bNeedImportFieldMarksToResultDb = true;
 				std::sort(curProDataInfo.vecMilePile.begin(), curProDataInfo.vecMilePile.end(), [=](const hnMilePile&a, const hnMilePile& b)
 				{
 					if (curProDataInfo.proSetInfo.nLineType < 0)
@@ -1559,26 +1973,51 @@ namespace hnPro
 			|| nType == hnCommon::ROAD_MARK_TYPE::ROAD_STANDARD;
 	}
 
-	bool hnProject::saveMarksToResultDb()
+	bool hnProject::saveMarksToResultDb(QString* errorMessage)
 	{
 		if (!m_pDbSqlite)
 		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果数据库不可用。");
 			return false;
 		}
-		m_pDbSqlite->m_markerInfoTable.clearData();
-		return m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo);
+		QSet<int> markIds;
+		for (const hnMarkInfo& mark : m_vecMarkInfo)
+		{
+			if (!validateUserMark(mark, errorMessage)) return false;
+			if (markIds.contains(mark.nID))
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("打标存在重复 ID，已拒绝写入数据库。");
+				return false;
+			}
+			markIds.insert(mark.nID);
+		}
+		if (!m_pDbSqlite->executeDB("BEGIN IMMEDIATE;"))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("无法开始打标数据库事务。");
+			return false;
+		}
+		if (!m_pDbSqlite->m_markerInfoTable.clearData() ||
+			!m_pDbSqlite->m_markerInfoTable.writeData(m_vecMarkInfo) ||
+			!m_pDbSqlite->executeDB("COMMIT;"))
+		{
+			m_pDbSqlite->executeDB("ROLLBACK;");
+			if (errorMessage) *errorMessage = QStringLiteral("打标写入失败，数据库事务已经回滚。");
+			return false;
+		}
+		return true;
 	}
 
-	bool hnProject::saveMileagePilesToResultDb()
+	bool hnProject::saveMileagePilesToResultDb(QString* errorMessage)
 	{
 		if (!m_pDbSqlite)
 		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果数据库不可用。");
 			return false;
 		}
-		m_pDbSqlite->m_milePileTable.clearData();
-		return m_pDbSqlite->m_milePileTable.writeData(m_vecMileagePile);
+		return m_pDbSqlite->saveRelativeMileageData(nullptr, m_vecMileagePile,
+			m_vecMarkInfo, false, m_projectInfo.dBegMile, m_projectInfo.dEndMile,
+			getProjectDmiLength(m_projectInfo), errorMessage);
 	}
-
 	bool hnProject::saveProjectSettingToResultDb()
 	{
 		if (!m_pDbSqlite)
@@ -1587,56 +2026,6 @@ namespace hnPro
 		}
 		m_pDbSqlite->m_projectSetTable.clearData();
 		return m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo);
-	}
-
-	void hnProject::import2DFieldDataToResultDb()
-	{
-		if ((!m_bNeedImportFieldMilePilesToResultDb && !m_bNeedImportFieldMarksToResultDb) || !m_p2DProject || !m_pDbSqlite)
-		{
-			return;
-		}
-
-		bool importSuccess = true;
-		if (m_bNeedImportFieldMilePilesToResultDb)
-		{
-			QFileInfo milePileFileInfo(m_p2DProject->getMilePilePath());
-			if (milePileFileInfo.exists())
-			{
-				m_p2DProject->add2dMilePile(m_vecMileagePile);
-				sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-				importSuccess = saveMileagePilesToResultDb() && importSuccess;
-			}
-			else
-			{
-				importSuccess = false;
-			}
-		}
-		if (m_bNeedImportFieldMarksToResultDb)
-		{
-			QFileInfo markFileInfo(m_p2DProject->getMarkFilePath());
-			if (markFileInfo.exists())
-			{
-				m_p2DProject->add2dMarkInfo(m_vecMarkInfo, this);
-				importSuccess = saveMarksToResultDb() && importSuccess;
-			}
-			else
-			{
-				importSuccess = false;
-			}
-		}
-
-		if (!importSuccess)
-		{
-			return;
-		}
-
-		QFile importFlag(m_strDbDirPath + "/FieldSourceImported.flag");
-		if (importFlag.open(QIODevice::WriteOnly | QIODevice::Text))
-		{
-			importFlag.close();
-		}
-		m_bNeedImportFieldMilePilesToResultDb = false;
-		m_bNeedImportFieldMarksToResultDb = false;
 	}
 
 
@@ -1660,9 +2049,18 @@ namespace hnPro
 		this->m_current3dDmi = dmi;
 	}
 
-	bool hnProject::changeMark(QVector<hnCommon::hnMarkInfo>& marks, const QVector<int>&deleteMarkIndexs)
+	bool hnProject::changeMark(QVector<hnCommon::hnMarkInfo>& marks, const QVector<int>& deleteMarkIndexs)
 	{
 		bool needUpdate = false;
+		return changeMark(marks, deleteMarkIndexs, &needUpdate, nullptr) && needUpdate;
+	}
+
+	bool hnProject::changeMark(QVector<hnCommon::hnMarkInfo>& marks,
+		const QVector<int>& deleteMarkIndexs, bool* needUpdate, QString* errorMessage)
+	{
+		const vector<hnCommon::hnMarkInfo> previousMarks = m_vecMarkInfo;
+		bool shouldUpdate = false;
+		if (needUpdate) *needUpdate = false;
 		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
 		for (const auto& item : m_vecMarkInfo)
 		{
@@ -1671,11 +2069,16 @@ namespace hnPro
 
 		for (auto& mark : marks)
 		{
+			mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
+			if (!validateUserMark(mark, errorMessage))
+			{
+				m_vecMarkInfo = previousMarks;
+				return false;
+			}
 			if (isRoadAttributeMark(mark.nType))
 			{
-				needUpdate = true;
+				shouldUpdate = true;
 			}
-			mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
 			mark.nID = lastIndex++;
 			m_vecMarkInfo.push_back(mark);
 		}
@@ -1685,11 +2088,11 @@ namespace hnPro
 			std::remove_if(
 				m_vecMarkInfo.begin(),
 				m_vecMarkInfo.end(),
-				[&deleteSet, &needUpdate, this](const hnCommon::hnMarkInfo& obj) {
+				[&deleteSet, &shouldUpdate, this](const hnCommon::hnMarkInfo& obj) {
 					const bool deleteItem = deleteSet.contains(obj.nID);
 					if (deleteItem && isRoadAttributeMark(obj.nType))
 					{
-						needUpdate = true;
+						shouldUpdate = true;
 					}
 					return deleteItem;
 				}
@@ -1697,33 +2100,199 @@ namespace hnPro
 			m_vecMarkInfo.end()
 		);
 
-		saveMarksToResultDb();
-		if (needUpdate)
+		if (!saveMarksToResultDb(errorMessage)) { m_vecMarkInfo = previousMarks; return false; }
+		if (shouldUpdate)
 		{
 			initMileList(false);
 		}
-		return needUpdate;
+		if (needUpdate) *needUpdate = shouldUpdate;
+		return true;
 	}
 
 	bool hnProject::addMark(hnCommon::hnMarkInfo& mark)
 	{
-		bool needUpdate = isRoadAttributeMark(mark.nType);
+		bool needUpdate = false;
+		return addMark(mark, &needUpdate, nullptr) && needUpdate;
+	}
+
+	bool hnProject::addMark(hnCommon::hnMarkInfo& mark, bool* needUpdate, QString* errorMessage)
+	{
+		const vector<hnCommon::hnMarkInfo> previousMarks = m_vecMarkInfo;
+		const bool shouldUpdate = isRoadAttributeMark(mark.nType);
+		if (needUpdate) *needUpdate = false;
+		mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
+		if (!validateUserMark(mark, errorMessage) || !validateMarkConflict(mark, -1, errorMessage)) return false;
 		int lastIndex = m_pDbSqlite ? m_pDbSqlite->m_markerInfoTable.getMaxID() : 1;
 		for (const auto& item : m_vecMarkInfo)
 		{
 			lastIndex = qMax(lastIndex, item.nID + 1);
 		}
 
-		mark.dEnclMile = trueMileToEncl(mark.dTrueMile);
 		mark.nID = lastIndex;
 		m_vecMarkInfo.push_back(mark);
-		saveMarksToResultDb();
-		if (needUpdate)
+		if (!saveMarksToResultDb(errorMessage)) { m_vecMarkInfo = previousMarks; return false; }
+		if (shouldUpdate)
 		{
 			initMileList(false);
 		}
-		return needUpdate;
+		if (needUpdate) *needUpdate = shouldUpdate;
+		return true;
 	}
+
+	// 用户新增打标时，真实桩号和计算后的相对 DMI 都必须位于当前工程范围内。
+	bool hnProject::validateUserMark(const hnCommon::hnMarkInfo& mark, QString* errorMessage) const
+	{
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		const double minTrueMile = qMin(m_projectInfo.dBegMile, m_projectInfo.dEndMile);
+		const double maxTrueMile = qMax(m_projectInfo.dBegMile, m_projectInfo.dEndMile);
+		if (!std::isfinite(mark.dTrueMile) || !std::isfinite(mark.dEnclMile))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("打标桩号或相对里程不是有效数字，请重新输入。");
+			return false;
+		}
+		if (mark.dTrueMile < minTrueMile - 0.001 || mark.dTrueMile > maxTrueMile + 0.001)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("打标桩号必须在工程起点 %1 和终点 %2 之间，请重新输入。")
+					.arg(m_projectInfo.dBegMile, 0, 'f', 3).arg(m_projectInfo.dEndMile, 0, 'f', 3);
+			return false;
+		}
+		if (mark.dEnclMile < -0.001 || mark.dEnclMile > projectLength + 0.001)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("打标相对里程必须在 0 到工程总长度 %1 之间，请重新输入。")
+					.arg(projectLength, 0, 'f', 3);
+			return false;
+		}
+		return true;
+	}
+
+
+    bool hnProject::validateMarkConflict(const hnMarkInfo& value, int ignoredId, QString* errorMessage) const
+    {
+        if (value.nType < 0 || value.nType > 4 ||
+            memchr(value.strMark, 0, sizeof(value.strMark)) == nullptr ||
+            QString::fromLocal8Bit(value.strMark).trimmed().isEmpty())
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("请选择有效打标类型并填写内容，内容不能超出字段长度。");
+            return false;
+        }
+        for (const auto& mark : m_vecMarkInfo)
+        {
+            if (ignoredId >= 0 && mark.nID == ignoredId) continue;
+            if (mark.nType != value.nType || qAbs(mark.dEnclMile - value.dEnclMile) > 0.001) continue;
+            if (isRoadAttributeMark(value.nType) ||
+                QString::fromLocal8Bit(mark.strMark).trimmed() == QString::fromLocal8Bit(value.strMark).trimmed())
+            {
+                if (errorMessage) *errorMessage = QStringLiteral("该位置已有同类型打标“%1”（桩号 %2），请修改位置或内容。")
+                    .arg(QString::fromLocal8Bit(mark.strMark)).arg(mark.dTrueMile, 0, 'f', 3);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool hnProject::updateMark(int id, const hnMarkInfo& value, QString* errorMessage)
+    {
+        if (!m_pDbSqlite || !m_pDbSqlite->isOpen() || !m_p2DProject)
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("当前工程数据库不可用或不支持修改打标。");
+            return false;
+        }
+        int index = -1;
+        for (int i = 0; i < static_cast<int>(m_vecMarkInfo.size()); ++i)
+            if (m_vecMarkInfo[i].nID == id) { index = i; break; }
+        if (index < 0)
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("原打标已不存在，请刷新列表后重试。");
+            return false;
+        }
+        const hnMarkInfo previous = m_vecMarkInfo[index];
+        hnMarkInfo candidate = value;
+        candidate.nID = id;
+        // 只改内容或类型时保留精确位置，避免整米换算设置使位置漂移。
+        candidate.dEnclMile = candidate.dTrueMile == previous.dTrueMile ? previous.dEnclMile : trueMileToEncl(candidate.dTrueMile);
+        if (!validateUserMark(candidate, errorMessage) || !validateMarkConflict(candidate, id, errorMessage)) return false;
+        candidate.dGpsTimer = previous.dGpsTimer;
+        m_vecMarkInfo[index] = candidate;
+        if (!saveMarksToResultDb(errorMessage))
+        {
+            m_vecMarkInfo[index] = previous;
+            return false;
+        }
+        const double currentDmi = m_currentMile.dEnclMile;
+        initMileList(false);
+        setCurrentRoadMile(getCloseMileFromDmi(currentDmi));
+        return true;
+    }
+
+    bool hnProject::updateMilePile(int id, const hnMilePile& value, QString* errorMessage)
+    {
+        if (!m_pDbSqlite || !m_pDbSqlite->isOpen() || !m_p2DProject)
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("当前工程数据库不可用或不支持修改校桩。");
+            return false;
+        }
+        vector<hnMilePile> finalPiles = m_vecMileagePile;
+        int index = -1;
+        for (int i = 0; i < static_cast<int>(finalPiles.size()); ++i)
+            if (finalPiles[i].nID == id) { index = i; break; }
+        if (index < 0)
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("原校桩已不存在，请刷新列表后重试。");
+            return false;
+        }
+        if (isStandardAnchorPile(finalPiles[index]))
+        {
+            if (errorMessage) *errorMessage = QStringLiteral("工程起终点校桩由系统维护，请通过“编辑工程”修改起终点。");
+            return false;
+        }
+        if (!validateUserMilePile(value, errorMessage, id)) return false;
+        if (value.dTrueMile == finalPiles[index].dTrueMile && value.dEnclMile == finalPiles[index].dEnclMile) return true;
+        finalPiles[index].dTrueMile = value.dTrueMile;
+        finalPiles[index].dEnclMile = value.dEnclMile;
+        sort(finalPiles.begin(), finalPiles.end(), compareMilepileByEnclMile);
+        const double direction = m_projectInfo.dEndMile > m_projectInfo.dBegMile ? 1.0 : -1.0;
+        for (size_t i = 1; i < finalPiles.size(); ++i)
+        {
+            if (finalPiles[i].dEnclMile - finalPiles[i - 1].dEnclMile <= 0.001 ||
+                (finalPiles[i].dTrueMile - finalPiles[i - 1].dTrueMile) * direction <= 0.001)
+            {
+                if (errorMessage) *errorMessage = QStringLiteral("校桩列表存在重复或顺序交叉，未保存修改。");
+                return false;
+            }
+        }
+        // 草稿内重新换算打标桩号；与校桩一次提交，失败不发布到内存。
+        vector<hnMarkInfo> finalMarks = m_vecMarkInfo;
+        for (auto& mark : finalMarks)
+        {
+            bool found = false;
+            for (size_t i = 1; i < finalPiles.size(); ++i)
+            {
+                const auto& first = finalPiles[i - 1];
+                const auto& last = finalPiles[i];
+                if (mark.dEnclMile < first.dEnclMile || mark.dEnclMile > last.dEnclMile) continue;
+                mark.dTrueMile = first.dTrueMile + (last.dTrueMile - first.dTrueMile) *
+                    (mark.dEnclMile - first.dEnclMile) / (last.dEnclMile - first.dEnclMile);
+                if (m_xrSetting->mile2dmiToInt) mark.dTrueMile = MyCommonMethods::csharpRoundToInt(mark.dTrueMile);
+                found = true;
+                break;
+            }
+            if (!found || !validateUserMark(mark, errorMessage))
+            {
+                if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("有打标超出校桩覆盖范围，未保存修改。");
+                return false;
+            }
+        }
+        if (!m_pDbSqlite->saveRelativeMileageData(nullptr, finalPiles, finalMarks, true,
+            m_projectInfo.dBegMile, m_projectInfo.dEndMile, getProjectDmiLength(m_projectInfo), errorMessage)) return false;
+        const double currentDmi = m_currentMile.dEnclMile;
+        m_vecMileagePile = finalPiles;
+        m_vecMarkInfo = finalMarks;
+        initMileList(false);
+        setCurrentRoadMile(getCloseMileFromDmi(currentDmi));
+        return true;
+    }
 
 	bool hnProject::deleteMark(const hnCommon::hnMarkInfo& Mark)
 	{
@@ -1732,6 +2301,7 @@ namespace hnPro
 
 	bool hnProject::deleteMark(int id)
 	{
+		const vector<hnCommon::hnMarkInfo> previousMarks = m_vecMarkInfo;
 		bool needUpdate = false;
 		for (int i = static_cast<int>(m_vecMarkInfo.size()) - 1; i >= 0; --i)
 		{
@@ -1746,7 +2316,7 @@ namespace hnPro
 			}
 		}
 
-		saveMarksToResultDb();
+		if (!saveMarksToResultDb()) { m_vecMarkInfo = previousMarks; return false; }
 		if (needUpdate)
 		{
 			initMileList(false);
@@ -1754,22 +2324,104 @@ namespace hnPro
 		return needUpdate;
 	}
 
-	void hnProject::changeMilePile(QVector < hnCommon::hnMilePile>& piles)
+	bool hnProject::isStandardAnchorPile(const hnCommon::hnMilePile& pile) const
 	{
+		return isStandardStartPile(pile, m_projectInfo.dBegMile) ||
+			isStandardEndPile(pile, m_projectInfo.dEndMile, getProjectDmiLength(m_projectInfo));
+	}
+
+	// 用户新增校桩时同时检查真实桩号、相对 DMI、端点保护和重复桩号。
+	bool hnProject::validateUserMilePile(const hnCommon::hnMilePile& pile, QString* errorMessage) const
+	{
+		return validateUserMilePile(pile, errorMessage, -1);
+	}
+
+	bool hnProject::validateUserMilePile(const hnCommon::hnMilePile& pile, QString* errorMessage, int ignoredId) const
+	{
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		const double minTrueMile = qMin(m_projectInfo.dBegMile, m_projectInfo.dEndMile);
+		const double maxTrueMile = qMax(m_projectInfo.dBegMile, m_projectInfo.dEndMile);
+		if (!std::isfinite(pile.dTrueMile) || !std::isfinite(pile.dEnclMile))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("校桩桩号或相对里程不是有效数字，请重新输入。");
+			return false;
+		}
+		if (pile.dTrueMile < minTrueMile - 0.001 || pile.dTrueMile > maxTrueMile + 0.001)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("校桩桩号必须在工程起点 %1 和终点 %2 之间，请重新输入。")
+					.arg(m_projectInfo.dBegMile, 0, 'f', 3).arg(m_projectInfo.dEndMile, 0, 'f', 3);
+			return false;
+		}
+		if (pile.dEnclMile < -0.001 || pile.dEnclMile > projectLength + 0.001)
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("校桩相对里程必须在 0 到工程总长度 %1 之间，请重新输入。")
+					.arg(projectLength, 0, 'f', 3);
+			return false;
+		}
+		if (qAbs(pile.dTrueMile - m_projectInfo.dBegMile) <= 1.0 ||
+			qAbs(pile.dTrueMile - m_projectInfo.dEndMile) <= 1.0)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("工程起点和终点校桩由系统维护，不能重复添加或修改。");
+			return false;
+		}
+		for (const hnMilePile& existingPile : m_vecMileagePile)
+		{
+			if (ignoredId >= 0 && existingPile.nID == ignoredId) continue;
+			if (qAbs(existingPile.dTrueMile - pile.dTrueMile) <= 0.001)
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("该真实桩号已经存在校桩，请重新输入。");
+				return false;
+			}
+			if (qAbs(existingPile.dEnclMile - pile.dEnclMile) <= 0.001)
+			{
+				if (errorMessage) *errorMessage = QStringLiteral("该相对里程已经存在校桩，请重新输入。");
+				return false;
+			}
+            // 相对里程向前增加时，桩号必须符合工程方向，不能与其他校桩交叉。
+            const double direction = m_projectInfo.dEndMile > m_projectInfo.dBegMile ? 1.0 : -1.0;
+            if ((pile.dEnclMile - existingPile.dEnclMile) *
+                (pile.dTrueMile - existingPile.dTrueMile) * direction <= 0.0)
+            {
+                if (errorMessage) *errorMessage = QStringLiteral("修改后的校桩与桩号 %1、相对里程 %2 米的校桩顺序冲突，请调整桩号或位置。")
+                    .arg(existingPile.dTrueMile, 0, 'f', 3).arg(existingPile.dEnclMile, 0, 'f', 3);
+                return false;
+            }
+
+		}
+		return true;
+	}
+
+	bool hnProject::changeMilePile(QVector < hnCommon::hnMilePile>& piles, QString* errorMessage)
+	{
+		const vector<hnCommon::hnMilePile> previousPiles = m_vecMileagePile;
 		m_vecMileagePile.clear();
 		for (auto mile : piles)
 		{
 			m_vecMileagePile.push_back(mile);
 		}
-
+		ensureStandardAnchors(m_vecMileagePile, m_projectInfo.dBegMile,
+			m_projectInfo.dEndMile, getProjectDmiLength(m_projectInfo));
+		vector<hnMilePile> normalizedPiles;
+		normalizeMilePilesAfterOffset(m_vecMileagePile, m_projectInfo.dBegMile,
+			m_projectInfo.dEndMile, getProjectDmiLength(m_projectInfo), 0.0, normalizedPiles);
+		if (!normalizedPiles.empty()) m_vecMileagePile = normalizedPiles;
 		sort(piles.begin(), piles.end(), compareMilepileByEnclMile);
 		sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-		saveMileagePilesToResultDb();
+		if (!saveMileagePilesToResultDb(errorMessage))
+		{
+			m_vecMileagePile = previousPiles;
+			return false;
+		}
 		initMileList(false);
+		return true;
 	}
 
-	void hnProject::addMilePile(hnCommon::hnMilePile& pile)
+	bool hnProject::addMilePile(hnCommon::hnMilePile& pile, QString* errorMessage)
 	{
+		if (!validateUserMilePile(pile, errorMessage)) return false;
+		const vector<hnCommon::hnMilePile> previousPiles = m_vecMileagePile;
 		int maxId = m_pDbSqlite ? m_pDbSqlite->m_milePileTable.getMaxID() : 1;
 		for (const auto& item : m_vecMileagePile)
 		{
@@ -1779,22 +2431,45 @@ namespace hnPro
 		m_vecMileagePile.push_back(pile);
 
 		sort(m_vecMileagePile.begin(), m_vecMileagePile.end(), compareMilepileByEnclMile);
-		saveMileagePilesToResultDb();
+		if (!saveMileagePilesToResultDb(errorMessage))
+		{
+			m_vecMileagePile = previousPiles;
+			return false;
+		}
 		initMileList(false);
+		return true;
 	}
 
-	void hnProject::deleteMilePile(int id)
+	bool hnProject::deleteMilePile(int id, QString* errorMessage)
 	{
+		const vector<hnCommon::hnMilePile> previousPiles = m_vecMileagePile;
+		bool found = false;
 		for (int i = static_cast<int>(m_vecMileagePile.size()) - 1; i >= 0; --i)
 		{
 			hnCommon::hnMilePile curMile = m_vecMileagePile[i];
 			if (curMile.nID == id)
 			{
+				found = true;
+				if (isStandardAnchorPile(curMile))
+				{
+					if (errorMessage) *errorMessage = QStringLiteral("工程起点和终点校桩不能删除。");
+					return false;
+				}
 				m_vecMileagePile.erase(m_vecMileagePile.begin() + i);
 			}
 		}
-		saveMileagePilesToResultDb();
+		if (!found)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("未找到需要删除的校桩。");
+			return false;
+		}
+		if (!saveMileagePilesToResultDb(errorMessage))
+		{
+			m_vecMileagePile = previousPiles;
+			return false;
+		}
 		initMileList(false);
+		return true;
 	}
 	void hnProject::updataMarkDatabase()
 	{
@@ -2041,4 +2716,385 @@ namespace hnPro
 		saveMileagePilesToResultDb();
 	}
 
-}
+	// 打开工程时依据实际校桩状态补齐锚点，并在证据充分时重建相对里程数据。
+	bool hnProject::ensureResultDbDmiNormalized(QString* errorMessage)
+	{
+		if (!m_pDbSqlite || !m_pDbSqlite->isOpen() || !m_p2DProject)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果库或二维工程尚未初始化，无法检查校桩和打标。");
+			return false;
+		}
+
+		const double projectStartMile = m_projectInfo.dBegMile;
+		const double projectEndMile = m_projectInfo.dEndMile;
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		if (!std::isfinite(projectStartMile) || !std::isfinite(projectEndMile) ||
+			!std::isfinite(projectLength) || projectLength <= 0.0)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("SETTING_INFO 中的工程起点、终点或总长度无效，未修改校桩和打标。");
+			return false;
+		}
+
+		bool hasStart = false;
+		bool hasEnd = false;
+		if (!hasStandardAnchors(m_vecMileagePile, projectStartMile, projectEndMile,
+			projectLength, hasStart, hasEnd))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果库校桩存在无效数值，未修改校桩和打标。");
+			return false;
+		}
+		const bool anchorsMissing = !hasStart || !hasEnd;
+
+		// 兼容旧版首次入库留下的越界校桩，过滤后通过原备份和事务流程保存。
+		// 不过滤打标，也不改变正常校桩的 DMI 偏移判断。
+		vector<hnMilePile> finalPiles;
+		const double minTrueMile = qMin(projectStartMile, projectEndMile);
+		const double maxTrueMile = qMax(projectStartMile, projectEndMile);
+		for (const hnMilePile& pile : m_vecMileagePile)
+		{
+			if (pile.dTrueMile < minTrueMile - 1.0 || pile.dTrueMile > maxTrueMile + 1.0)
+			{
+				continue;
+			}
+			finalPiles.push_back(pile);
+		}
+		const bool outOfRangePilesRemoved = finalPiles.size() != m_vecMileagePile.size();
+		ensureStandardAnchors(finalPiles, projectStartMile, projectEndMile, projectLength);
+		vector<hnMilePile> normalizedCurrentPiles;
+		const bool normalizedCurrentChanged = normalizeMilePilesAfterOffset(finalPiles,
+			projectStartMile, projectEndMile, projectLength, 0.0, normalizedCurrentPiles);
+		if (!normalizedCurrentPiles.empty()) finalPiles = normalizedCurrentPiles;
+
+		double databaseOffset = 0.0;
+		QString offsetError;
+		if (!findDatabaseStartOffset(finalPiles, projectStartMile, databaseOffset, &offsetError))
+		{
+			if (anchorsMissing)
+			{
+				QString backupPath;
+				QString writeError;
+				if (!createResultDbBackup(m_strDbFilePath, backupPath, &writeError) ||
+					!m_pDbSqlite->saveRelativeMileageData(nullptr, finalPiles, m_vecMarkInfo,
+						false, projectStartMile, projectEndMile, projectLength, &writeError))
+				{
+					if (errorMessage) *errorMessage = writeError;
+					return false;
+				}
+				m_vecMileagePile = finalPiles;
+				initMileList(false);
+			}
+			if (errorMessage) *errorMessage = offsetError;
+			return false;
+		}
+
+		vector<hnMilePile> sourcePiles;
+		double sourceOffset = 0.0;
+		bool sourceHasStartPile = false;
+		QString sourceError;
+		const bool needSource = anchorsMissing || databaseOffset > 0.001 || m_vecMarkInfo.empty();
+		const bool sourceValid = needSource && readFieldMilePileSource(
+			m_p2DProject->getMileStoneCaliInfoFilePath(), projectStartMile,
+			projectEndMile, sourcePiles, sourceOffset, &sourceHasStartPile, &sourceError);
+		bool replaceMarks = false;
+		vector<hnMarkInfo> finalMarks = m_vecMarkInfo;
+
+		if (databaseOffset > 0.001)
+		{
+			if (!sourceValid || (sourceHasStartPile && qAbs(sourceOffset - databaseOffset) > 0.001))
+			{
+				QString anchorBackupPath;
+				QString anchorWriteError;
+				if (anchorsMissing)
+				{
+					if (!createResultDbBackup(m_strDbFilePath, anchorBackupPath, &anchorWriteError) ||
+						!m_pDbSqlite->saveRelativeMileageData(nullptr, finalPiles, m_vecMarkInfo,
+							false, projectStartMile, projectEndMile, projectLength, &anchorWriteError))
+					{
+						if (errorMessage) *errorMessage = anchorWriteError;
+						return false;
+					}
+					m_vecMileagePile = finalPiles;
+					initMileList(false);
+				}
+				if (errorMessage)
+				{
+					const QString repairError = sourceValid
+						? QStringLiteral("成果库起点偏移与 MileStoneCaliInfo.txt 起点偏移不一致，未自动清空重建。")
+						: sourceError;
+					*errorMessage = anchorsMissing
+						? QStringLiteral("已补齐标准起终点校桩，但未修复非零起点偏移。%1").arg(repairError)
+						: repairError;
+				}
+				return false;
+			}
+			if (!buildRelativeMilePilesFromField(sourcePiles, sourceOffset,
+				projectStartMile, projectEndMile, projectLength, finalPiles, errorMessage) ||
+				!buildRelativeMarksFromField(m_p2DProject, this, sourceOffset,
+					projectStartMile, projectEndMile, projectLength, finalMarks, errorMessage))
+			{
+				return false;
+			}
+			replaceMarks = true;
+		}
+		else if (anchorsMissing && sourceValid)
+		{
+			vector<hnMilePile> relativeSourcePiles;
+			if (!buildRelativeMilePilesFromField(sourcePiles, sourceOffset,
+				projectStartMile, projectEndMile, projectLength, relativeSourcePiles, errorMessage))
+			{
+				return false;
+			}
+			if (sourceOffset > 0.001)
+			{
+				finalPiles = relativeSourcePiles;
+				if (!buildRelativeMarksFromField(m_p2DProject, this, sourceOffset,
+					projectStartMile, projectEndMile, projectLength, finalMarks, errorMessage))
+				{
+					return false;
+				}
+				replaceMarks = true;
+			}
+			else
+			{
+				int nextId = static_cast<int>(finalPiles.size());
+				for (const hnMilePile& pile : relativeSourcePiles)
+					appendMilePile(finalPiles, pile.dTrueMile, pile.dEnclMile, nextId);
+				normalizeMilePilesAfterOffset(finalPiles, projectStartMile,
+					projectEndMile, projectLength, 0.0, normalizedCurrentPiles);
+				if (!normalizedCurrentPiles.empty()) finalPiles = normalizedCurrentPiles;
+			}
+		}
+
+		if (!replaceMarks && m_vecMarkInfo.empty() && sourceValid &&
+			hasValidMarkSource(m_p2DProject->getMarkFilePath()))
+		{
+			if (!buildRelativeMarksFromField(m_p2DProject, this, sourceOffset,
+				projectStartMile, projectEndMile, projectLength, finalMarks, errorMessage))
+			{
+				return false;
+			}
+			replaceMarks = true;
+		}
+
+		const bool pilesChanged = outOfRangePilesRemoved || anchorsMissing || normalizedCurrentChanged ||
+			databaseOffset > 0.001 || (anchorsMissing && sourceValid);
+		if (!pilesChanged && !replaceMarks) return true;
+
+		QString backupPath;
+		if (!createResultDbBackup(m_strDbFilePath, backupPath, errorMessage)) return false;
+		QString writeError;
+		if (!m_pDbSqlite->saveRelativeMileageData(nullptr, finalPiles, finalMarks,
+			replaceMarks, projectStartMile, projectEndMile, projectLength, &writeError))
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("校桩与打标修复失败，数据库事务已经回滚。备份：%1\n%2")
+					.arg(backupPath).arg(writeError);
+			return false;
+		}
+
+		m_vecMileagePile.clear();
+		m_vecMarkInfo.clear();
+		if (!m_pDbSqlite->m_milePileTable.readData(m_vecMileagePile) ||
+			!m_pDbSqlite->m_markerInfoTable.readData(m_vecMarkInfo))
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("数据库修复完成，但重新加载校桩或打标失败。请关闭工程后重新打开。备份：%1")
+					.arg(backupPath);
+			return false;
+		}
+		initMileList(false);
+		return true;
+	}
+
+	// 用户主动从外业文本完整重建校桩和打标，重复执行仍由同一原始数据生成相同结果。
+	bool hnProject::reimportMileagePilesAndMarks(QString* backupPath, int* pileCount,
+		int* markCount, QString* errorMessage)
+	{
+		if (!m_pDbSqlite || !m_pDbSqlite->isOpen() || !m_p2DProject)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("当前工程不支持重新导入校桩打标。");
+			return false;
+		}
+
+		const double projectStartMile = m_projectInfo.dBegMile;
+		const double projectEndMile = m_projectInfo.dEndMile;
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		vector<hnMilePile> sourcePiles;
+		double sourceOffset = 0.0;
+		if (!readFieldMilePileSource(m_p2DProject->getMileStoneCaliInfoFilePath(),
+			projectStartMile, projectEndMile, sourcePiles, sourceOffset,
+			nullptr, errorMessage))
+		{
+			return false;
+		}
+
+		vector<hnMilePile> finalPiles;
+		vector<hnMarkInfo> finalMarks;
+		if (!buildRelativeMilePilesFromField(sourcePiles, sourceOffset,
+			projectStartMile, projectEndMile, projectLength, finalPiles, errorMessage) ||
+			!buildRelativeMarksFromField(m_p2DProject, this, sourceOffset,
+				projectStartMile, projectEndMile, projectLength, finalMarks, errorMessage))
+		{
+			return false;
+		}
+
+		QString createdBackupPath;
+		if (!createResultDbBackup(m_strDbFilePath, createdBackupPath, errorMessage)) return false;
+		QString writeError;
+		if (!m_pDbSqlite->saveRelativeMileageData(nullptr, finalPiles, finalMarks,
+			true, projectStartMile, projectEndMile, projectLength, &writeError))
+		{
+			if (errorMessage)
+				*errorMessage = QStringLiteral("重新导入失败，数据库事务已经回滚。备份：%1\n%2")
+					.arg(createdBackupPath).arg(writeError);
+			return false;
+		}
+
+		m_vecMileagePile = finalPiles;
+		m_vecMarkInfo = finalMarks;
+		initMileList(false);
+		if (backupPath) *backupPath = createdBackupPath;
+		if (pileCount) *pileCount = static_cast<int>(finalPiles.size());
+		if (markCount) *markCount = static_cast<int>(finalMarks.size());
+		return true;
+	}
+
+	// 预览工程范围变化将移除的普通校桩和打标数量，标准锚点不计入删除数。
+	bool hnProject::previewProjectRangeChange(const hnCommon::hnProjectSetInfo& settings,
+		int& removedPileCount, int& removedMarkCount, QString* errorMessage) const
+	{
+		removedPileCount = 0;
+		removedMarkCount = 0;
+		if (settings.dBegMile == settings.dEndMile ||
+			(settings.nLineType == 1 && settings.dBegMile > settings.dEndMile) ||
+			(settings.nLineType != 1 && settings.dBegMile < settings.dEndMile))
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("工程起点、终点与行驶方向不一致。");
+			return false;
+		}
+
+		const double minTrueMile = qMin(settings.dBegMile, settings.dEndMile);
+		const double maxTrueMile = qMax(settings.dBegMile, settings.dEndMile);
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		for (const hnMilePile& pile : m_vecMileagePile)
+		{
+			if (isStandardAnchorPile(pile)) continue;
+			if (pile.dTrueMile < minTrueMile - 0.001 || pile.dTrueMile > maxTrueMile + 0.001 ||
+				pile.dEnclMile < -0.001 || pile.dEnclMile > projectLength + 0.001 ||
+				qAbs(pile.dTrueMile - settings.dBegMile) <= 1.0 ||
+				qAbs(pile.dTrueMile - settings.dEndMile) <= 1.0)
+			{
+				++removedPileCount;
+			}
+		}
+		for (const hnMarkInfo& mark : m_vecMarkInfo)
+		{
+			if (mark.dTrueMile < minTrueMile - 0.001 || mark.dTrueMile > maxTrueMile + 0.001 ||
+				mark.dEnclMile < -0.001 || mark.dEnclMile > projectLength + 0.001)
+			{
+				++removedMarkCount;
+			}
+		}
+		return true;
+	}
+
+	// 工程范围修改与锚点更新、越界校桩及打标删除在同一个事务中完成。
+	bool hnProject::updateProjectSettings(const hnCommon::hnProjectSetInfo& settings, QString* errorMessage)
+	{
+		if (!m_pDbSqlite || !m_pDbSqlite->isOpen())
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("成果数据库不可用。");
+			return false;
+		}
+		int removedPileCount = 0;
+		int removedMarkCount = 0;
+		if (!previewProjectRangeChange(settings, removedPileCount, removedMarkCount, errorMessage))
+			return false;
+		if (strlen(settings.strRoadStandard) == 0 || strlen(settings.strRoadLevel) == 0)
+		{
+			if (errorMessage) *errorMessage = QStringLiteral("道路标准和道路等级不能为空。");
+			return false;
+		}
+
+		hnCommon::hnProjectSetInfo candidate = settings;
+		const double projectLength = getProjectDmiLength(m_projectInfo);
+		candidate.dBegEnclMile = 0.0;
+		candidate.dEndEnclMile = projectLength;
+		candidate.dLength = m_projectInfo.dLength > 0.0 ? m_projectInfo.dLength : projectLength;
+		const double minTrueMile = qMin(candidate.dBegMile, candidate.dEndMile);
+		const double maxTrueMile = qMax(candidate.dBegMile, candidate.dEndMile);
+
+		vector<hnMilePile> finalPiles;
+		int nextPileId = 0;
+		appendMilePile(finalPiles, candidate.dBegMile, 0.0, nextPileId);
+		appendMilePile(finalPiles, candidate.dEndMile, projectLength, nextPileId);
+		for (const hnMilePile& pile : m_vecMileagePile)
+		{
+			if (isStandardAnchorPile(pile) ||
+				pile.dTrueMile < minTrueMile - 0.001 || pile.dTrueMile > maxTrueMile + 0.001 ||
+				pile.dEnclMile < -0.001 || pile.dEnclMile > projectLength + 0.001 ||
+				qAbs(pile.dTrueMile - candidate.dBegMile) <= 1.0 ||
+				qAbs(pile.dTrueMile - candidate.dEndMile) <= 1.0)
+			{
+				continue;
+			}
+			hnMilePile retainedPile = pile;
+			retainedPile.nID = nextPileId;
+			if (!containsSameMilePile(finalPiles, retainedPile.dTrueMile, retainedPile.dEnclMile))
+			{
+				finalPiles.push_back(retainedPile);
+				++nextPileId;
+			}
+		}
+
+		vector<hnMarkInfo> finalMarks;
+		for (const hnMarkInfo& mark : m_vecMarkInfo)
+		{
+			if (mark.dTrueMile < minTrueMile - 0.001 || mark.dTrueMile > maxTrueMile + 0.001 ||
+				mark.dEnclMile < -0.001 || mark.dEnclMile > projectLength + 0.001)
+			{
+				continue;
+			}
+			hnMarkInfo retainedMark = mark;
+			retainedMark.nID = static_cast<int>(finalMarks.size());
+			finalMarks.push_back(retainedMark);
+		}
+
+		QString backupPath;
+		if ((qAbs(candidate.dBegMile - m_projectInfo.dBegMile) > 0.001 ||
+			qAbs(candidate.dEndMile - m_projectInfo.dEndMile) > 0.001) &&
+			!createResultDbBackup(m_strDbFilePath, backupPath, errorMessage))
+		{
+			return false;
+		}
+
+		QString writeError;
+		if (!m_pDbSqlite->saveRelativeMileageData(&candidate, finalPiles, finalMarks,
+			true, candidate.dBegMile, candidate.dEndMile, projectLength, &writeError))
+		{
+			if (errorMessage)
+				*errorMessage = backupPath.isEmpty() ? writeError :
+					QStringLiteral("工程范围更新失败，数据库事务已经回滚。备份：%1\n%2")
+						.arg(backupPath).arg(writeError);
+			return false;
+		}
+
+		m_projectInfo = candidate;
+		m_vecMileagePile = finalPiles;
+		m_vecMarkInfo = finalMarks;
+		initMileList(false);
+		return true;
+	}
+
+	bool hnProject::ensureInitialSurfaceMaterial(QWidget* parent, QString* errorMessage)
+	{
+		const double startMile = m_projectInfo.dBegMile;
+		for (const hnCommon::hnMarkInfo& mark : m_vecMarkInfo) if (mark.nType == 0 && mark.dGpsTimer == -2 && qAbs(mark.dTrueMile - startMile) < 0.01 && strlen(mark.strMark) > 0) return true;
+		const QStringList materials = QStringList() << QString::fromUtf8("\346\262\245\351\235\222") << QString::fromUtf8("\346\260\264\346\263\245") << QString::fromUtf8("\347\240\202\347\237\263");
+		if (materials.isEmpty()) { if (errorMessage) *errorMessage = QStringLiteral("未配置允许的路面材质."); return false; }
+		bool accepted = false; const QString material = QInputDialog::getItem(parent, QStringLiteral("初始化路面材质"), QStringLiteral("选择工程初始道路材质之后绘制病害..."), materials, 0, false, &accepted);
+		if (!accepted || material.isEmpty()) { if (errorMessage) *errorMessage = QStringLiteral("在绘制病害之前必须确认初始路面材料"); return false; }
+		hnCommon::hnMarkInfo mark; mark.nType = 0; mark.dTrueMile = startMile; mark.dEnclMile = trueMileToEncl(startMile); mark.dGpsTimer = -2; strncpy_s(mark.strMark, material.toLocal8Bit().constData(), _TRUNCATE);
+		bool needUpdate = false;
+		return addMark(mark, &needUpdate, errorMessage);
+	}}

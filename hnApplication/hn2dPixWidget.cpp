@@ -9,7 +9,7 @@
 #include "../hnQtCommon/MyCommonMethods.h"
 #include "hnDiseaseService.h"
 #include "LittleFrameRenderPathBuilder.h"
-#include "../SDK/src/TiledGraphicsView.h"
+#include "../TunnelViewerSDK/src/TiledGraphicsView.h"
 #include <QMessageBox>
 #include <QTime>
 #include <QSet>
@@ -192,6 +192,8 @@ void hn2dPixWidget::loadRoadPicture()
 	this->m_pixHeight = setInfo.picPixelY;
 
 	this->m_hnMileVector.clear();
+	this->m_pixNameHnMileMap.clear();
+	this->m_milePixNameMap.clear();
 	this->m_hnMileVector = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMileVector();
 	QStringList pixNames;
 	for (auto mile : m_hnMileVector)
@@ -245,18 +247,35 @@ void hn2dPixWidget::loadRoadPicture()
 	}
 
 #endif 
-	//更新所有病害
-	QVector<hnRoadDiseaseInfo> allRoadDiseaes = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
-   
+	// Only old automatic diseases with missing dimensions need migration. Do
+	// not create a modal dialog or pump the event loop for every normal disease.
+	QVector<hnRoadDiseaseInfo> allRoadDiseaes =
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDiseases();
+	QVector<int> migrationIndexes;
+	for (int i = 0; i < allRoadDiseaes.size(); ++i)
+	{
+		const hnRoadDiseaseInfo& disease = allRoadDiseaes.at(i);
+		if (disease.nDrawType == 1 && (disease.dLength == 0 || disease.dArea == 0)
+			&& !disease.vec2dRect.empty())
+		{
+			migrationIndexes.append(i);
+		}
+	}
+	if (migrationIndexes.isEmpty())
+	{
+		m_lineWidth = 20;
+		return;
+	}
+
 	QProgressDialog progress(QStringLiteral("检测到旧版本病害，自动进行更新，此过程仅一次，耗时较长，请耐心等待"),
-		QString(), 0, allRoadDiseaes.size(), this);
+		QString(), 0, migrationIndexes.size(), this);
 	progress.setWindowTitle(QStringLiteral("处理中..."));
 	progress.setWindowModality(Qt::ApplicationModal);
-	progress.setMinimumDuration(0);
+	progress.setMinimumDuration(500);
 	progress.setValue(0);
-	for (int i = 0 ; i<allRoadDiseaes.size() ;++i)
-	{ 
-		auto& dis = allRoadDiseaes[i];
+	for (int migrationIndex = 0; migrationIndex < migrationIndexes.size(); ++migrationIndex)
+	{
+		auto& dis = allRoadDiseaes[migrationIndexes.at(migrationIndex)];
 		if (dis.nDrawType == 1)
 		{ 
 			if (dis.dLength == 0 || dis.dArea == 0)
@@ -276,11 +295,13 @@ void hn2dPixWidget::loadRoadPicture()
 				reCalculateOldDiseaseSizeAndSave(diseaseRects, dis);
 			} 
 		}
-		progress.setValue(i + 1);
-		QApplication::processEvents();
-
+		progress.setValue(migrationIndex + 1);
+		if ((migrationIndex % 16) == 0)
+		{
+			QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+		}
 	}
-	progress.setValue(allRoadDiseaes.size());
+	progress.setValue(migrationIndexes.size());
 	m_lineWidth = 20;
 }
 
@@ -1338,17 +1359,9 @@ bool hn2dPixWidget::drawBigFrameProcess()
 
 
 	//弹出添加病害窗口
-	addDiseaseDialog dialog(diseaseNameAndKey, false);
-	dialog.setWindowTitle(QString::fromLocal8Bit("添加病害"));
-	dialog.setDiseaseAttributeEnabled(false);
 	QString diseaseTypeName;
 	QString diseaseMark;
-	if (dialog.exec() == QDialog::Accepted)
-	{
-		diseaseTypeName = dialog.getDiseaseTypeName();
-		diseaseMark = dialog.getDiseaseMarkInfo();
-	}
-	else
+	if (!selectDiseaseTypeForDrawing(diseaseSetInfos, diseaseTypeName, diseaseMark))
 	{
 		resetSdkDiseaseDrawingState(true, false);
 		return false;
@@ -1468,6 +1481,7 @@ void hn2dPixWidget::drawBigFrameDisease(const vector<hnRoadDiseaseInfo>& disease
 
 void hn2dPixWidget::bigFrameAddDisease(const QPoint & mousePoint)
 {
+	if (hnApp::hnDataManager::getDataManager()->getCurrentProject() && !hnApp::hnDataManager::getDataManager()->getCurrentProject()->ensureInitialSurfaceMaterial(this)) return;
 	//检测点是否有效
 	if (!this->isValidPoint(mousePoint))
 	{
@@ -2270,6 +2284,7 @@ QPoint hn2dPixWidget::hn2dPointToImageQtPoint(const hn2dPointWithMileI & hn2dPoi
 
 void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mousePoint)
 {
+	const hnRoadDiseaseInfo originalDisease = disease;
 	hnMile mile = this->getHnMileFromPoint(mousePoint);
 
 	//弹出添加病害窗口 让用户选择病害类型
@@ -2300,9 +2315,6 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 		m_isDrawingDisease = false;
 		return;
 	}
-	int drawType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
-
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteOneDisease(disease);
 
  
 
@@ -2374,14 +2386,125 @@ void hn2dPixWidget::editDisease(hnRoadDiseaseInfo & disease, const QPoint & mous
 	{
 		return;
 	}
-	hnApp::hnDataManager::getDataManager()->getDiseaseService()->addDisease(disease);
-	 
-	 
+	hnDiseaseService* service =
+		hnApp::hnDataManager::getDataManager()->getDiseaseService();
+	if (!service->addDisease(disease))
+	{
+		QMessageBox::warning(this, QString::fromUtf8("\xE6\x8F\x90\xE7\xA4\xBA"),
+			QString::fromUtf8("\xE7\x97\x85\xE5\xAE\xB3\xE7\xB1\xBB\xE5\x9E\x8B\xE4\xBF\xAE\xE6\x94\xB9\xE5\x86\x99\xE5\x85\xA5\xE5\xA4\xB1\xE8\xB4\xA5\xEF\xBC\x8C\xE5\x8E\x9F\xE7\x97\x85\xE5\xAE\xB3\xE5\xB7\xB2\xE4\xBF\x9D\xE7\x95\x99\xE3\x80\x82"), QString::fromUtf8("\xE7\xA1\xAE\xE5\xAE\x9A"));
+		return;
+	}
+	hnRoadDiseaseInfo oldDisease = originalDisease;
+	if (!service->deleteOneDisease(oldDisease))
+	{
+		QMessageBox::warning(this, QString::fromUtf8("\xE6\x8F\x90\xE7\xA4\xBA"),
+			QString::fromUtf8("\xE6\x96\xB0\xE7\x97\x85\xE5\xAE\xB3\xE5\xB7\xB2\xE4\xBF\x9D\xE5\xAD\x98\xEF\xBC\x8C\xE4\xBD\x86\xE6\x97\xA7\xE7\x97\x85\xE5\xAE\xB3\xE5\x88\xA0\xE9\x99\xA4\xE5\xA4\xB1\xE8\xB4\xA5\xEF\xBC\x8C\xE8\xAF\xB7\xE5\x88\xB7\xE6\x96\xB0\xE5\x88\x97\xE8\xA1\xA8\xE5\x90\x8E\xE6\xA3\x80\xE6\x9F\xA5\xE3\x80\x82"), QString::fromUtf8("\xE7\xA1\xAE\xE5\xAE\x9A"));
+	}
 
 	m_isAllowDrawPix = true;
 	this->update();
 }
 
+bool hn2dPixWidget::updateSdkAreaDiseaseGeometry(hnRoadDiseaseInfo& disease, bool saveToDatabase)
+{
+	QVector<SdkSingleImageRect> sdkRects;
+	if (!currentSdkBigFrameSingleRects(sdkRects) || sdkRects.isEmpty())
+	{
+		return false;
+	}
+	const QRect legacyInput = sdkRects.first().singleRect.normalized();
+	disease.vec2dRect = generateLargeFrameHn2dRectVector(legacyInput);
+	if (disease.vec2dRect.empty())
+	{
+		return false;
+	}
+	if (hnDataManager::getDataManager()->getCurrentProject()->get3DProject())
+	{
+		const vector<hn3dRectI> mapped = generateLargeFrameHn3dRectVector(legacyInput);
+		if (!mapped.empty())
+		{
+			disease.vec3dRect = mapped;
+		}
+	}
+	const hnProjectSetInfo setting =
+		hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo();
+	const double beginMile = sdkPixPointToEncoderMile(m_diseaseStartPoint);
+	const double endMile = sdkPixPointToEncoderMile(m_diseaseEndPoint);
+	disease.nPixelWid = qAbs(m_diseaseEndPoint.pixPoint.x() - m_diseaseStartPoint.pixPoint.x());
+	disease.dWidth = std::round(disease.nPixelWid * setting.dRadioX * 100.0) / 100.0;
+	disease.dLength = std::round(qAbs(endMile - beginMile) * 100.0) / 100.0;
+	disease.nPixelLen = setting.dRadioY > 0.0
+		? qRound(disease.dLength / setting.dRadioY) : 0;
+	disease.dDmiStart = qMin(beginMile, endMile);
+	disease.dDmiEnd = qMax(beginMile, endMile);
+	disease.dMileage = (disease.dDmiStart + disease.dDmiEnd) * 0.5;
+	disease.dDmi = disease.vec2dRect.front().p0.m_dmi;
+	hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
+	if (!validateDiseaseGeometryWithinValidArea(disease)
+		|| !validateLineCameraDiseaseGeometry(disease, this))
+	{
+		return false;
+	}
+	return !saveToDatabase || hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+}
+
+bool hn2dPixWidget::moveSdkLittleFrameDisease(hnRoadDiseaseInfo& disease, const QPoint& bigImageOffset)
+{
+	if (disease.nDrawType != 1)
+	{
+		return false;
+	}
+	if (bigImageOffset.isNull())
+	{
+		return true;
+	}
+	QVector<QRect> movedRects = sdkDiseaseBigImageRects(disease);
+	if (movedRects.isEmpty())
+	{
+		return false;
+	}
+	for (QRect& rect : movedRects)
+	{
+		rect.translate(bigImageOffset);
+	}
+
+	m_committedLittleFrameDiseaseRects.clear();
+	rebuildCurrentLittleFrameSingleSelections(movedRects);
+	if (m_currentLittleFrameSingleSelections.size() != movedRects.size())
+	{
+		return false;
+	}
+	const vector<hn2dRectI> moved2d = generateLittleFrameHn2dRectVector(movedRects);
+	if (moved2d.size() != static_cast<size_t>(movedRects.size()))
+	{
+		return false;
+	}
+	disease.vec2dRect = moved2d;
+
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (project && project->get3DProject())
+	{
+		const vector<hn3dRectI> moved3d = generateLittleFrameHn3dRectVector(movedRects);
+		if (moved3d.empty())
+		{
+			return false;
+		}
+		disease.vec3dRect = moved3d;
+	}
+
+	disease.dMileage = caculateLittleFrameMiddleMile(movedRects);
+	disease.dDmiStart = calculateLittleFrameBeginMile(movedRects);
+	disease.dDmiEnd = calculateLittleFrameEndMile(movedRects);
+	disease.dDmi = disease.vec2dRect.front().p0.m_dmi;
+	CalculateDiseaseSize(movedRects, disease);
+	hnDataManager::getDataManager()->setDiseaseCalcuteSize(disease);
+	if (!validateDiseaseGeometryWithinValidArea(disease)
+		|| !validateLineCameraDiseaseGeometry(disease, this))
+	{
+		return false;
+	}
+	return hnDataManager::getDataManager()->getDiseaseService()->updateDisease(disease);
+}
 void hn2dPixWidget::updateLittleFrameDisease(hnRoadDiseaseInfo & disease)
 {
 	PROJECT_TYPE projectType=  hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
@@ -3498,18 +3621,9 @@ bool hn2dPixWidget::littleFrameProcess()
 	}
 
 	//弹出添加病害窗口
-	addDiseaseDialog dialog(diseaseNameAndKey, false);
-	dialog.setWindowTitle(QString::fromLocal8Bit("添加病害"));
-	dialog.setDiseaseAttributeEnabled(false);
 	QString diseaseTypeName;
 	QString diseaseMark;
-	if (dialog.exec() == QDialog::Accepted)
-	{
-		diseaseTypeName = dialog.getDiseaseTypeName();
-		diseaseMark = dialog.getDiseaseMarkInfo();
-		stepTimer.restart();
-	}
-	else
+	if (!selectDiseaseTypeForDrawing(diseaseSetInfos, diseaseTypeName, diseaseMark))
 	{
 		#ifdef _DEBUG
 		qDebug() << "HN_LITTLE_FRAME_PERF 2d dialogRejected"

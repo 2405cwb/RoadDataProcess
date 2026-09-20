@@ -1,0 +1,14 @@
+Stage34 static checks:
+- ViewMode unchanged: PASS
+- DrawShape unchanged: PASS
+- ElementType unchanged: PASS
+- AnnotationData block unchanged: PASS
+- IDefectStorage pure virtual interface unchanged: PASS
+- Old manager members missing: 0
+- New metadata directly added to AnnotationData: 0
+- TunnelViewerSDK.vcxproj XML parse: PASS
+- TunnelViewerSDK.vcxproj.filters XML parse: PASS
+- Modified C++ delimiter balance: PASS
+- git diff --check: PASS
+- DB binary candidate vs legacy linear intersects randomized test: PASS (Vertical/Horizontal + normal/reverse + variable sizes)
+- VS2015 + Qt5.8 actual compile: NOT RUN (toolchain unavailable in current environment)

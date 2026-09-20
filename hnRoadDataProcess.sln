@@ -71,7 +71,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hnCoordTranslate", "hnCoord
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hnPcdCoordinate", "hnPcdCoordinate\hnPcdCoordinate.vcxproj", "{FE21890F-D3AE-4170-9C28-DC859CAFE6E3}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TunnelViewerSDK", "SDK\TunnelViewerSDK.vcxproj", "{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TunnelViewerSDK", "TunnelViewerSDK\TunnelViewerSDK.vcxproj", "{0F7AB0BD-DF96-3C3E-A160-ABA21BB66CCD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,10 +1,10 @@
 
 #include "BusyLoadingDialog.h"
+#include "hnProgressStyle.h"
 
 #include <QApplication>
 #include <QEventLoop>
 #include <QFrame>
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QProgressBar>
@@ -22,19 +22,13 @@ BusyLoadingDialog::BusyLoadingDialog(QWidget* parent)
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setAttribute(Qt::WA_ShowWithoutActivating, false);
 
-	setFixedSize(380, 150);
+	setFixedSize(440, 180);
 
 	QVBoxLayout* rootLayout = new QVBoxLayout(this);
 	rootLayout->setContentsMargins(12, 12, 12, 12);
 
 	QFrame* panel = new QFrame(this);
 	panel->setObjectName("loadingPanel");
-
-	QGraphicsDropShadowEffect* shadow = new QGraphicsDropShadowEffect(panel);
-	shadow->setBlurRadius(28);
-	shadow->setOffset(0, 8);
-	shadow->setColor(QColor(60, 150, 210, 90));
-	panel->setGraphicsEffect(shadow);
 
 	QVBoxLayout* panelLayout = new QVBoxLayout(panel);
 	panelLayout->setContentsMargins(28, 24, 28, 24);
@@ -44,8 +38,8 @@ BusyLoadingDialog::BusyLoadingDialog(QWidget* parent)
 	iconLabel->setFixedSize(12, 12);
 	iconLabel->setStyleSheet(R"(
 		QLabel{
-background-color: #25A9E0;
-border-radius: 6px;}
+background-color: #527A9C;
+border-radius: 2px;}
 )");
 
 	m_titleLabel = new QLabel("请稍候", panel);
@@ -60,7 +54,7 @@ border-radius: 6px;}
 	m_progressBar = new QProgressBar(panel);
 	m_progressBar->setTextVisible(false);
 	m_progressBar->setRange(0, 0); // 关键：忙碌模式，不需要设置百分比
-	m_progressBar->setFixedHeight(8);
+	m_progressBar->setFixedHeight(22);
 
 
 	QHBoxLayout * titleLayout = new QHBoxLayout();
@@ -80,38 +74,27 @@ border-radius: 6px;}
 
 	rootLayout->addWidget(panel);
 
-	setStyleSheet(R"(
+	setStyleSheet(hnProgressStyle::styleSheet() + QStringLiteral(R"(
         QFrame#loadingPanel {
-            background-color: rgba(245,251,255,248);
-			border: 1px solid rgba(120,190,235,160);
-            border-radius: 16px;
+            background-color: #F5F6F8;
+			border: 1px solid #BBC6D1;
+            border-radius: 2px;
         }
 
         QLabel#titleLabel {
-            color: #0B5C9D;
+            color: #303E4B;
             font-family: Microsoft YaHei;
-            font-size: 18px;
+            font-size: 15px;
             font-weight: 600;
         }
 
         QLabel#messageLabel {
-            color: #2E5E7E;
+            color: #526170;
             font-family: Microsoft YaHei;
-            font-size: 14px;
+            font-size: 13px;
         }
 
-        QProgressBar {
-            border: none;
-            background-color: rgba(180,220,245,120);
-            border-radius: 4px;
-			height:8px;
-        }
-
-        QProgressBar::chunk {
-            background-color: #25A9E0;
-            border-radius: 4px;
-        }
-    )");
+    )"));
 }
 
 void BusyLoadingDialog::setTitleText(const QString& title)

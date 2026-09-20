@@ -40,7 +40,8 @@ hnDiseaseListWidget::hnDiseaseListWidget(QWidget *parent)
 
     m_view->setModel(sortDiseaseTypeModel);
     m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_view->setSelectionMode(QAbstractItemView::SingleSelection);
+    // Allow Ctrl/Shift multi-row selection; deleteDiseases de-duplicates proxy rows.
+    m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     QHeaderView* verticalHeader = m_view->verticalHeader();

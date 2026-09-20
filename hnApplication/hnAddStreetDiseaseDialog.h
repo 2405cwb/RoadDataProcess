@@ -1,61 +1,37 @@
 #pragma once
-
 #include <QDialog>
-#include <QTabWidget>
-#include <QVBoxLayout>
-#include <QStackedWidget>
-#include <QAction>
-#include <QGroupBox>
-#include <QPushButton>
 #include "hnDataManager.h"
 #include "../hnCommon/hnRoadStruct.h"
-#include <QLabel>
-#include <QLineEdit>
-#include <QCheckBox>
+class QTreeWidget;
+class QLineEdit;
+class QComboBox;
+class QSpinBox;
+class QLabel;
 
-
-//添加景观病害的对话框
+// 标准景观批量选择及自定义景观录入，确认后统一事务保存。
 class hnAddStreetDiseaseDialog : public QDialog
 {
-	Q_OBJECT
-
+    Q_OBJECT
 public:
-	hnAddStreetDiseaseDialog(QVector<hnCommon::hnDiseaseSetInfo> LJInfo, QVector<hnCommon::hnDiseaseSetInfo>YXInfo, QWidget *parent = Q_NULLPTR);
-	~hnAddStreetDiseaseDialog();
-public:
-	void setCurrentHnMile(const hnMile &mile);
-
-	//获取对话框选中的病害
-	QVector<hnRoadDiseaseInfo> getSelectDiseases();
-private:
-	//初始化沿线设施布局
-	void initYXLayout();
-
-	//初始化路基损坏布局
-	void initLJLayout();
-
-	//初始化病害类型布局
-	void initDiseaseLayout(QGridLayout *layout,const QVector<hnCommon::hnDiseaseSetInfo> &setInfos);
-
-
+    hnAddStreetDiseaseDialog(QVector<hnCommon::hnDiseaseSetInfo> LJInfo,
+        QVector<hnCommon::hnDiseaseSetInfo> YXInfo, QWidget* parent = Q_NULLPTR);
+    ~hnAddStreetDiseaseDialog();
+    void setCurrentHnMile(const hnMile& mile);
+    void setImageSide(int side);
+    QVector<hnRoadDiseaseInfo> getSelectDiseases();
 private slots:
-	void slot_onOkPushButtonCliecked();
-
-	void slot_onCancelPushButtonCliecked();
-
+    void saveSelection();
+    void filterDiseases(const QString& text);
 private:
-	void writeDiseaseDataBase(QGridLayout *layout, const QVector<hnCommon::hnDiseaseSetInfo> &setInfos);
-
-private:
-	QGridLayout *m_YXlayout;	//沿线设施布局
-	QGridLayout *m_LJlayout;	//路基损坏布局
-
-	QVector<hnCommon::hnDiseaseSetInfo> m_LJDiseaseSetInfo;
-	QVector<hnCommon::hnDiseaseSetInfo> m_YXDiseaseSetInfo;
-
-	hnMile m_currentMile;
-
-	//对话框选中的病害
-	QVector<hnRoadDiseaseInfo> m_selectDiseases;
-
+    void addStandardGroup(const QString& name, const QVector<hnDiseaseSetInfo>& infos);
+    QTreeWidget* m_tree;
+    QLineEdit* m_search;
+    QComboBox* m_customName;
+    QSpinBox* m_customCount;
+    QLineEdit* m_customRemark;
+    QLabel* m_location;
+    QVector<hnDiseaseSetInfo> m_settings;
+    hnMile m_currentMile;
+    QVector<hnRoadDiseaseInfo> m_selectDiseases;
+    int m_side;
 };

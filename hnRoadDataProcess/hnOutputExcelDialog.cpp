@@ -1,4 +1,6 @@
-﻿#include "hnOutputExcelDialog.h"
+﻿#include "../hnQtCommon/hnWindowUiState.h"
+#include "../hnQtCommon/hnProgressStyle.h"
+#include "hnOutputExcelDialog.h"
 #include "../hnProject/hnProjectManager.h"
 #include <QButtonGroup>
 #include <QMessageBox>
@@ -9,12 +11,19 @@
 #include <QFile>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QSignalBlocker>
 #include "hnXlsxInterface.h"
 #include <QStandardPaths>
 #include <QDir>
 #include <QFileDialog>
 #include <QProgressDialog>
 #include <QProgressBar>
+#include <QLabel>
+#include <climits>
+#include <QTimer>
+#include <QScrollArea>
+#include <QTabBar>
+#include <QLineEdit>
 #include <QEventLoop>
 #include <QDesktopServices>
 #include "../hnQtCommon/MyCommonMethods.h" 
@@ -214,6 +223,11 @@ hnOutputExcelDialog::hnOutputExcelDialog(QWidget *parent)
 	ui.tabWidget->setCurrentIndex(0);
 	//信号槽连接
 	this->connectMethods();
+	setupExportWorkflow();
+	ui.cityLengthSpinBox->setKeyboardTracking(false);
+	connect(ui.cityDistanceRadio, &QRadioButton::toggled, this, &hnOutputExcelDialog::saveCityReportOptions);
+	connect(ui.cityLengthSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &hnOutputExcelDialog::saveCityReportOptions);
+	connect(ui.cityCrossingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &hnOutputExcelDialog::saveCityReportOptions);
 }
 
 
@@ -488,6 +502,15 @@ void hnOutputExcelDialog::setModelChooseForm()
 	QRadioButton* btn1 = qobject_cast<QRadioButton*>(p_modelGroup->buttons().at(0));
 	btn1->setChecked(true);
 	onModelClicked(btn1);
+	const bool cpmsStreetAvailable = m_nowStandard == HnProjectEnums::DegreeRoad2018
+		|| m_nowStandard == HnProjectEnums::RuralRoadlowLevel;
+	ui.checkBox_4->setEnabled(cpmsStreetAvailable);
+	ui.checkBox_6->setEnabled(cpmsStreetAvailable);
+	if (!cpmsStreetAvailable)
+	{
+		ui.checkBox_4->setChecked(false);
+		ui.checkBox_6->setChecked(false);
+	}
 	if (m_nowStandard == HnProjectEnums::CityRoad)
 	{
 		ui.groupBox_11->setEnabled(false);
@@ -541,34 +564,9 @@ void hnOutputExcelDialog::getUserSelectExcelName(QGridLayout* grid, QMap<int, QV
 }
 void hnOutputExcelDialog::onTableChange(int index)
 {
-	//单表模式有三个页 
-	//多表模式有二页
-	switch (index)
+	if (ui.tabWidget->widget(index) == ui.tab_3 && m_nowStandard != preStandard)
 	{
-	case  0:
-		break;
-	case  1:
-		if (!isSingleProject)
-		{
-			if (m_nowStandard != preStandard)
-			{
-				setModelChooseForm();
-			}
-		}
-		break;
-	case  2:
-		if (isSingleProject)
-		{
-			if (m_nowStandard != preStandard)
-			{
-				setModelChooseForm();
-			}
-		}
-
-
-		break;
-	default:
-		break;
+		setModelChooseForm();
 	}
 }
 
@@ -617,7 +615,70 @@ void hnOutputExcelDialog::onModelClicked(QAbstractButton * radBtn)
 	ui.scrollArea_2->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	ui.scrollArea_2->setWidgetResizable(true);
 	ui.scrollArea_2->setWidget(widget);
+	refreshCityReportOptions();
 
+}
+
+void hnOutputExcelDialog::refreshCityReportOptions()
+{
+	const bool city = m_nowStandard == HnProjectEnums::CityRoad;
+	const bool distance = city && m_xrSetting->PartType == 1;
+	const int length = m_xrSetting->PartType_Dmi_Len > 0 ? m_xrSetting->PartType_Dmi_Len : 200;
+	// 初始化及保存失败回退时不触发再次写入。
+	const QSignalBlocker modeBlock(ui.cityDistanceRadio);
+	const QSignalBlocker lengthBlock(ui.cityLengthSpinBox);
+	const QSignalBlocker crossingBlock(ui.cityCrossingCombo);
+	ui.cityReportGroup->setVisible(city);
+	ui.cityDistanceRadio->setChecked(m_xrSetting->PartType == 1);
+	ui.cityStakeRadio->setChecked(m_xrSetting->PartType != 1);
+	ui.cityLengthSpinBox->setValue(length);
+	ui.cityLengthSpinBox->setEnabled(distance);
+	ui.cityLengthLabel->setEnabled(distance);
+	ui.cityCrossingCombo->setEnabled(distance);
+	ui.cityCrossingLabel->setEnabled(distance);
+	ui.cityCrossingCombo->setCurrentIndex(m_xrSetting->roadCrossingShow ? 0 : 1);
+	for (auto it = m_ItemWidgetMap.begin(); it != m_ItemWidgetMap.end(); ++it)
+	{
+		ReportItem* item = it.key();
+		QComboBox* combo = it.value().second;
+		if (combo->isEnabled() && combo->currentIndex() >= 0)
+		{
+			item->selectSegmentIndex = combo->currentIndex();
+		}
+		combo->clear();
+		if (distance)
+		{
+			combo->addItem(QString::number(length));
+			combo->setToolTip(QStringLiteral("分段长度来自本出表窗口的高级设置；路口、材质及末段规则可能产生短段。"));
+		}
+		else
+		{
+			for (const QString& segment : item->segments)
+			{
+				combo->addItem(segment);
+			}
+			combo->setCurrentIndex(item->selectSegmentIndex);
+			combo->setToolTip(QString());
+		}
+		combo->setEnabled(!distance);
+	}
+}
+
+void hnOutputExcelDialog::saveCityReportOptions()
+{
+	if (m_nowStandard != HnProjectEnums::CityRoad)
+	{
+		return;
+	}
+	const bool saved = m_xrSetting->saveCityReportSettings(
+		ui.cityDistanceRadio->isChecked() ? 1 : 0,
+		ui.cityLengthSpinBox->value(), ui.cityCrossingCombo->currentIndex() == 0);
+	refreshCityReportOptions();
+	if (!saved)
+	{
+		QMessageBox::warning(this, QStringLiteral("保存失败"),
+			QStringLiteral("城镇道路分段设置未保存，已恢复原设置。请检查配置文件的写入权限和磁盘空间。"));
+	}
 }
 
 void hnOutputExcelDialog::onOkButton()
@@ -657,9 +718,11 @@ void hnOutputExcelDialog::onOkButton()
 		return;
 	}
 	//弹出对话框 让用户设置输出位置
-	QString projectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择输出路径"), m_xrSetting->OutPath);
-	if (projectPath.isEmpty())
+	QString projectPath = m_outputDirectory->text().trimmed();
+	if (projectPath.isEmpty() || !QDir::isAbsolutePath(projectPath) || !QDir(projectPath).exists())
 	{
+		QMessageBox::warning(this, QStringLiteral("输出目录无效"), QStringLiteral("请选择已存在的绝对路径作为输出目录。"));
+		m_outputDirectory->setFocus();
 		return;
 	}
 	m_xrSetting->OutPath = projectPath;
@@ -678,9 +741,10 @@ void hnOutputExcelDialog::onOkButton()
 			selectModelTxt = raBt->text();
 		}
 	}
-	if (selectModelTxt.isEmpty())
+	if (selectModelTxt.isEmpty() || m_UserSelectCount <= 0)
 	{
-		hide();
+		QMessageBox::warning(this, QStringLiteral("请选择报表"), QStringLiteral("请先选择报表模板，并至少勾选一项报表。"));
+		ui.tabWidget->setCurrentWidget(ui.tab_3);
 		return;
 	}   
 	 
@@ -692,11 +756,13 @@ void hnOutputExcelDialog::onOkButton()
 		projectReportInfo.roadWidth = project->isLineCameraProject()
 			? project->effectiveRoadWidth()
 			: projectWidths.value(project, 0.0);
-		if (!hnReportProjectInfo::save(project, projectReportInfo))
+		QString saveError;
+		if (!hnReportProjectInfo::save(project, projectReportInfo, &saveError))
 		{
 			QMessageBox::critical(this, QStringLiteral("保存失败"),
-				QStringLiteral("无法把工程信息写入工程配置文件：\n%1")
-				.arg(QDir::toNativeSeparators(hnReportProjectInfo::configPath(project))));
+				QStringLiteral("无法把工程信息写入工程配置文件：\n%1\n\n原因：%2")
+				.arg(QDir::toNativeSeparators(hnReportProjectInfo::configPath(project)),
+					saveError.isEmpty() ? QStringLiteral("未知错误") : saveError));
 			return;
 		}
 	}
@@ -707,37 +773,37 @@ void hnOutputExcelDialog::onOkButton()
 	if (!m_progressDialog)
 	{
 		m_progressDialog = new QProgressDialog(this);
-	
-	} 
-	else
-	{
-
+		QLabel* taskLabel = new QLabel(m_progressDialog);
+		taskLabel->setTextFormat(Qt::PlainText);
+		taskLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+		taskLabel->setWordWrap(true);
+		taskLabel->setFixedHeight(80);
+		taskLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		m_progressDialog->setLabel(taskLabel);
 	}
+	// 先在隐藏状态完成初始化，避免 setValue 触发提前显示和中途换肤。
+	m_progressDialog->hide();
+	m_progressDialog->setMinimumDuration(INT_MAX);
+	m_progressDialog->reset();
 	m_progressDialog->setWindowTitle(QStringLiteral("导出报表"));
 	m_progressDialog->setWindowModality(Qt::ApplicationModal);
-	m_progressDialog->setMinimumDuration(0);
-	m_progressDialog->setMinimumSize(QSize(640, 150));
+	m_progressDialog->setFixedSize(QSize(660, 180));
 	m_progressDialog->setAutoClose(false);
 	m_progressDialog->setAutoReset(false);
 	m_progressDialog->setCancelButton(nullptr);
 	m_progressValue = 0;
 	const int totalTaskCount = m_UserSelectCount * count;
 	m_progressDialog->setRange(0, totalTaskCount);
-	m_progressDialog->setValue(0);
-	m_progressDialog->setLabelText(QStringLiteral("正在准备导出任务..."));
-	m_progressDialog->setStyleSheet(QStringLiteral(
-		"QProgressDialog { background: #F7F9FC; }"
-		"QLabel { color: #243247; font-size: 14px; padding: 10px 18px 4px 18px; }"
-		"QProgressBar { min-height: 24px; margin: 4px 18px 14px 18px; border: 1px solid #CBD5E1; "
-		"border-radius: 7px; background: #E8EDF4; color: #172033; font-weight: 600; text-align: center; }"
-		"QProgressBar::chunk { border-radius: 6px; background: #3478D4; }"));
+	m_progressDialog->setLabelText(QStringLiteral("正在准备导出任务...\n正在整理工程和报表清单，请稍候。"));
 	if (QProgressBar* progressBar = m_progressDialog->findChild<QProgressBar*>())
 	{
 		progressBar->setFormat(QStringLiteral("总体进度  %p%    %v / %m 项"));
 		progressBar->setTextVisible(true);
 	}
-
+	m_progressDialog->ensurePolished();
+	m_progressDialog->setValue(0);
 	m_progressDialog->show();
+	QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
 	for (int i = 0; i < count; ++i)
 	{
@@ -877,12 +943,15 @@ void hnOutputExcelDialog::saveConfig()
 		item->isChecked = checkBox->isChecked();
 	
 		//获取选中的Segment值
-		item->selectSegmentIndex = comBox->currentIndex();
+		if (!(m_nowStandard == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1))
+		{
+			item->selectSegmentIndex = comBox->currentIndex();
+		}
 		if (item->isChecked&& item->isShow)
 		{ 
 		
 			QStringList splits = item->segments.at(item->selectSegmentIndex).split(','); 
-			m_UserSelectCount += splits.size();
+			m_UserSelectCount += (m_nowStandard == HnProjectEnums::CityRoad && m_xrSetting->PartType == 1) ? 1 : splits.size();
 		}
 	}
 	QMap<int, QVector<double>>StreetSelectMsg;
@@ -1099,14 +1168,8 @@ void hnOutputExcelDialog::setSetting()
 	{
 		m_xrSetting->outSpeedAndMarkExcel = false;
 	}
-	if (ui.radioButton_10->isChecked())
-	{
-		m_xrSetting->BrokenPlatetype = 0;
-	}
-	else
-	{
-		m_xrSetting->BrokenPlatetype = 1;
-	}
+	// 原禁用选项固定按框面积计算，移除控件后保持此行为。
+	m_xrSetting->BrokenPlatetype = 0;
 	if (ui.radioButton_outMileWithMark->isChecked())
 	{
 		m_xrSetting->outMileWithMark = true;
@@ -1184,10 +1247,6 @@ void hnOutputExcelDialog::setSetting()
 	{
 		m_xrSetting->outMarkInfoFile = false;
 	}
-	 
-
-	m_xrSetting->PlateWidth = ui.lineEdit_9->text().toDouble();
-	m_xrSetting->PlateLength = ui.lineEdit_10->text().toDouble();
 	m_xrSetting->sheetRoundingOffNum = ui.lineEdit_15->text().toInt();
 	m_xrSetting->sheetRoundingOffNum_Dr = ui.lineEdit_16->text().toInt();
 
@@ -1375,6 +1434,57 @@ void hnOutputExcelDialog::readExcelConfigData()
 		m_configPath = QCoreApplication::applicationDirPath() + "\\config\\OutDataDesignSetting.json";
 	}
 	m_ExcelSelectConfig = AppConfig::loadFromFile(m_configPath,m_nowDrawType);
+	if (m_nowDrawType == hnCommon::ROAD_WORK_LARGE_RECT
+		&& m_ExcelSelectConfig.categories.contains(HnProjectEnums::RuralRoadlowLevel))
+	{
+		QList<ReportItem>& items = m_ExcelSelectConfig.categories[HnProjectEnums::RuralRoadlowLevel]
+			.reportGroups[QStringLiteral("单项指标出表")];
+		const QStringList names = QStringList()
+			<< QStringLiteral("（5211）路面破损评定汇总表")
+			<< QStringLiteral("（5211）路面平整度评定汇总表")
+			<< QStringLiteral("（5211）路面病害面积统计表")
+			<< QStringLiteral("（5211）技术状况评定汇总表")
+			<< QStringLiteral("（5211）技术状况评定明细表");
+		for (const QString& name : names)
+		{
+			bool exists = false;
+			for (const ReportItem& current : items)
+				if (current.displayName == name) exists = true;
+			if (exists) continue;
+			ReportItem item;
+			item.index = items.size();
+			item.displayName = name;
+			item.roadModelName = name;
+			item.modelName = name + QStringLiteral(".xlsx");
+			item.modelPath = QString();
+			item.isShow = true;
+			item.isChecked = false;
+			item.segments = name.contains(QStringLiteral("汇总"))
+				? (QList<QString>() << QStringLiteral("1000"))
+				: (QList<QString>() << QStringLiteral("10") << QStringLiteral("100") << QStringLiteral("1000"));
+			item.selectSegmentIndex = name.contains(QStringLiteral("汇总")) ? 0 : 1;
+			items.append(item);
+		}
+	}
+    // 内置 CPMS 模板随资源发布，升级后开放旧配置中禁用的对应报表。
+    for (auto category = m_ExcelSelectConfig.categories.begin(); category != m_ExcelSelectConfig.categories.end(); ++category)
+    {
+        if (category.key() != HnProjectEnums::DegreeRoad2018 && category.key() != HnProjectEnums::RuralRoadlowLevel) continue;
+        for (auto group = category.value().reportGroups.begin(); group != category.value().reportGroups.end(); ++group)
+        {
+            for (ReportItem& item : group.value())
+            {
+                if (!item.displayName.startsWith(QStringLiteral("CPMS"))) continue;
+                item.isShow = true;
+                if (!item.displayName.contains(QStringLiteral("路面")))
+                {
+                    item.segments = QList<QString>() << QStringLiteral("100");
+                    item.selectSegmentIndex = 0;
+                }
+            }
+        }
+    }
+
 }
 
 void hnOutputExcelDialog::startOutExcelManager(const QString& excelDir, const QString&selectModelTxt, hnPro::hnProject*curProject,
@@ -1425,4 +1535,112 @@ void hnOutputExcelDialog::startOutExcelManager_Street(const QString& excelDir,
 		
 		);
 	}
+}
+
+// 保留原有字段绑定，以报表选择为入口，输出位置与任务摘要始终可见。
+void hnOutputExcelDialog::setupExportWorkflow()
+{
+	setStyleSheet(hnProgressStyle::taskDialogStyleSheet());
+	setMinimumSize(760, 540);
+	resize(940, 740);
+	// 参数按三列排列，较小窗口主要纵向滚动，避免四列挤压文字。
+	ui.gridLayout_2->removeWidget(ui.cityReportGroup);
+	QList<QLayoutItem*> options;
+	while (ui.gridLayout_2->count()) options.append(ui.gridLayout_2->takeAt(0));
+	QWidget* advancedPage = new QWidget(this);
+	QVBoxLayout* advancedLayout = new QVBoxLayout(advancedPage);
+	advancedLayout->addWidget(ui.cityReportGroup);
+	ui.cityReportGroup->setVisible(m_nowStandard == HnProjectEnums::CityRoad);
+	QGridLayout* advancedGrid = new QGridLayout;
+	advancedLayout->addLayout(advancedGrid);
+	advancedLayout->addStretch();
+	const QList<QWidget*> advancedOptions = {ui.groupBox_17, ui.groupBox_18, ui.groupBox_19, ui.groupBox_20, ui.groupBox_21, ui.groupBox_22};
+	int basicIndex = 0;
+	int advancedIndex = 0;
+	for (auto item : options)
+	{
+		if (advancedOptions.contains(item->widget()))
+		{
+			item->widget()->setParent(advancedPage);
+			advancedGrid->addItem(item, advancedIndex / 2, advancedIndex % 2);
+			++advancedIndex;
+		}
+		else
+		{
+			ui.gridLayout_2->addItem(item, basicIndex / 3, basicIndex % 3);
+			++basicIndex;
+		}
+	}
+	QScrollArea* advancedScroll = new QScrollArea(ui.tabWidget);
+	advancedScroll->setWidgetResizable(true);
+	advancedScroll->setWidget(advancedPage);
+	ui.tabWidget->addTab(advancedScroll, QStringLiteral("高级设置"));
+	ui.tabWidget->setTabText(ui.tabWidget->indexOf(ui.tab_3), QStringLiteral("报表选择"));
+	ui.okButton->setText(QStringLiteral("开始导出"));
+	ui.cannelBtn->setText(QStringLiteral("关闭"));
+	ui.okButton->setDefault(true);
+	ui.tabWidget->removeTab(ui.tabWidget->indexOf(ui.tab));
+	ui.tabWidget->setTabText(ui.tabWidget->indexOf(ui.tab_1), QStringLiteral("参数与工程信息"));
+	if (isSingleProject) ui.tabWidget->setTabText(ui.tabWidget->indexOf(ui.tab_2), QStringLiteral("范围与标准"));
+	ui.tabWidget->tabBar()->moveTab(ui.tabWidget->indexOf(ui.tab_3), 0);
+	const int settingsIndex = ui.tabWidget->indexOf(ui.tab_1);
+	ui.tabWidget->removeTab(settingsIndex);
+	QScrollArea* settings = new QScrollArea(ui.tabWidget);
+	settings->setWidgetResizable(true);
+	settings->setFrameShape(QFrame::NoFrame);
+	settings->setWidget(ui.tab_1);
+	ui.tabWidget->insertTab(settingsIndex, settings, QStringLiteral("参数与工程信息"));
+	ui.tabWidget->setCurrentWidget(ui.tab_3);
+
+	QWidget* footer = new QWidget(this);
+	QVBoxLayout* layout = new QVBoxLayout(footer);
+	layout->setContentsMargins(0, 8, 0, 8);
+	m_exportSummary = new QLabel(footer);
+	m_exportSummary->setWordWrap(true);
+	m_exportSummary->setTextFormat(Qt::PlainText);
+	layout->addWidget(m_exportSummary);
+	QHBoxLayout* pathLayout = new QHBoxLayout;
+	pathLayout->addWidget(new QLabel(QStringLiteral("输出目录"), footer));
+	m_outputDirectory = new QLineEdit(m_xrSetting->OutPath, footer);
+	m_outputDirectory->setPlaceholderText(QStringLiteral("请选择报表输出文件夹"));
+	pathLayout->addWidget(m_outputDirectory, 1);
+	QPushButton* browse = new QPushButton(QStringLiteral("浏览…"), footer);
+	pathLayout->addWidget(browse);
+	layout->addLayout(pathLayout);
+	ui.gridLayout_4->removeItem(ui.horizontalLayout);
+	ui.gridLayout_4->addWidget(footer, 1, 0);
+	ui.gridLayout_4->addLayout(ui.horizontalLayout, 2, 0);
+	ui.gridLayout_4->setRowStretch(0, 1);
+	connect(browse, &QPushButton::clicked, this, &hnOutputExcelDialog::chooseOutputDirectory);
+	QTimer* summaryTimer = new QTimer(this);
+	summaryTimer->setInterval(500);
+	connect(summaryTimer, &QTimer::timeout, this, &hnOutputExcelDialog::updateExportSummary);
+	summaryTimer->start();
+	new hnWindowUiState(this, QStringLiteral("ReportExport"));
+	updateExportSummary();
+}
+
+void hnOutputExcelDialog::chooseOutputDirectory()
+{
+	const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("选择报表输出目录"), m_outputDirectory->text());
+	if (!path.isEmpty()) m_outputDirectory->setText(QDir::toNativeSeparators(path));
+}
+
+void hnOutputExcelDialog::updateExportSummary()
+{
+	if (!m_exportSummary) return;
+	int selected = 0;
+	for (auto it = m_ItemWidgetMap.constBegin(); it != m_ItemWidgetMap.constEnd(); ++it)
+	{
+		if (it.key()->isShow && it.value().first->isChecked()) ++selected;
+	}
+	QMap<int, QVector<double>> street;
+	getUserSelectExcelName(ui.street_gridLayout, street);
+	selected += street.size();
+	// 关闭工程后管理器可能已释放，摘要刷新按无工程处理。
+	const auto projectManager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+	const int projects = projectManager ? static_cast<int>(projectManager->getAllBaseProject().size()) : 0;
+	ui.okButton->setEnabled(selected > 0 && projects > 0);
+	m_exportSummary->setText(QStringLiteral("导出范围：%1 个工程  |  已选报表：%2 类  |  %3")
+		.arg(projects).arg(selected).arg(windowTitle()));
 }

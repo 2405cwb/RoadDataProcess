@@ -394,15 +394,26 @@ GeometryCalculationResult hnGeometryCalculator::calculate(const GeometryCalculat
 	}
 	reader.setSubFrameCacheEnabled(true);
 	result.scanLength = reader.GetScanLines() * 40.0 * 0.002;
-	if (std::abs(result.scanLength - input.projectLength) > 10.0)
+	if (result.scanLength <= 0.0)
 	{
 		result.status = GeometryCalculationStatus::InvalidInput;
-		result.errorMessage = QStringLiteral("工程长度(%1m)与点云扫描长度(%2m)相差超过10m")
-			.arg(input.projectLength, 0, 'f', 3).arg(result.scanLength, 0, 'f', 3);
+		result.errorMessage = QStringLiteral("点云扫描长度无效：%1m")
+			.arg(result.scanLength, 0, 'f', 3);
 		return result;
 	}
+	const double calculationLength = qMin(input.projectLength, result.scanLength);
+	if (result.scanLength + 0.001 < input.projectLength)
+	{
+		result.warningMessage = QStringLiteral(
+			"工程长度为%1m，点云扫描长度为%2m，末端%3m无点云覆盖。\n"
+			"本次已按点云有效范围0-%2m计算，超出部分不生成几何结果。")
+			.arg(input.projectLength, 0, 'f', 3)
+			.arg(result.scanLength, 0, 'f', 3)
+			.arg(input.projectLength - result.scanLength, 0, 'f', 3);
+	}
 
-	const int sampleCount = static_cast<int>(std::floor(input.projectLength / input.options.sampleSpacing)) + 1;
+	// 点云末端可能早于工程封闭里程，仅对两者共同覆盖范围采样。
+	const int sampleCount = static_cast<int>(std::floor(calculationLength / input.options.sampleSpacing)) + 1;
 	result.rawSamples.reserve(sampleCount);
 	std::vector<POINT_STRUCT_XYZIT_INFO> sourcePoints;
 	for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex)

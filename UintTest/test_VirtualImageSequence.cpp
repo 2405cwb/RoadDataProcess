@@ -1,6 +1,6 @@
 #include "test_VirtualImageSequence.h"
 
-#include "../SDK/include/VirtualImageSequence.h"
+#include "../TunnelViewerSDK/include/VirtualImageSequence.h"
 
 #include <QtTest/QTest>
 

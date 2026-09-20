@@ -81,6 +81,11 @@ QString addDiseaseDialog::getDiseaseMarkInfo()
  	return  text;
 }
 
+bool addDiseaseDialog::isContinuousDrawingEnabled() const
+{
+	return m_continuousDrawingCheckBox && m_continuousDrawingCheckBox->isChecked();
+}
+
 void addDiseaseDialog::slot_onRadioButtonToggled(bool checked)
 {
 	auto radioButton = qobject_cast<QRadioButton*>(sender());
@@ -160,6 +165,9 @@ void addDiseaseDialog::initDiseaseTypeControls(const QList<QPair<QString, QStrin
 	 
 	this->m_diseaseTypeGridLayout->setSpacing(25);	//设置布局内控件之间的距离
 	this->m_mainGridLayout->addWidget(m_diseaseTypeGroupBox);
+	m_continuousDrawingCheckBox = new QCheckBox(QStringLiteral("\u8fde\u7eed\u7ed8\u5236\u76f8\u540c\u75c5\u5bb3"), this);
+	m_continuousDrawingCheckBox->setToolTip(QStringLiteral("\u540e\u7eed\u7ed8\u5236\u4e0d\u518d\u5f39\u51fa\u75c5\u5bb3\u7c7b\u578b\u9009\u62e9\u7a97\u53e3"));
+	this->m_mainGridLayout->addWidget(m_continuousDrawingCheckBox);
 }
 
 void addDiseaseDialog::initMarkInfo()

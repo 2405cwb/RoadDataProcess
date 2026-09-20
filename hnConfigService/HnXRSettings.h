@@ -12,6 +12,11 @@ public:
 	void SetConfigFilePath(const QString&);
 	void Init();
 	void readData();
+	// 自动播放每张间隔（毫秒），旧配置默认一秒，限制极端速度。
+	enum AutoPlayInterval { MinAutoPlayIntervalMs = 200, MaxAutoPlayIntervalMs = 3000, DefaultAutoPlayIntervalMs = 1000 };
+	int autoPlayIntervalMs() const;
+	bool saveAutoPlayIntervalMs(int intervalMs);
+	bool saveCityReportSettings(int partType, int length, bool crossingEntrances);
 private:
 	QString m_iniFilePath;
 	
@@ -60,8 +65,21 @@ public:
 	/// </summary>
 	int sheetRoundingOffNum_Dr;
 
+	/// <summary>
+		/// IRI要调整处理的异常值上限
+		/// </summary>
+	 double ErrorIRI;
+
+	 /// <summary>
+	  /// IRM的异常值处理方式，0--异常值不处理，1--异常值根据设置方式调整
+	  /// </summary>
+	int ErrorVal;
+
 	double rutKCorrect;
 	double rutBCorrect;
+
+	double iriKCorrect;
+	double iriBCorrect;
 
 	//路面车辙病害的影响宽度0.4m 只对小方格的2018等级公路会用到
 	double RutDisWidth;
@@ -69,7 +87,10 @@ public:
 	/// 高速路采集了双轮迹的平整度报表导出设置，0-只导出左侧DAQ0，1-只导出右侧DAQ1，2-默认选项所有数据都导出
 	int IRIExcelSide; 
 
-
+	//左车辙调整值  直接在出表前调整 不修改原始数据
+	double rutLeftCorrect;
+	//右车辙调整值  直接在出表前调整 不修改原始数据
+	double rutRightCorrect;
 	
 	/// 当路面有水的时候，构造深度值特别小，用IRI_threshval来和路段的构造深度值比较，小于这个值就认为路面有水，调整IRI计算策略，只用加速度的位移来计算IRI
 	
@@ -147,8 +168,9 @@ public:
 	  /// </summary>
 	   double PlateLength;
 
-	   //界面移动鼠标退回阈值
-	   int movePictureBackMouseRatio;
+private:
+	   int m_autoPlayIntervalMs;
+public:
 
 	   //是否根据打标分段
 	   bool  outMileWithMark;
@@ -196,5 +218,9 @@ public:
 
 	   QString diseaseMarkTxt;
 
+	// 城镇报表：0 整桩号，1 从道路单元边界按指定长度分段。
+	int PartType = 0;
+	int PartType_Dmi_Len = 200;
+	bool roadCrossingShow = true;
 };
  

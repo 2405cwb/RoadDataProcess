@@ -1,0 +1,23 @@
+PASS: TunnelViewerSDK.vcxproj XML 可解析
+PASS: TunnelViewerSDK.vcxproj.filters XML 可解析
+PASS: vcxproj 工程引用检查：33 项均存在
+PASS: 未携带旧 debug/release 编译产物
+PASS: Item Factory
+PASS: Identity Resolver
+PASS: Layer State
+PASS: Draw Context
+PASS: AbstractTool mouseRelease
+PASS: visualIndex 坐标语义
+PASS: typeKey trimmed
+PASS: ImageSource
+PASS: ImageCacheManager
+PASS: ImageLayoutManager
+PASS: MSVC v140 配置
+PASS: Qt 5.8.0 配置
+PASS: 未发现明显 C++17 语法/库依赖
+PASS: ViewMode 枚举数值/顺序与原版一致
+PASS: DrawShape 枚举数值/顺序与原版一致
+PASS: ElementType 枚举数值/顺序与原版一致
+PASS: AnnotationData 结构与原版一致
+PASS: IDefectStorage 纯虚接口与原版一致
+PASS: 提供 VS2015 标准 .sln 入口

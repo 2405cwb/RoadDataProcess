@@ -1,5 +1,8 @@
 #include "HnXRSettings.h"
 #include <QException>
+#include <QSettings>
+#include <QFileInfo>
+#include <QDir>
 HnXRSettings* HnXRSettings::_XRSetting = nullptr;
 
 void HnXRSettings::Init()
@@ -14,6 +17,7 @@ void HnXRSettings::Init()
 }
 
 HnXRSettings::HnXRSettings()
+	: m_autoPlayIntervalMs(DefaultAutoPlayIntervalMs)
 {
 
 }
@@ -27,6 +31,13 @@ HnXRSettings & HnXRSettings::operator=(const HnXRSettings & value)
 
 void HnXRSettings::readData()
 {
+	PartType = m_Setting->ReadInteger("UI", "PartType", 0) == 1 ? 1 : 0;
+	PartType_Dmi_Len = m_Setting->ReadInteger("UI", "PartType_Dmi_Len", 200);
+	if (PartType_Dmi_Len <= 0)
+	{
+		PartType_Dmi_Len = 200;
+	}
+	roadCrossingShow = m_Setting->ReadBool("UI", "RoadCrossingShow", true);
 	DefaultPath = m_Setting->ReadString("SETTING", "DefaultPath", "");
 	lastProjectName = m_Setting->ReadString("SETTING", "lastProjectName", "");
 	lastProjectFn = m_Setting->ReadInteger("SETTING", "lastProjectFn", 0);
@@ -36,7 +47,6 @@ void HnXRSettings::readData()
 	sheetRoundingOffType = m_Setting->ReadInteger("EXCEL", "sheetRoundingOffType", 0);
 	sheetRoundingOffNum = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum", 0);
 	sheetRoundingOffNum_Dr = m_Setting->ReadInteger("SETTING", "sheetRoundingOffNum_Dr", 0);
-	movePictureBackMouseRatio= m_Setting->ReadInteger("SETTING", "movePictureBackMouseRatio", 0);
 	diseaseMarkTxt = m_Setting->ReadString("SETTING", "diseaseMarkTxt", "");
 	diseaseMarkTxts = m_Setting->ReadString("SETTING", "diseaseMarkTxts", "");
 	Las_Filter = m_Setting->ReadBool("IRM", "Las_Filter", true);
@@ -55,7 +65,13 @@ void HnXRSettings::readData()
 	MPD_K = m_Setting->ReadDouble("IRM", "MPD_K", 1);
 	MPD_B = m_Setting->ReadDouble("IRM", "MPD_B", 0);
 	IRI_threshval = m_Setting->ReadDouble("IRM", "IRI_threshval", 0);
+	ErrorIRI = m_Setting->ReadDouble("IRM", "ErrorIRI", 0);
 	MpdInterveneFAactor = m_Setting->ReadString("IRM", "MpdInterveneFAactor", "");
+	iriKCorrect = m_Setting->ReadDouble("IRM", "IriKCorrect", 0);
+	iriBCorrect = m_Setting->ReadDouble("IRM", "IriBCorrect", 0);
+	ErrorVal = m_Setting->ReadInteger("IRM", "ErrorVal", 0);
+	rutLeftCorrect = m_Setting->ReadDouble("IRM", "rutLeftCorrect", 0);
+	rutRightCorrect = m_Setting->ReadDouble("IRM", "rutRightCorrect", 0);
 
 	czDisOutSelectExcel = m_Setting->ReadInteger("EXCEL", "czDisOutSelectExcel", 0);
 	roadDisDegreeExcel = m_Setting->ReadInteger("EXCEL", "roadDisDegreeExcel", 0);
@@ -82,15 +98,64 @@ void HnXRSettings::readData()
 	RutDisWidth = m_Setting->ReadDouble("SETTING", "RutDisWidth", 0.00);
 	mile2dmiToInt = m_Setting->ReadBool("SETTING", "mile2dmiToInt", false);
 	wheelScrollOneImage = m_Setting->ReadBool("SETTING", "wheelScrollOneImage", false);
+	// Keep playback preferences beside the user INI, outside the legacy writer.
+	QSettings playback(QFileInfo(m_iniFilePath).dir().filePath(QStringLiteral("Playback.ini")), QSettings::IniFormat);
+	bool valid = false;
+	const int interval = playback.value(QStringLiteral("Playback/IntervalMs"),
+		int(DefaultAutoPlayIntervalMs)).toInt(&valid);
+	m_autoPlayIntervalMs = valid && interval >= MinAutoPlayIntervalMs && interval <= MaxAutoPlayIntervalMs
+		? interval : DefaultAutoPlayIntervalMs;
 }
+
+int HnXRSettings::autoPlayIntervalMs() const
+{
+	return m_autoPlayIntervalMs;
+}
+
+bool HnXRSettings::saveAutoPlayIntervalMs(int intervalMs)
+{
+	if (m_iniFilePath.isEmpty() || intervalMs < MinAutoPlayIntervalMs || intervalMs > MaxAutoPlayIntervalMs)
+	{
+		return false;
+	}
+	QSettings playback(QFileInfo(m_iniFilePath).dir().filePath(QStringLiteral("Playback.ini")), QSettings::IniFormat);
+	playback.setValue(QStringLiteral("Playback/IntervalMs"), intervalMs);
+	playback.sync();
+	if (playback.status() != QSettings::NoError)
+	{
+		return false;
+	}
+	m_autoPlayIntervalMs = intervalMs;
+	return true;
+}
+
+bool HnXRSettings::saveCityReportSettings(int partType, int length, bool crossingEntrances)
+{
+	// 旧配置写入器只更新已有键；同一配置文件用 QSettings 补齐新增键。
+	QSettings settings(m_iniFilePath, QSettings::IniFormat);
+	settings.setIniCodec("UTF-8");
+	settings.setValue(QStringLiteral("UI/PartType"), partType == 1 ? 1 : 0);
+	settings.setValue(QStringLiteral("UI/PartType_Dmi_Len"), length > 0 ? length : 200);
+	settings.setValue(QStringLiteral("UI/RoadCrossingShow"), crossingEntrances ? QStringLiteral("True") : QStringLiteral("False"));
+	settings.sync();
+	if (settings.status() != QSettings::NoError)
+	{
+		return false;
+	}
+	PartType = partType == 1 ? 1 : 0;
+	PartType_Dmi_Len = length > 0 ? length : 200;
+	roadCrossingShow = crossingEntrances;
+	return true;
+}
+
 void HnXRSettings::writeData()
 {
+	saveCityReportSettings(PartType, PartType_Dmi_Len, roadCrossingShow);
 
 	m_Setting->WriteInteger("SETTING", "sheetRoundingOffType", sheetRoundingOffType);
 	m_Setting->WriteInteger("SETTING", "sheetRoundingOffNum", sheetRoundingOffNum);
 	m_Setting->WriteInteger("SETTING", "sheetRoundingOffNum_Dr", sheetRoundingOffNum_Dr);
 
-	m_Setting->WriteInteger("SETTING", "movePictureBackMouseRatio", movePictureBackMouseRatio);
 	m_Setting->WriteBool("SETTING", "gpsFormat", gpsFormat);
 	m_Setting->WriteString("SETTING", "DefaultPath", DefaultPath);
 	m_Setting->WriteString("SETTING", "lastProjectName", lastProjectName);
@@ -106,7 +171,7 @@ void HnXRSettings::writeData()
 	m_Setting->WriteBool("IRM", "Las_Filter", Las_Filter);
 	m_Setting->WriteDouble("IRM", "Las_Filter_Thresh0", Las_Filter_Thresh0);
 	m_Setting->WriteDouble("IRM", "Las_Filter_Thresh1", Las_Filter_Thresh1);
-
+	m_Setting->WriteInteger("IRM", "ErrorVal", ErrorVal);
 	m_Setting->WriteInteger("IRM", "RQIJudgeType", RQIJudgeType);
 	m_Setting->WriteInteger("IRM", "IRIExcelSide", IRIExcelSide);
 	m_Setting->WriteDouble("IRM", "RutKCorrect", rutKCorrect);
@@ -119,6 +184,10 @@ void HnXRSettings::writeData()
 	m_Setting->WriteBool("IRM", "ErrorMTD", ErrorMTD);
 	m_Setting->WriteDouble("IRM", "IRI_threshval", IRI_threshval);
 	m_Setting->WriteString("IRM", "MpdInterveneFAactor", MpdInterveneFAactor);
+	m_Setting->WriteDouble("IRM", "ErrorIRI", ErrorIRI);
+	m_Setting->WriteDouble("IRM", "rutLeftCorrect", rutLeftCorrect);
+	m_Setting->WriteDouble("IRM", "rutRightCorrect", rutRightCorrect);
+
 
 	m_Setting->WriteInteger("EXCEL", "czDisOutSelectExcel", czDisOutSelectExcel);
 	m_Setting->WriteInteger("EXCEL", "roadDisDegreeExcel", roadDisDegreeExcel);

@@ -268,6 +268,16 @@ int hnOutputRoadDiseaseXRProvinceRoad::getDiseaseIndex(string strDiseaseName,int
 				return		hnLiqingDiseaseInfo::KZXB_DISEASE_TYPE;
 			}
 		}
+		if (strDiseaseName == "Ìõ×´ÐÞ²¹")
+		{
+			return		hnShuiNiDiseaseInfo::TZXB_SN_DISEASE_TYPE;
+
+		}
+		if (strDiseaseName == "¿é×´ÐÞ²¹")
+		{
+			return		hnShuiNiDiseaseInfo::KZXB_SN_DISEASE_TYPE;
+
+		}
 	}
 	if(disType == SHUINI_ROAD_TYPE)
 	{

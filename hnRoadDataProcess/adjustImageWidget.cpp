@@ -1,137 +1,140 @@
 #include "adjustImageWidget.h"
-#include "configService.h"
 
-adjustImageWidget::adjustImageWidget(QWidget *parent)
-	: QWidget(parent)
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <QTabWidget>
+#include <QVBoxLayout>
+
+adjustImageWidget::adjustImageWidget(QWidget* parent)
+    : QDialog(parent), m_tabs(new QTabWidget(this)),
+      m_2dBrightness(nullptr), m_2dContrast(nullptr), m_2dSharpen(nullptr),
+      m_3dBrightness(nullptr), m_3dContrast(nullptr), m_3dSharpen(nullptr),
+      m_2dBrightnessValue(nullptr), m_2dContrastValue(nullptr), m_2dSharpenValue(nullptr),
+      m_3dBrightnessValue(nullptr), m_3dContrastValue(nullptr), m_3dSharpenValue(nullptr)
 {
-	this->initWidgets();
+	setWindowTitle(QStringLiteral("\u56fe\u50cf\u8c03\u8282"));
+    setWindowFlags(windowFlags() | Qt::Tool);
+    setModal(false);
+    resize(360, 210);
 
-	this->initLayouts();
+    QWidget* twoDPage = nullptr;
+    QWidget* threeDPage = nullptr;
+    setupPage(true, m_2dBrightness, m_2dContrast, m_2dSharpen, twoDPage,
+        m_2dBrightnessValue, m_2dContrastValue, m_2dSharpenValue);
+    setupPage(false, m_3dBrightness, m_3dContrast, m_3dSharpen, threeDPage,
+        m_3dBrightnessValue, m_3dContrastValue, m_3dSharpenValue);
+	m_tabs->addTab(twoDPage, QStringLiteral("\u4e8c\u7ef4\u56fe"));
+	m_tabs->addTab(threeDPage, QStringLiteral("\u4e09\u7ef4\u56fe"));
 
-	this->initSignalSlots();
-
-	this->setWindowTitle(QString::fromLocal8Bit("图像调整"));
-
-//	this->setFixedSize(QSize(400, 240));
-
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->addWidget(m_tabs);
+    setLayout(layout);
 }
 
-adjustImageWidget::~adjustImageWidget()
+void adjustImageWidget::setupPage(bool is2d, QSlider*& brightness, QSlider*& contrast, QSlider*& sharpen,
+    QWidget*& page, QLabel*& brightnessValue, QLabel*& contrastValue, QLabel*& sharpenValue)
 {
+    page = new QWidget(this);
+    QFormLayout* form = new QFormLayout(page);
+    brightness = new QSlider(Qt::Horizontal, page);
+    contrast = new QSlider(Qt::Horizontal, page);
+    sharpen = new QSlider(Qt::Horizontal, page);
+    brightness->setRange(-100, 100);
+    contrast->setRange(0, 200);
+    sharpen->setRange(0, 100);
+    brightness->setValue(0);
+    contrast->setValue(100);
+    sharpen->setValue(0);
+    brightnessValue = new QLabel(page);
+    contrastValue = new QLabel(page);
+    sharpenValue = new QLabel(page);
+
+    auto addRow = [form, page](const QString& label, QSlider* slider, QLabel* value) {
+        QWidget* row = new QWidget(page);
+        QHBoxLayout* layout = new QHBoxLayout(row);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(slider);
+        value->setMinimumWidth(42);
+        layout->addWidget(value);
+        form->addRow(label, row);
+    };
+	addRow(QStringLiteral("\u4eae\u5ea6"), brightness, brightnessValue);
+	addRow(QStringLiteral("\u5bf9\u6bd4\u5ea6"), contrast, contrastValue);
+	addRow(QStringLiteral("\u9510\u5316"), sharpen, sharpenValue);
+
+	QPushButton* reset = new QPushButton(QStringLiteral("\u6062\u590d\u9ed8\u8ba4"), page);
+    form->addRow(QString(), reset);
+    connect(brightness, &QSlider::valueChanged, this, &adjustImageWidget::slot_currentValuesChanged);
+    connect(contrast, &QSlider::valueChanged, this, &adjustImageWidget::slot_currentValuesChanged);
+    connect(sharpen, &QSlider::valueChanged, this, &adjustImageWidget::slot_currentValuesChanged);
+    connect(brightness, &QSlider::sliderReleased, this, &adjustImageWidget::slot_saveCurrentValues);
+    connect(contrast, &QSlider::sliderReleased, this, &adjustImageWidget::slot_saveCurrentValues);
+    connect(sharpen, &QSlider::sliderReleased, this, &adjustImageWidget::slot_saveCurrentValues);
+    connect(reset, &QPushButton::clicked, this, &adjustImageWidget::slot_resetCurrentValues);
+    Q_UNUSED(is2d);
 }
 
-void adjustImageWidget::slot_contrastSliderValueChanged(int value)
+bool adjustImageWidget::currentIs2d() const
 {
-	double intensity = value / 10.0;
-	//通知二维视图更新
-	if (m_2dCheckBox->isChecked())
-	{
-		emit signal_2dContrastIntensityChanged(intensity);
-
-	}
-	//通知三维视图更新
-	if (m_3dCheckBox->isChecked())
-	{
-		emit signal_3dContrastIntensityChanged(intensity);
-	}
-	//设置对比度值label
-	m_contrastLabel->setText(QString::number(intensity));
+    return m_tabs->currentIndex() == 0;
 }
 
-void adjustImageWidget::slot_brightnessSliderValueChanged(int value)
+void adjustImageWidget::setAdjustments(bool is2d, int brightness, int contrast, int sharpen)
 {
-	double intensity = value / 10.0;
-	//通知二维视图更新
-	if (m_2dCheckBox->isChecked())
-	{
-		emit signal_2dBrightnessIntensityChanged(intensity);
-
-	}
-	//通知三维视图更新
-	if (m_3dCheckBox->isChecked())
-	{
-		emit signal_3dBrightnessIntensityChanged(intensity);
-	}
-	//设置亮度值label
-	m_brightnessLabel->setText(QString::number(intensity));
+    QSlider* brightnessSlider = is2d ? m_2dBrightness : m_3dBrightness;
+    QSlider* contrastSlider = is2d ? m_2dContrast : m_3dContrast;
+    QSlider* sharpenSlider = is2d ? m_2dSharpen : m_3dSharpen;
+    QSignalBlocker blockBrightness(brightnessSlider);
+    QSignalBlocker blockContrast(contrastSlider);
+    QSignalBlocker blockSharpen(sharpenSlider);
+    brightnessSlider->setValue(qBound(-100, brightness, 100));
+    contrastSlider->setValue(qBound(0, contrast, 200));
+    sharpenSlider->setValue(qBound(0, sharpen, 100));
+    updateValueLabels(is2d);
 }
 
-void adjustImageWidget::slot_onResetButtonClicked()
+void adjustImageWidget::updateValueLabels(bool is2d)
 {
-	m_contrastSlider->setValue(10);
-	m_brightnessSlider->setValue(10);
-
-	if (m_2dCheckBox->isChecked())
-	{
-		emit signal_2dResetContrastIntensity();
-		emit signal_2dResetBrightnessIntensity();
-	}
-	if (m_3dCheckBox->isChecked())
-	{
-		emit signal_3dResetContrastIntensity();
-		emit signal_3dResetBrightnessIntensity();
-	}
+    QLabel* brightnessValue = is2d ? m_2dBrightnessValue : m_3dBrightnessValue;
+    QLabel* contrastValue = is2d ? m_2dContrastValue : m_3dContrastValue;
+    QLabel* sharpenValue = is2d ? m_2dSharpenValue : m_3dSharpenValue;
+    QSlider* brightness = is2d ? m_2dBrightness : m_3dBrightness;
+    QSlider* contrast = is2d ? m_2dContrast : m_3dContrast;
+    QSlider* sharpen = is2d ? m_2dSharpen : m_3dSharpen;
+    brightnessValue->setText(QString::number(brightness->value()));
+    contrastValue->setText(QStringLiteral("%1%").arg(contrast->value()));
+    sharpenValue->setText(QStringLiteral("%1%").arg(sharpen->value()));
 }
 
-void adjustImageWidget::initWidgets()
+void adjustImageWidget::emitCurrentValues(bool save)
 {
-	m_resetButton = new QPushButton(QString::fromLocal8Bit("重置"));
-
-	m_2dCheckBox = new QCheckBox(QString::fromLocal8Bit("二维视图"));
-	m_3dCheckBox = new QCheckBox(QString::fromLocal8Bit("三维视图"));
-
-	m_contrastSlider = new QSlider(Qt::Horizontal);
-	m_contrastSlider->setMaximum(30);
-	m_contrastSlider->setValue(10);
-
-	m_brightnessSlider = new QSlider(Qt::Horizontal);
-	m_brightnessSlider->setMaximum(30);
-	m_brightnessSlider->setValue(10);
-
-	m_sharpenSlider = new QSlider(Qt::Horizontal);
-
-	m_contrastLabel = new QLabel("1.0");
-	m_brightnessLabel = new QLabel("1.0");
-	m_sharpenLabel = new QLabel("1.0");
+    const bool is2d = currentIs2d();
+    QSlider* brightness = is2d ? m_2dBrightness : m_3dBrightness;
+    QSlider* contrast = is2d ? m_2dContrast : m_3dContrast;
+    QSlider* sharpen = is2d ? m_2dSharpen : m_3dSharpen;
+    emit signal_adjustmentsPreviewChanged(is2d, brightness->value(), contrast->value(), sharpen->value());
+    if (save)
+        emit signal_adjustmentsSaveRequested(is2d, brightness->value(), contrast->value(), sharpen->value());
 }
 
-void adjustImageWidget::initLayouts()
+void adjustImageWidget::slot_currentValuesChanged()
 {
-	QHBoxLayout *checkBoxLayout = new QHBoxLayout;
-	checkBoxLayout->addWidget(m_2dCheckBox);
-	checkBoxLayout->addWidget(m_3dCheckBox);
-	checkBoxLayout->addWidget(m_resetButton);
-
-	QGridLayout *mainLayout = new QGridLayout;
-
-	mainLayout->addLayout(checkBoxLayout, 0, 0, 1, 3);
-
-	mainLayout->addWidget(new QLabel(QString::fromLocal8Bit("对比度")), 1, 0);
-	mainLayout->addWidget(m_contrastSlider, 1, 1);
-	mainLayout->addWidget(m_contrastLabel, 1, 2);
-
-	//功能未实现，暂不启用
-#if 0	
-	mainLayout->addWidget(new QLabel(QString::fromLocal8Bit("亮度")), 2, 0);
-	mainLayout->addWidget(m_brightnessSlider, 2, 1);
-	mainLayout->addWidget(m_brightnessLabel, 2, 2);
-
-	mainLayout->addWidget(new QLabel(QString::fromLocal8Bit("锐化度")), 3, 0);
-	mainLayout->addWidget(m_sharpenSlider, 3, 1);
-	mainLayout->addWidget(m_sharpenLabel, 3, 2);
-#endif
-
-	this->setLayout(mainLayout);
+    updateValueLabels(currentIs2d());
+    emitCurrentValues(false);
 }
 
-void adjustImageWidget::initSignalSlots()
+void adjustImageWidget::slot_saveCurrentValues()
 {
-	//对比度值变化
-	connect(m_contrastSlider, &QSlider::valueChanged, this, &adjustImageWidget::slot_contrastSliderValueChanged);
+    emitCurrentValues(true);
+}
 
-	//对比度重置
-	connect(m_resetButton, &QPushButton::clicked, this, &adjustImageWidget::slot_onResetButtonClicked);
-
-	//亮度值变化
-	connect(m_brightnessSlider, &QSlider::valueChanged, this, &adjustImageWidget::slot_brightnessSliderValueChanged);
+void adjustImageWidget::slot_resetCurrentValues()
+{
+    const bool is2d = currentIs2d();
+    setAdjustments(is2d, 0, 100, 0);
+    emitCurrentValues(true);
 }

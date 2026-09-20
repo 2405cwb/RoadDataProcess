@@ -1,0 +1,9 @@
+QT += core gui widgets sql
+CONFIG += console c++11 release
+CONFIG -= debug app_bundle
+TARGET = hn-mark-pile-check
+INCLUDEPATH += ../../hnRoadDataProcess ../../hnApplication ../../hnQtCommon ../../hnCommon ../../hnDataTable ../../3rd/SQLite/include ../../QXlsx/header ../../hnConfigService
+SOURCES += check.cpp ../../hnRoadDataProcess/projectView.cpp
+HEADERS += ../../hnRoadDataProcess/projectView.h
+FORMS += ../../hnRoadDataProcess/projectView.ui
+LIBS += -Lruntime -L../../bin/Release-x64 -lhnApplication -lhnProject -lhnDataTable -lhnCommon -lhnConfigService -lhnQtCommon -lQXlsx

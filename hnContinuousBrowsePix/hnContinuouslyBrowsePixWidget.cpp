@@ -86,12 +86,12 @@ void hnContinuouslyBrowsePixWidget::init()
 {
 	this->setWindowTitle("图像显示");
 
-	// 自动播放固定为每秒前进一张图片，不再使用旧的速度加减逻辑。
+	// 每次前进一张图片，间隔从用户配置读取。
 	this->m_autoPlay = false;
 	if (!m_autoPlayTimer)
 	{
 		m_autoPlayTimer = new QTimer(this);
-		m_autoPlayTimer->setInterval(1000);
+		setAutoPlayIntervalMs(xrSetting->autoPlayIntervalMs());
 		connect(m_autoPlayTimer, &QTimer::timeout, this, [this]()
 		{
 			if (!m_autoPlay || !stepOneImage())
@@ -197,43 +197,10 @@ void hnContinuouslyBrowsePixWidget::add2dToolbar()
 	toolBarLayout->addWidget(markBtn);
 	toolBarLayout->addWidget(showGpsBtn);
 
-	auto brightnessLabel = new QLabel(QString::fromUtf8("\xE4\xBA\xAE\xE5\xBA\xA6"));
-	auto brightnessSlider = new QSlider(Qt::Horizontal);
-	brightnessSlider->setRange(-100, 100);
-	brightnessSlider->setValue(0);
-	brightnessSlider->setFixedWidth(120);
-	brightnessSlider->setToolTip(QString::fromUtf8("\xE8\xB0\x83\xE6\x95\xB4\xE5\xBD\x93\xE5\x89\x8D\xE8\xB7\xAF\xE9\x9D\xA2\xE5\xBD\xB1\xE5\x83\x8F\xE4\xBA\xAE\xE5\xBA\xA6\xEF\xBC\x8C\xE5\x8F\x8C\xE5\x87\xBB\xE5\x8F\xAF\xE6\x81\xA2\xE5\xA4\x8D\xE9\xBB\x98\xE8\xAE\xA4"));
-	auto brightnessValueLabel = new QLabel(QStringLiteral("0"));
-	brightnessValueLabel->setFixedWidth(28);
-	auto brightnessResetBtn = new QPushButton(QString::fromUtf8("\xE5\xA4\x8D\xE4\xBD\x8D"));
-	brightnessResetBtn->setFixedWidth(42);
-	toolBarLayout->addSpacing(8);
-	toolBarLayout->addWidget(brightnessLabel);
-	toolBarLayout->addWidget(brightnessSlider);
-	toolBarLayout->addWidget(brightnessValueLabel);
-	toolBarLayout->addWidget(brightnessResetBtn);
-
-//	toolBarLayout->addWidget(diseaseRectShowBtn);
-
 	toolBarLayout->addSpacerItem(new QSpacerItem(20, 10, QSizePolicy::Fixed, QSizePolicy::Minimum));
-
-
-	
-  
 	layoutUpDown->addLayout(toolBarLayout);
 	layoutUpDown->addLayout(this->m_mainLayout);
 	this->setLayout(layoutUpDown);
-
-	connect(brightnessSlider, &QSlider::valueChanged, this,
-		[this, brightnessValueLabel](int value)
-	{
-		brightnessValueLabel->setText(QString::number(value));
-		emit signal_imageBrightnessChanged(value);
-	});
-	connect(brightnessResetBtn, &QPushButton::clicked, brightnessSlider, [brightnessSlider]()
-	{
-		brightnessSlider->setValue(0);
-	});
 
 	connect(this->showGpsBtn, &QCheckBox::stateChanged, this, [&](int state)
 	{
@@ -303,40 +270,12 @@ void hnContinuouslyBrowsePixWidget::add3dToolbar()
 	//deepExampleBtn->setFixedWidth(30); 
 	toolBarLayout->addWidget(deepExampleBtn);
 	addAutoPlayControl(toolBarLayout);
-	auto brightnessLabel = new QLabel(QString::fromUtf8("\xE4\xBA\xAE\xE5\xBA\xA6"));
-	auto brightnessSlider = new QSlider(Qt::Horizontal);
-	brightnessSlider->setRange(-100, 100);
-	brightnessSlider->setValue(0);
-	brightnessSlider->setFixedWidth(120);
-	auto brightnessValueLabel = new QLabel(QStringLiteral("0"));
-	brightnessValueLabel->setFixedWidth(28);
-	auto brightnessResetBtn = new QPushButton(QString::fromUtf8("\xE5\xA4\x8D\xE4\xBD\x8D"));
-	brightnessResetBtn->setFixedWidth(42);
-	toolBarLayout->addSpacing(8);
-	toolBarLayout->addWidget(brightnessLabel);
-	toolBarLayout->addWidget(brightnessSlider);
-	toolBarLayout->addWidget(brightnessValueLabel);
-	toolBarLayout->addWidget(brightnessResetBtn);
+
 	toolBarLayout->addSpacerItem(new QSpacerItem(20, 10, QSizePolicy::Fixed, QSizePolicy::Minimum));
-
-
-
-
 	layoutUpDown->addLayout(toolBarLayout);
 	layoutUpDown->addLayout(this->m_mainLayout);
-	this->setLayout(layoutUpDown); 
-	 
+	this->setLayout(layoutUpDown);
 	connect(deepExampleBtn, &QPushButton::clicked, this, &hnContinuouslyBrowsePixWidget::slot_Show3dDeepExample);
-	connect(brightnessSlider, &QSlider::valueChanged, this,
-		[this, brightnessValueLabel](int value)
-	{
-		brightnessValueLabel->setText(QString::number(value));
-		emit signal_imageBrightnessChanged(value);
-	});
-	connect(brightnessResetBtn, &QPushButton::clicked, brightnessSlider, [brightnessSlider]()
-	{
-		brightnessSlider->setValue(0);
-	});
 
 }
 
@@ -404,7 +343,7 @@ void hnContinuouslyBrowsePixWidget::addAutoPlayControl(QHBoxLayout* layout)
 {
 	playBtn = new QPushButton(QStringLiteral("自动播放"), this);
 	playBtn->setFixedWidth(72);
-	playBtn->setToolTip(QStringLiteral("每秒自动前进一张图片"));
+	playBtn->setToolTip(QStringLiteral("按设定间隔自动浏览图片，可在软件设置－基础设置－操作设置中调整速度"));
 	layout->addWidget(playBtn);
 	connect(playBtn, &QPushButton::clicked, this, &hnContinuouslyBrowsePixWidget::toggleAutoPlay);
 }
@@ -425,7 +364,17 @@ void hnContinuouslyBrowsePixWidget::toggleAutoPlay()
 	updateAutoPlayButton();
 	if (m_autoPlayTimer)
 	{
+		setAutoPlayIntervalMs(xrSetting->autoPlayIntervalMs());
 		m_autoPlayTimer->start();
+	}
+}
+
+void hnContinuouslyBrowsePixWidget::setAutoPlayIntervalMs(int intervalMs)
+{
+	if (m_autoPlayTimer)
+	{
+		m_autoPlayTimer->setInterval(qBound(int(HnXRSettings::MinAutoPlayIntervalMs),
+			intervalMs, int(HnXRSettings::MaxAutoPlayIntervalMs)));
 	}
 }
 

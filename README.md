@@ -2,7 +2,7 @@
 
 `hnRoadDataProcess` 是 Windows + C++ + Qt 的公路二维、三维、景观影像内业处理软件，覆盖工程导入、连续影像浏览、2D/3D 联动、病害绘制与管理、路面打标、里程校准、地图和成果输出。
 
-本文基于 2026-07-14 当前工作区，重点说明当前 SDK 视图架构和病害链路。SDK 自身接口见 [SDK/README.md](SDK/README.md)，迁移过程和历史验证记录见 [docs/sdk_migration_task_handoff.md](docs/sdk_migration_task_handoff.md)。
+本文重点说明当前 SDK 视图架构和病害链路。SDK 自身接口见 [TunnelViewerSDK_V1.1.1/README.md](TunnelViewerSDK_V1.1.1/README.md)，迁移过程和历史验证记录见 [docs/sdk_migration_task_handoff.md](docs/sdk_migration_task_handoff.md)。
 
 ## 1. 当前架构结论
 
@@ -58,9 +58,9 @@ flowchart TD
    看正式病害、临时预览、选中、标签引线和材质边界如何加入 scene。
 5. `hnApplication/hnDiseaseService.h/.cpp`
    看病害数据库访问、缓存失效和刷新信号。
-6. `SDK/src/TiledGraphicsView.*`、`TunnelSectionItem.*`
+6. `TunnelViewerSDK_V1.1.1/src/TiledGraphicsView.*`、`TunnelSectionItem.*`
    看连续布局、坐标转换、滚动缩放和图片加载。
-7. `SDK/include/tools/GridSelectionTool.h`、`SDK/src/GridSelectionTool.cpp`
+7. `TunnelViewerSDK_V1.1.1/include/tools/GridSelectionTool.h`、`TunnelViewerSDK_V1.1.1/src/GridSelectionTool.cpp`
    看小框点选、矩形选格和折线 supercover 逻辑。
 
 ## 4. 工程打开与卸载

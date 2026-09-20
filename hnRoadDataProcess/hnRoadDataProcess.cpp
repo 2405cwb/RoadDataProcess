@@ -1,5 +1,12 @@
-﻿#define 地图
+﻿#include "hnViewModeHint.h"
+#include <QTimer>
+#include <QPushButton>
+#define 地图
 #include "hnRoadDataProcess.h"
+#include "hnProjectLedgerWriter.h"
+#include "hnReportMergeDlg.h"
+#include "hnDiseaseSampleExporter.h"
+#include "hnRoadDiseaseImageExporter.h"
 #include <QDockWidget>
 #include <QTreeWidget>
 #include <QDesktopWidget>
@@ -39,7 +46,12 @@
 #include "hnLineCameraValidAreaDialog.h"
 #include "calculateIrmForm.h"
 #include "statusBarWidget.h"
+#include "adjustImageWidget.h"
+#include "../TunnelViewerSDK/include/ImageDisplayAdjustments.h"
+#include <QDir>
+#include <QSettings>
 #include "hnOutputExcelDialog.h"
+#include "hnRoutePhotoExportDialog.h"
 #include "hnOutExcelMileManage.h"
 #include "..\hnProject\hn3DProject.h"
 #include "..\hnQtCommon\MyCommonMethods.h"
@@ -62,6 +74,10 @@
 #include "hnXlsxInterface.h"
 #include "hnAboutInfoWidgets.h"
 #include "..\hnDBManagerDlg.h" 
+#include "hnResultDataDialog.h"
+#include "hnProjectDiagnosticService.h"
+#include "hnDiagnosticResultDialog.h"
+#include "hnProjectImportValidator.h"
 #include "../HighAccuracySettingForm.h"
 #include "../hnQtCommon/HighAccuracyInfo.h"
 #include "..\hnCommon\hn2dDiseaseDef.h"
@@ -72,11 +88,46 @@
 #include "hnCalRoadGeometry.h"
 #include "hnGeometryCalculation.h"
 #include <QProgressDialog>
+#include <QRegExp>
+#include <QSet>
+#include <QDialogButtonBox>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QVBoxLayout>
 #include "../hnApplication/hnDiseaseService.h"
 #include "../hnQtCommon/hnCenterToast.h"
 #include "../hnQtCommon/BusyLoadingDialog.h"
+#include "hnGjConvertSourceService.h"
+#include "hnGjExportModeDialog.h"
+#include "hn2dDiseaseExchangeService.h"
 using namespace hnApp;
 using namespace hnPro;
+
+static ImageDisplayAdjustments readImageDisplayAdjustments(const QString& projectPath)
+{
+	ImageDisplayAdjustments adjustments;
+	if (projectPath.isEmpty()) return adjustments;
+	QSettings settings(QDir(projectPath).filePath(QStringLiteral("ImageDisplayAdjust.ini")), QSettings::IniFormat);
+	settings.beginGroup(QStringLiteral("ImageDisplay"));
+	adjustments.brightness = qBound(-100, settings.value(QStringLiteral("Brightness"), 0).toInt(), 100);
+	adjustments.contrast = qBound(0, settings.value(QStringLiteral("Contrast"), 100).toInt(), 200);
+	adjustments.sharpen = qBound(0, settings.value(QStringLiteral("Sharpen"), 0).toInt(), 100);
+	settings.endGroup();
+	return adjustments;
+}
+
+static void writeImageDisplayAdjustments(const QString& projectPath, const ImageDisplayAdjustments& adjustments)
+{
+	if (projectPath.isEmpty()) return;
+	QSettings settings(QDir(projectPath).filePath(QStringLiteral("ImageDisplayAdjust.ini")), QSettings::IniFormat);
+	settings.beginGroup(QStringLiteral("ImageDisplay"));
+	settings.setValue(QStringLiteral("Brightness"), qBound(-100, adjustments.brightness, 100));
+	settings.setValue(QStringLiteral("Contrast"), qBound(0, adjustments.contrast, 200));
+	settings.setValue(QStringLiteral("Sharpen"), qBound(0, adjustments.sharpen, 100));
+	settings.endGroup();
+	settings.sync();
+}
 
 static double projectDistanceFromRightEdge(hnPro::hnProject* project, double sourcePixelX)
 {
@@ -137,37 +188,178 @@ static bool ensureLineCameraAreasForRecentProjects(std::vector<hnCommon::hnProje
 	}
 	return true;
 }
-hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
+
+static void normalizePreferredDiseaseDrawMode(std::vector<hnCommon::hnProjectDataInfo>& projects)
+{
+	for (hnCommon::hnProjectDataInfo& data : projects)
+	{
+		const QString root = QString::fromLocal8Bit(data.strProjectPath);
+		QStringList candidates;
+		candidates << QDir(root).filePath(QStringLiteral("ProjectInfo.txt"));
+		const QString twoDName = QString::fromLocal8Bit(data.str2DProName);
+		if (!twoDName.isEmpty())
+		{
+			candidates << QDir(QDir(root).filePath(twoDName)).filePath(QStringLiteral("ProjectInfo.txt"));
+		}
+
+		for (const QString& path : qAsConst(candidates))
+		{
+			QFile file(path);
+			if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+			{
+				continue;
+			}
+			bool preferredModeFound = false;
+			QTextStream stream(&file);
+			stream.setCodec("UTF-8");
+			QString section;
+			while (!stream.atEnd())
+			{
+				const QString line = stream.readLine().trimmed();
+				if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']')))
+				{
+					section = line.mid(1, line.size() - 2).trimmed();
+					continue;
+				}
+				if (section != QStringLiteral("二三维设置信息")
+					|| !line.startsWith(QStringLiteral("病害绘制模式")))
+				{
+					continue;
+				}
+				const int colon = qMax(line.indexOf(QStringLiteral("：")), line.indexOf(QLatin1Char(':')));
+				bool ok = false;
+				const int mode = colon >= 0 ? line.mid(colon + 1).trimmed().toInt(&ok) : -1;
+				if (ok && mode >= 0 && mode <= 2)
+				{
+					data.proSetInfo.nDrawType = mode;
+					preferredModeFound = true;
+				}
+				break;
+			}
+			if (preferredModeFound)
+			{
+				break;
+			}
+		}
+	}
+}
+
+static bool validateProjectsBeforeOpen(
+	const std::vector<hnCommon::hnProjectDataInfo>& projects,
+	QWidget* parent)
+{
+	ProjectImportValidationResult validationResult;
+	{
+		BusyLoadingGuard validationLoading(parent, QStringLiteral("检查工程数据"),
+			QStringLiteral("正在检查必需文件和图片索引，请稍后......"));
+		hnProjectImportValidator validator;
+		validationResult = validator.validate(projects,
+			[&validationLoading](int current, int total, const QString& projectName, qint64 imageCount)
+			{
+				validationLoading.setMessage(
+					QStringLiteral("正在检查工程 %1/%2：【%3】\n已扫描图片 %4 张")
+					.arg(current).arg(total).arg(projectName).arg(imageCount));
+			});
+	}
+
+	if (!validationResult.isValid())
+	{
+		QMessageBox messageBox(parent);
+		messageBox.setWindowTitle(QStringLiteral("工程数据检查未通过"));
+		messageBox.setIcon(QMessageBox::Critical);
+		messageBox.setText(validationResult.errors.first());
+		messageBox.setInformativeText(QStringLiteral("共发现 %1 项问题。请展开“详细信息”查看全部工程和完整路径，修复后重新导入。")
+			.arg(validationResult.errors.size()));
+		messageBox.setDetailedText(validationResult.errors.join(QStringLiteral("\n\n")));
+		messageBox.setStandardButtons(QMessageBox::Ok);
+		messageBox.setWindowFlags(messageBox.windowFlags() & ~Qt::MSWindowsFixedSizeDialogHint);
+		messageBox.setSizeGripEnabled(true);
+		messageBox.setMinimumSize(760, 480);
+		messageBox.resize(980, 680);
+		messageBox.exec();
+		return false;
+	}
+
+	if (!validationResult.notices.isEmpty())
+	{
+		// 一个批次只显示一次非阻断提示，关闭提示后继续导入全部工程。
+		QMessageBox noticeBox(parent);
+		noticeBox.setWindowTitle(QStringLiteral("三维影像数据提示"));
+		noticeBox.setIcon(QMessageBox::Warning);
+		noticeBox.setText(QStringLiteral("部分二三维工程缺少三维影像索引，三维影像功能可能无法使用。"));
+		noticeBox.setInformativeText(QStringLiteral("共发现 %1 项提示。工程将继续导入，二维功能可以正常使用；请展开“详细信息”查看工程和完整路径。")
+			.arg(validationResult.notices.size()));
+		noticeBox.setDetailedText(validationResult.notices.join(QStringLiteral("\n\n")));
+		noticeBox.setStandardButtons(QMessageBox::Ok);
+		noticeBox.setWindowFlags(noticeBox.windowFlags() & ~Qt::MSWindowsFixedSizeDialogHint);
+		noticeBox.setSizeGripEnabled(true);
+		noticeBox.setMinimumSize(760, 480);
+		noticeBox.resize(980, 680);
+		noticeBox.exec();
+	}
+
+	if (!validationResult.warnings.isEmpty())
+	{
+		QMessageBox warningBox(parent);
+		warningBox.setWindowTitle(QStringLiteral("工程数据量较大"));
+		warningBox.setIcon(QMessageBox::Warning);
+		warningBox.setText(validationResult.warnings.first());
+		warningBox.setInformativeText(QStringLiteral("建议减少单次导入的工程数量。是否仍然继续导入？"));
+		warningBox.setDetailedText(validationResult.warnings.join(QStringLiteral("\n\n")));
+		warningBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+		warningBox.setDefaultButton(QMessageBox::No);
+		warningBox.setWindowFlags(warningBox.windowFlags() & ~Qt::MSWindowsFixedSizeDialogHint);
+		warningBox.setSizeGripEnabled(true);
+		if (warningBox.exec() != QMessageBox::Yes)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+hnRoadDataProcess::hnRoadDataProcess(QWidget* parent)
 	: hnRibbonMainWindow(parent), m_pRel3dView(NULL), m_pHn3dView(NULL), m_DockManager(NULL), m_2dPixScrollWidget(NULL),
 	m_3dPixScrollWidget(NULL), m_diseaseListWidgetDockWidget(NULL), m_diseaseListWidget(NULL), m_pStreetViewWidget(NULL)
 	, m_projects(NULL), m_outExcelDialog(nullptr), m_projectConfgDialog(nullptr), m_projectDockWidget(NULL), m_projectWidget(NULL), m_IrmShowWidget(NULL), m_mapWidget(NULL)
+	, m_exportGJDatasAction(NULL)
 {
+	QElapsedTimer startupTimer;
+	startupTimer.start();
+	qInfo().noquote() << "[HN_STARTUP][MainWindowCtorStart]";
 	m_centerToast = new hnCenterToast(this);
 	m_DockManager = new hn::CDockManager(this);
 
 	// 创建工具栏
 	this->createAction();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=createAction" << "elapsedMs=" << startupTimer.elapsed();
 
 	//初始化工程相关信息
 	if (!this->initProject())
 	{
 		qWarning() << QString::fromLocal8Bit("初始化工程信息失败");
 	}
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=initProject" << "elapsedMs=" << startupTimer.elapsed();
 
 	// 创建视图;
 	this->createView();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=createView" << "elapsedMs=" << startupTimer.elapsed();
 
 	//初始化对话框
 	this->initDlg();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=initDlg" << "elapsedMs=" << startupTimer.elapsed();
 
 	// 创建连接
 	this->createConnect();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=createConnect" << "elapsedMs=" << startupTimer.elapsed();
 
 	// 树状视图连接
 	this->createTreeConnect();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=createTreeConnect" << "elapsedMs=" << startupTimer.elapsed();
 
 	//初始化快捷键
 	this->initShortCuts();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=initShortCuts" << "elapsedMs=" << startupTimer.elapsed();
 
 	//状态栏显示
 	this->statusBar()->show();
@@ -176,15 +368,25 @@ hnRoadDataProcess::hnRoadDataProcess(QWidget *parent)
 	this->showMaximized();
 
 	// 读取已有布局，无效，需要实现各个dockpane的存储;
+	m_factoryDockLayout = m_DockManager->saveState();
 	this->readLayout();
+	setupWorkspaceFeedback();
+	qInfo().noquote() << "[HN_STARTUP][Step]" << "name=readLayout" << "elapsedMs=" << startupTimer.elapsed();
 
 	//设置软件图标
 	this->setWindowIcon(QIcon(":/icons/iconsNew/logo_xroe.ico"));
+	qInfo().noquote() << "[HN_STARTUP][MainWindowCtorEnd]" << "totalMs=" << startupTimer.elapsed();
 
 }
 
 hnRoadDataProcess::~hnRoadDataProcess()
 {
+	// 先销毁导出窗口及其摘要定时器，避免退出时访问已释放的工程管理器。
+	if (m_outExcelDialog)
+	{
+		delete m_outExcelDialog;
+		m_outExcelDialog = nullptr;
+	}
 	if (m_geometryCalculationThread && m_geometryCalculationThread->isRunning())
 	{
 		m_geometryCalculationThread->requestCancel();
@@ -227,8 +429,14 @@ void hnRoadDataProcess::widgetviewActive(WId hwnd)
 	}
 }
 
-void hnRoadDataProcess::closeEvent(QCloseEvent * e)
+void hnRoadDataProcess::closeEvent(QCloseEvent* e)
 {
+	// 先销毁导出窗口及其摘要定时器，避免退出时访问已释放的工程管理器。
+	if (m_outExcelDialog)
+	{
+		delete m_outExcelDialog;
+		m_outExcelDialog = nullptr;
+	}
 	// QWebEngine starts its global shutdown when the last top-level window
 	// closes.  Destroy the map page first so Chromium has no live scheduler
 	// clients left when ResourceDispatcherHostImpl::OnShutdown() runs.
@@ -241,7 +449,7 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 	{
 		return;
 	}
-	hnPro::hnProject * lastProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	hnPro::hnProject* lastProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	//记录最后工程帧号
 	const int frameNum = m_2dPixScrollWidget->getPixWidget()->getButtomFrameNumber();
 
@@ -255,9 +463,9 @@ void hnRoadDataProcess::closeEvent(QCloseEvent * e)
 	m_xrSetting->writeData();
 }
 
-void hnRoadDataProcess::showEvent(QShowEvent *event)
+void hnRoadDataProcess::showEvent(QShowEvent* event)
 {
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][MainWindowShow]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "visible=" << isVisible()
@@ -266,7 +474,7 @@ void hnRoadDataProcess::showEvent(QShowEvent *event)
 		<< "maximized=" << isMaximized()
 		<< "fullScreen=" << isFullScreen()
 		<< "geo=" << QString("%1,%2,%3,%4").arg(geometry().x()).arg(geometry().y()).arg(geometry().width()).arg(geometry().height());
-	#endif
+#endif
 	this->setAttribute(Qt::WA_Mapped);
 	QWidget::showEvent(event);
 }
@@ -425,10 +633,10 @@ void hnRoadDataProcess::createView()
 
 #if 0
 	// 在绘图区上方添加工具按钮
-	QToolBar *toolBar = new QToolBar();
+	QToolBar* toolBar = new QToolBar();
 	const QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 		QIcon(QStringLiteral(":/icons/iconsNew/导入工程.png")));
-	QAction *act = new QAction(projectIcon, QStringLiteral("&导入"), this);
+	QAction* act = new QAction(projectIcon, QStringLiteral("&导入"), this);
 	toolBar->addAction(act);
 	m_2dPixScrollDocWidget->setToolBar(toolBar);
 #endif
@@ -523,8 +731,8 @@ void hnRoadDataProcess::createView()
 
 	if (!m_mapWidget)
 	{
-	m_mapWidget = new  CustomBaiduMapView(this);
-	m_mapWidget->setWindowTitle(QStringLiteral("地图显示"));
+		m_mapWidget = new  CustomBaiduMapView(this);
+		m_mapWidget->setWindowTitle(QStringLiteral("地图显示"));
 	}
 
 	m_winMapDockWidget = new hn::CDockWidget(QStringLiteral("地图显示"), this);
@@ -574,11 +782,12 @@ void hnRoadDataProcess::createView()
 	m_projectDockWidget->setMinimumWidth(260);
 	m_DockManager->addDockWidget(hn::LeftDockWidgetArea, m_projectDockWidget);
 	m_pShowPaneMenu->addAction(m_projectDockWidget->toggleViewAction());
-	 
+
 }
 
 void hnRoadDataProcess::initDlg()
 {
+	m_adjustImageWidget = new adjustImageWidget(this);
 	m_regionJumpDlg = new hnRegionJumpDlg(this);
 	m_projectConfgDialog = new hnProjectConfig(this);
 	m_dxfExportDialog = new hnDxfCaculateDialog(this);
@@ -593,6 +802,7 @@ void hnRoadDataProcess::createAction()
 	// 软件名称
 	//设置主窗口标题
 	setWindowTitle(QStringLiteral("公路二三维一体化数据处理平台"));
+	//setWindowTitle(QStringLiteral("路况检测数据处理和分析评定系统"));
 	//创建一个hnRibbonBar框架
 	hnRibbonBar* ribbon = ribbonBar();
 	//设置字体属性
@@ -617,7 +827,19 @@ void hnRoadDataProcess::createAction()
 
 	// 数据输出
 	hnRibbonCategory* categoryView = ribbon->addCategoryPage(QStringLiteral("数据输出"));
-	createOutputCategory(categoryView);
+	createOutputCategory(categoryView); 
+
+
+    hnRibbonCategory* commonPage = ribbon->addCategoryPage(QStringLiteral("公共功能"));
+    hnRibbonPannel* recognition = commonPage->addPannel(QStringLiteral("自动识别工具"));
+    QAction* manualSamples = new QAction(QIcon(QStringLiteral(":/icons/iconsNew/添加病害.png")), QStringLiteral("导出路面人工病害"), this);
+    manualSamples->setToolTip(QStringLiteral("完整导出当前工程数据库，病害仅保留人工路面病害，保存到工程根目录。"));
+    recognition->addLargeAction(manualSamples);
+    connect(manualSamples, &QAction::triggered, this, &hnRoadDataProcess::slot_exportManualRoadDiseases);
+    QAction* negativeSamples = new QAction(QIcon(QStringLiteral(":/icons/iconsNew/删除病害.png")), QStringLiteral("导出路面负样本"), this);
+    negativeSamples->setToolTip(QStringLiteral("完整导出当前工程数据库，病害仅保留用户删除的路面病害，保存到工程根目录。"));
+    recognition->addLargeAction(negativeSamples);
+    connect(negativeSamples, &QAction::triggered, this, &hnRoadDataProcess::slot_exportRoadNegativeSamples);
 
 	// 点云处理
 #if 0	//功能暂未实现 暂不显示
@@ -633,71 +855,74 @@ void hnRoadDataProcess::createAction()
 	hnRibbonCategory* categoryHelp = ribbon->addCategoryPage(QStringLiteral("系统"));
 	createSystemCategory(categoryHelp);
 	this->m_statusBarWidget = new statusBarWidget();
-	this->statusBar()->addWidget(m_statusBarWidget);
+	this->statusBar()->addWidget(m_statusBarWidget, 1);
+	m_statusBarWidget->setMinimumWidth(0);
+	m_statusBarWidget->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+	m_statusBarWidget->setTextFormat(Qt::PlainText);
 }
 
 void hnRoadDataProcess::initShortCuts()
 {
 	//添加病害
-	QHotkey *addDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F1 ), true, this);
+	QHotkey* addDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F1), true, this);
 	connect(addDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 
 	//删除病害
-	QHotkey *deleteDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F2 ), true, this);
+	QHotkey* deleteDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F2), true, this);
 	connect(deleteDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 
 	//编辑病害
-	QHotkey *editDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F3 ), true, this);
+	QHotkey* editDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F3), true, this);
 	connect(editDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 
 	//移动病害
-	QHotkey *moveDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier), true, this);
+	QHotkey* moveDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_M | Qt::ShiftModifier), true, this);
 	connect(moveDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToMoveDiseaseMode);
 
 
 	//合并病害
-	QHotkey *mergeDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_U | Qt::ShiftModifier), true, this);
+	QHotkey* mergeDiseaseHotKey = new QHotkey(QKeySequence(Qt::Key_F4), true, this);
 	connect(mergeDiseaseHotKey, &QHotkey::activated, this, &hnRoadDataProcess::slot_changeToMergeDiseaseMode);
 
 	//二三维视图矫正
-	QHotkey *enterHotKey = new QHotkey(QKeySequence(Qt::Key_C | Qt::ShiftModifier), true, this);
+	QHotkey* enterHotKey = new QHotkey(QKeySequence(Qt::Key_C | Qt::ShiftModifier), true, this);
 
 	connect(enterHotKey, &QHotkey::activated, [this]() {
 
-        if (m_2dPixScrollWidget->getPixWidget()->getMode() == hnWorkMode::GET_MILE)
-        {
-            const double selected2dMile = m_2dPixScrollWidget->getPixWidget()->getEncoderMile();
-            const double selected3dMile = m_3dPixScrollWidget->getPixWidget()->getEncoderMile();
-            if (selected2dMile < 0.0 || selected3dMile < 0.0)
-            {
-                QMessageBox::warning(nullptr, QString::fromLocal8Bit("提示"),
-                    QString::fromLocal8Bit("请先分别点击二维视图和三维视图中的同一位置，再按Shift+C 进行矫正"),
-                    QString::fromLocal8Bit("确定"));
-                return;
-            }
+		if (m_2dPixScrollWidget->getPixWidget()->getMode() == hnWorkMode::GET_MILE)
+		{
+			const double selected2dMile = m_2dPixScrollWidget->getPixWidget()->getEncoderMile();
+			const double selected3dMile = m_3dPixScrollWidget->getPixWidget()->getEncoderMile();
+			if (selected2dMile < 0.0 || selected3dMile < 0.0)
+			{
+				QMessageBox::warning(nullptr, QString::fromLocal8Bit("提示"),
+					QString::fromLocal8Bit("请先分别点击二维视图和三维视图中的同一位置，再按Shift+C 进行矫正"),
+					QString::fromLocal8Bit("确定"));
+				return;
+			}
 
-            double diff = selected2dMile - selected3dMile;
-            auto dataManager = hnDataManager::getDataManager();
-            if (dataManager->isOpenProject())
-            {
-                auto currentProject = dataManager->getCurrentProject();
-                if (currentProject && currentProject->get3DProject())
-                {
-                    m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
-                    m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
-                    currentProject->set2d3dMileDiff(diff);
-                    m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
-                    m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
-                    const double source2dMile = m_2dPixScrollWidget->getPixWidget()->currentBottomEncoderMile();
-                    syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
+			double diff = selected2dMile - selected3dMile;
+			auto dataManager = hnDataManager::getDataManager();
+			if (dataManager->isOpenProject())
+			{
+				auto currentProject = dataManager->getCurrentProject();
+				if (currentProject && currentProject->get3DProject())
+				{
+					m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
+					m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
+					currentProject->set2d3dMileDiff(diff);
+					m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+					m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+					const double source2dMile = m_2dPixScrollWidget->getPixWidget()->currentBottomEncoderMile();
+					syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
 
-                    QMessageBox::information(nullptr, QString::fromLocal8Bit("提示"),
+					QMessageBox::information(nullptr, QString::fromLocal8Bit("提示"),
 						QString::fromLocal8Bit("已经对二三维里程差值进行矫正"),
-                        QString::fromLocal8Bit("确定"));
-                }
-            }
-        }
-	});
+						QString::fromLocal8Bit("确定"));
+				}
+			}
+		}
+		});
 }
 
 // 创建连接
@@ -714,8 +939,25 @@ void hnRoadDataProcess::createConnect()
 	connect(m_oShapeViewportAct, &QAction::triggered, this, &hnRoadDataProcess::slot_toStandard2View);
 	connect(m_o3ShapeViewportAct, &QAction::triggered, this, &hnRoadDataProcess::slot_toStandard3View);
 	connect(m_oDViewportAct, &QAction::triggered, this, &hnRoadDataProcess::slot_toStandard23View);
+	connect(m_imageAdjustAct, &QAction::triggered, this, &hnRoadDataProcess::slot_openImageAdjustments);
+	connect(m_adjustImageWidget, &adjustImageWidget::signal_adjustmentsPreviewChanged, this,
+		[this](bool is2d, int brightness, int contrast, int sharpen) {
+			ImageDisplayAdjustments adjustments;
+			adjustments.brightness = brightness;
+			adjustments.contrast = contrast;
+			adjustments.sharpen = sharpen;
+			if (is2d && m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+				m_2dPixScrollWidget->getPixWidget()->setSdkImageAdjustments(adjustments);
+			if (!is2d && m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+				m_3dPixScrollWidget->getPixWidget()->setSdkImageAdjustments(adjustments);
+		});
+	connect(m_adjustImageWidget, &adjustImageWidget::signal_adjustmentsSaveRequested,
+		this, &hnRoadDataProcess::saveProjectImageAdjustments);
 	connect(m_config, &QAction::triggered, this, &hnRoadDataProcess::slot_openConfigWidget);
+	connect(m_openUserDirectoryAct, &QAction::triggered, this, &hnRoadDataProcess::slot_openUserDirectory);
 	connect(m_AboutInfoAct, &QAction::triggered, this, &hnRoadDataProcess::slot_aboutInfosWidget);
+	connect(m_reimportMileagePilesAndMarksAct, &QAction::triggered,
+		this, &hnRoadDataProcess::slot_reimportMileagePilesAndMarks);
 
 
 	connect(m_HelperAct, &QAction::triggered, this, &hnRoadDataProcess::slot_oepnCourseDocument);
@@ -802,58 +1044,58 @@ void hnRoadDataProcess::createConnect()
 	// Sync disease selection to the other view and the list. The source view has
 	// already applied the user action and must not rebuild its SDK layer a second time.
 	auto syncDiseaseSelectionFromView = [this](const hnRoadDiseaseInfo& disease, bool sourceIs2d)
-	{
-		if (this->m_isDiseaseSelectionSync)
 		{
-			return;
-		}
-		QScopedValueRollback<bool> selectionGuard(this->m_isDiseaseSelectionSync, true);
-
-		if (this->m_diseaseListWidget)
-		{
-			this->m_diseaseListWidget->slot_selectDisease(disease);
-		}
-		auto applySelectionToTarget = [&disease](hn2d3dPixBaseWidget* target)
-		{
-			if (!target)
+			if (this->m_isDiseaseSelectionSync)
 			{
 				return;
 			}
-			target->setSelectedDisease(disease);
-			if (disease.nID >= 0)
+			QScopedValueRollback<bool> selectionGuard(this->m_isDiseaseSelectionSync, true);
+
+			if (this->m_diseaseListWidget)
 			{
-				// Existing diseases can be outside the target view's visible mileage range.
-				// Center after the selection layer is rebuilt so the visual state is observable.
-				QTimer::singleShot(0, target, [target, disease]()
+				this->m_diseaseListWidget->slot_selectDisease(disease);
+			}
+			auto applySelectionToTarget = [&disease](hn2d3dPixBaseWidget* target)
 				{
-					target->centerSdkDiseaseInView(disease);
-				});
+					if (!target)
+					{
+						return;
+					}
+					target->setSelectedDisease(disease);
+					if (disease.nID >= 0)
+					{
+						// Existing diseases can be outside the target view's visible mileage range.
+						// Center after the selection layer is rebuilt so the visual state is observable.
+						QTimer::singleShot(0, target, [target, disease]()
+							{
+								target->centerSdkDiseaseInView(disease);
+							});
+					}
+				};
+
+			if (!sourceIs2d && this->m_2dPixScrollWidget && this->m_2dPixScrollWidget->getPixWidget())
+			{
+				applySelectionToTarget(this->m_2dPixScrollWidget->getPixWidget());
+			}
+			if (sourceIs2d && this->m_3dPixScrollWidget && this->m_3dPixScrollWidget->getPixWidget())
+			{
+				applySelectionToTarget(this->m_3dPixScrollWidget->getPixWidget());
 			}
 		};
-
-		if (!sourceIs2d && this->m_2dPixScrollWidget && this->m_2dPixScrollWidget->getPixWidget())
-		{
-			applySelectionToTarget(this->m_2dPixScrollWidget->getPixWidget());
-		}
-		if (sourceIs2d && this->m_3dPixScrollWidget && this->m_3dPixScrollWidget->getPixWidget())
-		{
-			applySelectionToTarget(this->m_3dPixScrollWidget->getPixWidget());
-		}
-	};
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_selectDisease,
 		this, [syncDiseaseSelectionFromView](const hnRoadDiseaseInfo& disease)
-	{
-		syncDiseaseSelectionFromView(disease, true);
-	});
+		{
+			syncDiseaseSelectionFromView(disease, true);
+		});
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_selectDisease,
 		this, [syncDiseaseSelectionFromView](const hnRoadDiseaseInfo& disease)
-	{
-		syncDiseaseSelectionFromView(disease, false);
-	});
+		{
+			syncDiseaseSelectionFromView(disease, false);
+		});
 
 
 	/*connect(this->m_diseaseListWidget , &hnDiseaseListWidget::signal_updateView, this , &hnRoadDataProcess::updatePixWidget);*/
-	
+
 
 
 	//删除病害后，病害列表刷新
@@ -866,7 +1108,7 @@ void hnRoadDataProcess::createConnect()
 	/*connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_deleteDisease,
 		this->m_diseaseListWidget, &hnDiseaseListWidget::deleteDisease);*/
 
-	//二维视图滚动条变化，更新打标 较桩界面
+		//二维视图滚动条变化，更新打标 较桩界面
 	connect(this->m_2dPixScrollWidget, &hn2dPixScrollWidget::signal_roadMileAndDmiChanged,
 		m_projectWidget, &projectView::slot_updateMileAndDmi);
 	//二维视图滚动条变化，更新IRM界面
@@ -874,53 +1116,53 @@ void hnRoadDataProcess::createConnect()
 		m_IrmShowWidget, &IrmActualTimeShow::slot_updateIriFormSlots);
 
 	connect(m_projectWidget, &projectView::signal_updateAllWidget, [this]()
-	{
-
-		//// 加载当前工程路面影像
-		this->m_2dPixScrollWidget->loadRoadPicture();
-
-
-		// 加载三维影像
-		if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 		{
-			m_3dPixScrollWidget->load3dImage();
-		}
-		this->m_diseaseListWidget->updateAllDiseases();
-	});
+
+			//// 加载当前工程路面影像
+			this->m_2dPixScrollWidget->loadRoadPicture();
+
+
+			// 加载三维影像
+			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
+			{
+				m_3dPixScrollWidget->load3dImage();
+			}
+			this->m_diseaseListWidget->updateAllDiseases();
+		});
 
 	connect(m_projectWidget, &projectView::signal_updateAllWidget, this, &hnRoadDataProcess::updateAllWidget);
 
 	//病害列表发出帧序号改变的信号   路面显示窗口对应跳转
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_road2dFrameIdxChanged,
 		[this](double encoderMile) {
-		const double targetMile = qMax(0.0, encoderMile);
-		this->m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
-		syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
-	});
-	
+			const double targetMile = qMax(0.0, encoderMile);
+			this->m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+			syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
+		});
+
 	connect(this->m_diseaseListWidget, &hnDiseaseListWidget::signal_setDiseaseIsChecked,
 		[this](const hnRoadDiseaseInfo& disease) {
-		this->m_2dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
-		this->m_3dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
-		QTimer::singleShot(0, this, [this, disease]() {
-			this->m_2dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
-			this->m_3dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
+			this->m_2dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
+			this->m_3dPixScrollWidget->getPixWidget()->setSelectedDisease(disease);
+			QTimer::singleShot(0, this, [this, disease]() {
+				this->m_2dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
+				this->m_3dPixScrollWidget->getPixWidget()->centerSdkDiseaseInView(disease);
+				});
+			updatePixWidget();
 		});
-		updatePixWidget();
-	});
 	connect(hnDataManager::getDataManager()->getDiseaseService(), &hnDiseaseService::diseaseDeleted,
 		this, [this](const hnRoadDiseaseInfo&) {
-		this->m_2dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
-		this->m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
-		updatePixWidget();
-	});
+			this->m_2dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+			this->m_3dPixScrollWidget->getPixWidget()->refreshSdkDiseaseLayer();
+			updatePixWidget();
+		});
 
 	//三维
 	connect(m_diseaseListWidget, &hnDiseaseListWidget::signal_road3dFrameIdxChanged, [this](double encoderMile) {
 		const double targetMile = qMax(0.0, encoderMile);
 		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
 		syncContinuousViews(ContinuousViewSyncSource::Road3D, targetMile);
-	});
+		});
 
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_statusInfoChanged,
 		this->m_statusBarWidget, QOverload<const QString&>::of(&statusBarWidget::updateLabelTextSlot));
@@ -930,15 +1172,15 @@ void hnRoadDataProcess::createConnect()
 	// 只有用户操作触发跨视图同步，程序滚动产生的普通bottom 信号只用于状态刷新，避免 2D/3D 来回追赶。
 	connect(this->m_2dPixScrollWidget->getPixWidget(), &hn2dPixWidget::signal_sdkUserBottomEncoderMileChanged,
 		this, [this](double source2dMile)
-	{
-		syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
-	});
+		{
+			syncContinuousViews(ContinuousViewSyncSource::Road2D, source2dMile);
+		});
 
 	connect(this->m_3dPixScrollWidget->getPixWidget(), &hn3dPixWidget::signal_sdkUserBottomEncoderMileChanged,
 		this, [this](double source3dMile)
-	{
-		syncContinuousViews(ContinuousViewSyncSource::Road3D, source3dMile);
-	});
+		{
+			syncContinuousViews(ContinuousViewSyncSource::Road3D, source3dMile);
+		});
 
 	//切换三维浏览模式
 	connect(this->m_3dGrayModeAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeGray3dMode);
@@ -946,14 +1188,15 @@ void hnRoadDataProcess::createConnect()
 
 	//清空所有病害
 	connect(this->m_backupsDatabaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_backupsDatabase);
+	connect(this->m_viewResultDataAct, &QAction::triggered, this, &hnRoadDataProcess::slot_viewResultData);
 	connect(this->m_clearAllDiseasesAct, &QAction::triggered, this, &hnRoadDataProcess::slot_clearAllDiseases);
 	//	connect(this->m_updateAllDiseasesAct, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDiseaseDatabase);
 	connect(this->m_updateDatabase, &QAction::triggered, this, &hnRoadDataProcess::slot_updateDatabase);
 
 #pragma region SDKViewMapping
-		//二维视图滚动条变化，更新三维视图
-    connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
-        this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged, Qt::UniqueConnection);
+	//二维视图滚动条变化，更新三维视图
+	connect(this->m_pStreetViewWidget, &hnStreetWidget::signal_imageIdxChanged,
+		this, &hnRoadDataProcess::slot_streetWidgetFrameIdxChanged, Qt::UniqueConnection);
 #pragma endregion
 
 	//二维三维发送信号，原始比例更新视图
@@ -973,7 +1216,7 @@ void hnRoadDataProcess::createConnect()
 		m_2dPixScrollWidget->getPixWidget()->setOriginalWidgetWidthHeight(w, h);
 		m_pStreetViewWidget->getLeftPixWidget()->setOriginalWidgetWidthHeight(w, h);
 		m_pStreetViewWidget->getRightPixWidget()->setOriginalWidgetWidthHeight(w, h);
-	});
+		});
 
 
 
@@ -983,17 +1226,17 @@ void hnRoadDataProcess::createConnect()
 	// todo三维跳转
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_updateScrollValue,
 		[this](double encoderMile) {
-		const double targetMile = qMax(0.0, encoderMile);
-		m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
-		syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
-	});
+			const double targetMile = qMax(0.0, encoderMile);
+			m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+			syncContinuousViews(ContinuousViewSyncSource::Road2D, targetMile);
+		});
 
 	connect(m_regionJumpDlg, &hnRegionJumpDlg::signal_road3dFrameIdxChanged,
 		[this](double encoderMile) {
-		const double targetMile = qMax(0.0, encoderMile);
-		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
-		syncContinuousViews(ContinuousViewSyncSource::Road3D, targetMile);
-	});
+			const double targetMile = qMax(0.0, encoderMile);
+			m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetMile);
+			syncContinuousViews(ContinuousViewSyncSource::Road3D, targetMile);
+		});
 
 	connect(m_projectWidget, &projectView::signal_jumpToMile, this, &hnRoadDataProcess::slot_jumpToMile);
 	connect(m_projectWidget, &projectView::signal_jumpToMark, this, &hnRoadDataProcess::slot_jumpToMark);
@@ -1006,24 +1249,28 @@ void hnRoadDataProcess::createConnect()
 
 	//深度计算设置
 	connect(m_projectConfgDialog, &hnProjectConfig::signal_isDepthCaculate, this, &hnRoadDataProcess::slot_setDepthCaculate);
+	connect(m_projectConfgDialog, &hnProjectConfig::signal_autoPlayIntervalChanged,
+		m_2dPixScrollWidget, &hnContinuouslyBrowsePixWidget::setAutoPlayIntervalMs);
+	connect(m_projectConfgDialog, &hnProjectConfig::signal_autoPlayIntervalChanged,
+		m_3dPixScrollWidget, &hnContinuouslyBrowsePixWidget::setAutoPlayIntervalMs);
 	connect(m_projectConfgDialog, &hnProjectConfig::signal_wheelScrollOneImageChanged, this, [this](bool enabled)
-	{
-		if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
 		{
-			m_2dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
-		}
-		if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
-		{
-			m_3dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
-		}
-	});
+			if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+			{
+				m_2dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
+			}
+			if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+			{
+				m_3dPixScrollWidget->getPixWidget()->setSingleFrameNavigationEnabled(enabled);
+			}
+		});
 
 #ifdef 地图
-	
-		connect(this, &hnRoadDataProcess::signal_loadBaiduMap, m_mapWidget, &CustomBaiduMapView::signal_loadBaiDuMap);
+
+	connect(this, &hnRoadDataProcess::signal_loadBaiduMap, m_mapWidget, &CustomBaiduMapView::signal_loadBaiDuMap);
 
 #endif // 百度地图
-	 
+
 
 }
 
@@ -1072,7 +1319,7 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	hnRibbonPannel* dataHandelPanel = page->addPannel(QStringLiteral("数据处理"));
 	{
 		//检查数据
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/icons/识别CP3.png")));
 		m_checkProAct = new QAction(projectIcon, QStringLiteral("&检查数据"), this);
 		dataHandelPanel->addLargeAction(m_checkProAct);
@@ -1080,14 +1327,14 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	}
 	{
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/icons/识别CP3.png")));
 		m_gpsMatchingAct = new QAction(projectIcon, QStringLiteral("&GPS桩号匹配"), this);
 		dataHandelPanel->addLargeAction(m_gpsMatchingAct);
 	}
 	{// irm计算
 
-	  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/iconsNew/IRM计算.png")));
 		m_calculateAct = new QAction(projectIcon, QStringLiteral("&IRM计算"), this);
 		dataHandelPanel->addLargeAction(m_calculateAct);
@@ -1101,13 +1348,13 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	}
 	{// irm计算
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/iconsNew/清空IRM.png")));
 		m_clearIRMAct = new QAction(projectIcon, QStringLiteral("&清空IRM"), this);
 		dataHandelPanel->addLargeAction(m_clearIRMAct);
 	}
 
-	
+
 
 	hnRibbonPannel* projectChangePanel = page->addPannel(QStringLiteral("工程信息修改"));
 	{
@@ -1120,14 +1367,14 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	}
 	{
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/iconsNew/采集打标.png")));
 		m_markInfoAct = new QAction(projectIcon, QStringLiteral("&打标信息输出"), this);
 		projectChangePanel->addLargeAction(m_markInfoAct);
 	}
 	{
 		//二三维里程矫正
-		  QIcon mileCorrectIcon = QIcon::fromTheme(QStringLiteral(""),
+		QIcon mileCorrectIcon = QIcon::fromTheme(QStringLiteral(""),
 			QIcon(QStringLiteral(":/icons/iconsNew/里程校正.png")));
 		this->m_2d3dMileCorrentAct = new QAction(mileCorrectIcon, QStringLiteral("二三维里程矫正"), this);
 		connect(this->m_2d3dMileCorrentAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeTo23dMileCorrectMode);
@@ -1136,7 +1383,7 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 
 	{
 		//修改工程有效桩号(绘制病害，出表桩号) 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/icons/识别CP3.png")));
 		m_changeProjectOutMileAct = new QAction(projectIcon, QStringLiteral("&多工程桩号设置"), this);
 		projectChangePanel->addLargeAction(m_changeProjectOutMileAct);
@@ -1155,7 +1402,7 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	hnRibbonPannel* dataStartHandelPanel = page->addPannel(QStringLiteral("数据预处理工具"));
 	{
 		//影像生成
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"),
 			QIcon(QStringLiteral(":/icons/iconsNew/影像生成.png")));
 		m_createImageAct = new QAction(projectIcon, QStringLiteral("&影像生成"), this);
 		m_createImageAct->setToolTip(QString::fromLocal8Bit("三维影像生成"));
@@ -1163,7 +1410,7 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 	}
 
 	//裁切图片
-	  QIcon cutImageIcon = QIcon::fromTheme(QStringLiteral("cutImageIcon"),
+	QIcon cutImageIcon = QIcon::fromTheme(QStringLiteral("cutImageIcon"),
 		QIcon(QStringLiteral(":/icons/iconsNew/影像裁切.png")));
 	m_cutImageAct = new QAction(cutImageIcon, QStringLiteral("&影像裁切"), this);
 	m_cutImageAct->setToolTip(QString::fromLocal8Bit("二维影像裁切"));
@@ -1171,7 +1418,7 @@ void hnRoadDataProcess::createProCategory(hnRibbonCategory* page)
 
 
 	{
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/Resources/icons/检查数据.png")));
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/Resources/icons/检查数据.png")));
 		m_clearProjectAct = new QAction(projectIcon, QStringLiteral("&清除工程"), this);
 #if 0	//功能未实现 暂不启用
 		projectPanel->addLargeAction(m_clearProjectAct);
@@ -1190,7 +1437,7 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 	hnRibbonPannel* diseaseRibbonPannel = page->addPannel(QStringLiteral("病害管理"));
 	//导入二维软件病害
-	  QIcon  twoDDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon  twoDDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/导入病害.png")));
 	this->m_input2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("导入二维软件病害"), this);
 	connect(m_input2dDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_import2dDiseases);
@@ -1198,14 +1445,15 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 	//导出二维软件病害
 
-	  QIcon  twoOutDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	 QIcon  twoOutDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/导入病害.png")));
-	this->m_output2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("导出二维软件病害"), this);
+	/*this->m_output2dDiseaseAct = new QAction(twoDDiseaseIcon, QStringLiteral("导出二维软件病害"), this);
 	connect(m_output2dDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_output2dDiseases);
-	diseaseRibbonPannel->addLargeAction(m_output2dDiseaseAct);
+	diseaseRibbonPannel->addLargeAction(m_output2dDiseaseAct);*/
+
 
 	//导入自动识别病害
-	  QIcon smartDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon smartDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/导入病害.png")));
 	this->m_inputSmartDiseaseAct = new QAction(smartDiseaseIcon, QStringLiteral("导入自动识别病害"), this);
 	connect(m_inputSmartDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_importAidcDiseases);
@@ -1215,35 +1463,36 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 	hnRibbonPannel* diseaseMgrRibbonPannel = page->addPannel(QStringLiteral("病害交互"));
 
 	//添加病害
-	  QIcon addDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon addDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/添加病害.png")));
 	this->m_addDiseaseAct = new QAction(addDiseaseIcon, QStringLiteral("添加病害(F1)"), this);
-	m_addDiseaseAct->setToolTip(QStringLiteral("F1"));
+	m_addDiseaseAct->setToolTip(QStringLiteral("添加病害（F1）：在影像上绘制病害；使用结束编辑返回浏览。"));
 	connect(m_addDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToAddDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_addDiseaseAct);
 
 	//删除病害
-	  QIcon deleteDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon deleteDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/删除病害.png")));
 	this->m_deleteDiseaseAct = new QAction(deleteDiseaseIcon, QStringLiteral("删除病害(F2)"), this);
-	m_deleteDiseaseAct->setToolTip(QStringLiteral("F2"));
+	m_deleteDiseaseAct->setToolTip(QStringLiteral("删除病害（F2）：点击目标病害执行删除；使用结束编辑返回浏览。"));
 	connect(m_deleteDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToDeleteDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_deleteDiseaseAct);
 
 	//编辑病害
-	  QIcon editDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon editDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/编辑病害.png")));
 
 	this->m_editDiseaseAct = new QAction(editDiseaseIcon, QStringLiteral("编辑病害(F3)"), this);
-	m_editDiseaseAct->setToolTip(QStringLiteral("F3"));
+	m_editDiseaseAct->setToolTip(QStringLiteral("F3：单击修改类型；拖动面状病害主体整体移动；拖动四角调整大小"));
 
 	connect(this->m_editDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToEditDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_editDiseaseAct);
 
 	//合并病害
-	  QIcon combineDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon combineDiseaseIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/合并病害.png")));
-	this->m_combineDiseaseAct = new QAction(combineDiseaseIcon, QStringLiteral("合并病害"), this);
+	this->m_combineDiseaseAct = new QAction(combineDiseaseIcon, QStringLiteral("合并病害(F4)"), this);
+	m_combineDiseaseAct->setToolTip(QStringLiteral("F4：依次选择两个同绘制类型、同病害表的病害进行合并"));
 	connect(this->m_combineDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeToMergeDiseaseMode);
 	diseaseMgrRibbonPannel->addLargeAction(m_combineDiseaseAct);
 
@@ -1254,35 +1503,35 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 	hnRibbonPannel* diseaseSjModeRibbonPannel = page->addPannel(QStringLiteral("设计模式病害处理"));
 	//添加控制点
-	  QIcon addCtrlPointIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon addCtrlPointIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/添加控制点.png")));
 	m_addCtrlPointAct = new QAction(addCtrlPointIcon, QStringLiteral("添加控制点"), this);
 	connect(m_addCtrlPointAct, &QAction::triggered, this, &hnRoadDataProcess::slot_changeAddCtrlPointMode);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addCtrlPointAct);
 
 	// 添加面状病害
-	  QIcon addFacetsIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon addFacetsIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/添加病害.png")));
 	m_addFacetsDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("添加面状病害"), this);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addFacetsDiseaseAct);
 	connect(m_addFacetsDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_addFacetsDiseaseMode);
 
 	// 添加线状病害
-	  QIcon addLineIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon addLineIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/添加病害.png")));
 	m_addLineDiseaseAct = new QAction(addFacetsIcon, QStringLiteral("添加线状病害"), this);
 	diseaseSjModeRibbonPannel->addLargeAction(m_addLineDiseaseAct);
 	connect(m_addLineDiseaseAct, &QAction::triggered, this, &hnRoadDataProcess::slot_addLineDiseaseMode);
 
 	// 导入控制点
-	  QIcon importCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon importCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/导入控制点.png")));
 	this->m_importCtrlPointsAction = new QAction(importCtrlPointsIcon, QStringLiteral("导入控制点"), this);
 	connect(m_importCtrlPointsAction, &QAction::triggered, this, &hnRoadDataProcess::slot_importCtrlPoints);
 	diseaseSjModeRibbonPannel->addLargeAction(m_importCtrlPointsAction);
 
 	// 导出控制点
-	  QIcon exportCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
+	QIcon exportCtrlPointsIcon = QIcon::fromTheme(QStringLiteral(""),
 		QIcon(QStringLiteral(":/icons/iconsNew/导出控制点.png")));
 	this->m_exportCtrlPointsAction = new QAction(exportCtrlPointsIcon, QStringLiteral("导出控制点"), this);
 	connect(m_exportCtrlPointsAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportCtrlPoints);
@@ -1300,17 +1549,23 @@ void hnRoadDataProcess::createDataProcessCategory(hnRibbonCategory* page)
 
 }
 
-void hnRoadDataProcess::createDataBaseMgrCategory(hnRibbonCategory * page)
+void hnRoadDataProcess::createDataBaseMgrCategory(hnRibbonCategory* page)
 {
 	hnRibbonPannel* dataBaseMgrPanel = page->addPannel(QStringLiteral("数据库管理"));
 	{
-		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/打开工程文件夹.png")));
+		QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/打开工程文件夹.png")));
 		this->m_backupsDatabaseAct = new QAction(dataBaseMgrIcon, QStringLiteral("&管理数据库"), this);
 		m_backupsDatabaseAct->setToolTip(QString::fromLocal8Bit("备份数据库，支持多人同时操作!"));
 		dataBaseMgrPanel->addLargeAction(this->m_backupsDatabaseAct);
 	}
 	{
-		  QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/清空病害.png")));
+		QIcon viewResultIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/打开工程文件夹.png")));
+		this->m_viewResultDataAct = new QAction(viewResultIcon, QStringLiteral("&查看成果数据"), this);
+		m_viewResultDataAct->setToolTip(QString::fromLocal8Bit("只读查看当前工程成果库中的工程信息、校桩、打标和 DMI 状态"));
+		dataBaseMgrPanel->addLargeAction(this->m_viewResultDataAct);
+	}
+	{
+		QIcon dataBaseMgrIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/清空病害.png")));
 		this->m_clearAllDiseasesAct = new QAction(dataBaseMgrIcon, QStringLiteral("&清空病害"), this);
 		m_clearAllDiseasesAct->setToolTip(QString::fromLocal8Bit("清空数据库中的所有病害，请谨慎操作"));
 		dataBaseMgrPanel->addLargeAction(this->m_clearAllDiseasesAct);
@@ -1329,7 +1584,7 @@ void hnRoadDataProcess::createDataBaseMgrCategory(hnRibbonCategory * page)
 	dataBaseMgrPanel->addLargeAction(this->m_updateAllDiseasesAct);
 */
 
-	  QIcon dataBaseMgrIcon0 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/icons/移除工程.png")));
+	QIcon dataBaseMgrIcon0 = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/icons/移除工程.png")));
 	this->m_updateDatabase = new QAction(dataBaseMgrIcon0, QStringLiteral("&更新数据库"), this);
 #if 0
 	dataBaseMgrPanel->addLargeAction(this->m_updateDatabase);
@@ -1340,46 +1595,79 @@ void hnRoadDataProcess::createDataBaseMgrCategory(hnRibbonCategory * page)
 void hnRoadDataProcess::createOutputCategory(hnRibbonCategory* page)
 {
 	hnRibbonPannel* exportResult = page->addPannel(QStringLiteral("报表输出"));
+    hnRibbonPannel* commonOutput = page->addPannel(QStringLiteral("公共输出"));
+    QAction* ledger = new QAction(QIcon(QStringLiteral(":/icons/iconsNew/project-ledger.png")), QStringLiteral("生成工程台账"), this);
+    commonOutput->addLargeAction(ledger);
+    connect(ledger, &QAction::triggered, this, &hnRoadDataProcess::slot_exportProjectLedger);
 
 
+	QAction* diseaseImages = new QAction(QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")), QStringLiteral("导出路面病害图像"), this);
+	diseaseImages->setToolTip(QStringLiteral("按病害逐张导出带病害框和名称的图像，并生成病害信息及 GPS 表。"));
+	commonOutput->addLargeAction(diseaseImages);
+	connect(diseaseImages, &QAction::triggered, this, &hnRoadDataProcess::slot_exportRoadDiseaseImages);
 #ifdef DEBUG
-	  QIcon projectDatasIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
+	QIcon projectDatasIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
 	m_allResultDatasAction = new QAction(projectDatasIcon, QStringLiteral("&导出定制报表"), this);
 	exportResult->addLargeAction(m_allResultDatasAction);
 #endif // DEBUG
 
 	// 输出报表
-	  QIcon projectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
+	QIcon projectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
 	m_outExcel = new QAction(projectIcon, QStringLiteral("&输出标准报表"), this);
 	exportResult->addLargeAction(m_outExcel);
+	QAction* routePhotos = new QAction(projectIcon, QStringLiteral("路线实景照片报送"), this);
+	exportResult->addLargeAction(routePhotos);
+	connect(routePhotos, &QAction::triggered, this, &hnRoadDataProcess::slot_exportRoutePhotos);
+
+
+
+	QAction* customStreetExport = new QAction(projectIcon, QStringLiteral("自定义景观明细"), this);
+	connect(customStreetExport, &QAction::triggered, this, &hnRoadDataProcess::slot_outputCustomStreetDiseases);
+	exportResult->addLargeAction(customStreetExport);
+
+    // 将合并操作集中到独立分组，避免与报表生成混淆。
+    hnRibbonPannel* mergePanel = page->addPannel(QStringLiteral("报表合并"));
+    QAction* similarReports = new QAction(QIcon(QStringLiteral(":/icons/iconsNew/merge-reports.png")), QStringLiteral("同类报表合并"), this);
+    similarReports->setToolTip(QStringLiteral("按文件名关键词查找 Excel，合并指定工作表，可插入道路编号。"));
+    mergePanel->addLargeAction(similarReports);
+    connect(similarReports, &QAction::triggered, this, &hnRoadDataProcess::slot_mergeSimilarReports);
 
 	// 多工程报表合并
-	  QIcon mergeProjectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
+	QIcon mergeProjectIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
 	m_mergeProjectExcelAct = new QAction(mergeProjectIcon, QStringLiteral("&多工程合并工具"), this);
-	exportResult->addLargeAction(m_mergeProjectExcelAct);
+	mergePanel->addLargeAction(m_mergeProjectExcelAct);
 
 	hnRibbonPannel* exportDxfResult = page->addPannel(QStringLiteral("DXF输出"));
 	//导出dxf
-	  QIcon exportDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
+	QIcon exportDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
 	m_exportDxfAction = new QAction(exportDxfIcon, QStringLiteral("&导出病害展布图"), this);
 	exportDxfResult->addLargeAction(m_exportDxfAction);
 	connect(m_exportDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportDXf);
 
-	  QIcon exportDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
+	QIcon exportDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
 	m_exportDiseaseDxfAction = new QAction(exportDiseaseDxfIcon, QStringLiteral("&导出病害矢量图"), this);
 	exportDxfResult->addLargeAction(m_exportDiseaseDxfAction);
 	connect(m_exportDiseaseDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportDiseaseDXf);
 
-	  QIcon exportHighAccuracyDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
+	QIcon exportHighAccuracyDiseaseDxfIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/导出dxf.png")));
 	m_exportHighAccuracyDiseaseDxfAction = new QAction(exportHighAccuracyDiseaseDxfIcon, QStringLiteral("&导出高精度病害矢量图"), this);
 	exportDxfResult->addLargeAction(m_exportHighAccuracyDiseaseDxfAction);
 	connect(m_exportHighAccuracyDiseaseDxfAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf);
 
 	hnRibbonPannel* GJOutResult = page->addPannel(QStringLiteral("国检转换输出"));
-	  QIcon gjIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
+	QIcon gjIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
 	m_exportGJDatasAction = new QAction(gjIcon, QStringLiteral("&计算国检转换中间数据"), this);
+	m_exportGJDatasAction->setEnabled(false);
 	GJOutResult->addLargeAction(m_exportGJDatasAction);
 	connect(m_exportGJDatasAction, &QAction::triggered, this, &hnRoadDataProcess::slot_exportGjDatas);
+
+
+
+	QIcon gjSoftIcon = QIcon::fromTheme("exportDxfIcon", QIcon(QStringLiteral(":/icons/iconsNew/输出报表.png")));
+	m_exportGJSoftwareAction = new QAction(gjSoftIcon, QStringLiteral("&国检转换上报软件"), this);
+	m_exportGJSoftwareAction->setEnabled(true);
+	GJOutResult->addLargeAction(m_exportGJSoftwareAction);
+	connect(m_exportGJSoftwareAction, &QAction::triggered, this, &hnRoadDataProcess::slot_openGjSoftware);
 }
 
 // 创建点云处理模块工具栏
@@ -1391,39 +1679,60 @@ void hnRoadDataProcess::createCloudCategory(hnRibbonCategory* page)
 void hnRoadDataProcess::createViewsCategory(hnRibbonCategory* page)
 {
 	hnRibbonPannel* widgetMgrPanel = page->addPannel(QStringLiteral("视图管理"));
+	{
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
+		QAction* resetLayout = new QAction(projectIcon, QStringLiteral("恢复默认布局"), this);
+		resetLayout->setToolTip(QStringLiteral("恢复当前工程类型的标准面板布局；只调整窗口排列。"));
+		widgetMgrPanel->addLargeAction(resetLayout);
+		connect(resetLayout, &QAction::triggered, this, &hnRoadDataProcess::restoreDefaultWorkspace);
+	}
+	{
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/合并病害.png")));
+		QAction* finish = new QAction(projectIcon, QStringLiteral("结束编辑"), this);
+		finish->setToolTip(QStringLiteral("退出病害绘制、删除、合并和校准工具，返回浏览模式。"));
+		widgetMgrPanel->addLargeAction(finish);
+		connect(finish, &QAction::triggered, this, &hnRoadDataProcess::finishEditing);
 
+	}
 	{// 视图
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二维标准视图.png")));
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二维标准视图.png")));
 		m_oShapeViewportAct = new QAction(projectIcon, QStringLiteral("&二维标准视图"), this);
 		widgetMgrPanel->addLargeAction(m_oShapeViewportAct);
 	}
 
 	{// 视图
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
 		m_o3ShapeViewportAct = new QAction(projectIcon, QStringLiteral("&三维标准视图"), this);
 		widgetMgrPanel->addLargeAction(m_o3ShapeViewportAct);
 	}
 	{// 视图
 
-		  QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
+		QIcon projectIcon = QIcon::fromTheme(QStringLiteral("projectIcon"), QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
 		m_oDViewportAct = new QAction(projectIcon, QStringLiteral("&二三维标准视图"), this);
 		widgetMgrPanel->addLargeAction(m_oDViewportAct);
 	}
+	{
+		QIcon imageAdjustIcon = QIcon::fromTheme(QStringLiteral("imageAdjustIcon"), QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+		m_imageAdjustAct = new QAction(imageAdjustIcon, QStringLiteral("图像调节"), this);
+		m_imageAdjustAct->setEnabled(false);
+		m_imageAdjustAct->setToolTip(QStringLiteral("调整二维、三维图像的亮度、对比度和锐化"));
+		widgetMgrPanel->addLargeAction(m_imageAdjustAct);
+	}
 
-	 
+
 
 	//三维视图浏览模式
 	hnRibbonPannel* image3dModePannel = page->addPannel(QStringLiteral("三维视图浏览模式"));
 
 	//灰度图模式Action
-	  QIcon grayModeIcon = QIcon::fromTheme(QStringLiteral("grayModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/灰度图模式.png")));
+	QIcon grayModeIcon = QIcon::fromTheme(QStringLiteral("grayModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/灰度图模式.png")));
 	this->m_3dGrayModeAct = new QAction(grayModeIcon, QStringLiteral("&灰度图模式"));
 	image3dModePannel->addLargeAction(m_3dGrayModeAct);
 
 	//深度图模式Action
-	  QIcon rgbModeIcon = QIcon::fromTheme(QStringLiteral("rgbModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/深度图模式.png")));
+	QIcon rgbModeIcon = QIcon::fromTheme(QStringLiteral("rgbModeIcon"), QIcon(QStringLiteral(":/icons/iconsNew/深度图模式.png")));
 	this->m_3dRgbModeAct = new QAction(rgbModeIcon, QStringLiteral("&深度图模式"));
 	image3dModePannel->addLargeAction(m_3dRgbModeAct);
 
@@ -1434,9 +1743,17 @@ void hnRoadDataProcess::createViewsCategory(hnRibbonCategory* page)
 void hnRoadDataProcess::createSystemCategory(hnRibbonCategory* page)
 {
 	hnRibbonPannel* sysPannel = page->addPannel(QStringLiteral("系统"));
+	hnRibbonPannel* projectRepairPannel = page->addPannel(QStringLiteral("项目修正"));
+	QIcon reimportIcon = QIcon::fromTheme(QStringLiteral("projectRepairIcon"),
+		QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+	m_reimportMileagePilesAndMarksAct = new QAction(reimportIcon,
+		QStringLiteral("重新导入校桩打标"), this);
+	m_reimportMileagePilesAndMarksAct->setToolTip(
+		QStringLiteral("从外业文本重新生成相对里程校桩和打标，并刷新当前工程视图"));
+	projectRepairPannel->addLargeAction(m_reimportMileagePilesAndMarksAct);
 
 	// 菜单项，用于管理面板显示隐藏;
-	  QIcon showPaneIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
+	QIcon showPaneIcon = QIcon::fromTheme("projectIcon", QIcon(QStringLiteral(":/icons/iconsNew/二三维标准视图.png")));
 	m_pShowPaneMenu = new QMenu(this);
 	//m_pShowPaneMenu->setStyleSheet();
 	m_pShowPaneMenu->setTitle(QStringLiteral("显隐面板"));
@@ -1445,16 +1762,21 @@ void hnRoadDataProcess::createSystemCategory(hnRibbonCategory* page)
 	sysPannel->addLargeAction(m_pShowPaneMenu->menuAction());
 
 	// 系统设置
-	  QIcon configPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+	QIcon configPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
 	m_config = new QAction(configPaneIcon, QStringLiteral("软件设置"));
 	sysPannel->addLargeAction(m_config);
 
+	// 打开软件本地用户配置目录
+	QIcon userDirectoryIcon = QIcon::fromTheme("folder-open", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+	m_openUserDirectoryAct = new QAction(userDirectoryIcon, QStringLiteral("打开用户目录"), this);
+	sysPannel->addLargeAction(m_openUserDirectoryAct);
+
 	// 系统设置
-	  QIcon HelperPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+	QIcon HelperPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
 	m_HelperAct = new QAction(HelperPaneIcon, QStringLiteral("使用说明"));
 	sysPannel->addLargeAction(m_HelperAct);
 
-	  QIcon AuoutInfoPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
+	QIcon AuoutInfoPaneIcon = QIcon::fromTheme("configIcon", QIcon(QStringLiteral(":/icons/iconsNew/软件设置.png")));
 	m_AboutInfoAct = new QAction(AuoutInfoPaneIcon, QStringLiteral("关于信息"));
 	sysPannel->addLargeAction(m_AboutInfoAct);
 
@@ -1470,7 +1792,7 @@ bool hnRoadDataProcess::loadConfigData()
 
 	QDir baseDirs(configDbPath);
 	if (!baseDirs.exists())
-	{ 
+	{
 		QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("程序目录下缺少config文件夹！"),
 			QStringLiteral("确定"));
 		return false;
@@ -1479,7 +1801,6 @@ bool hnRoadDataProcess::loadConfigData()
 	m_xrSetting = HnXRSettings::getInstance();
 
 	QString baseConfigPath = QApplication::applicationDirPath() + "/config/XRSetting.ini";
-	QStringList configTxts =  MyCommonMethods::ReadAllLines(baseConfigPath);
 	QString configPath = MyCommonMethods::GetUserPath() + "//XRSetting.ini";
 
 	if (!QFile::exists(configPath))
@@ -1501,24 +1822,11 @@ bool hnRoadDataProcess::loadConfigData()
 	}
 	else
 	{
-		QStringList newConfigTxts = MyCommonMethods::ReadAllLines(configPath);
-		if (configTxts.size() != newConfigTxts.size())
-		{
-			QFile::remove(configPath);
-			if (QFile::copy(baseConfigPath, configPath))
-			{
-				m_xrSetting->SetConfigFilePath(configPath);
-				m_xrSetting->Init();
-				m_xrSetting->readData();
-			}
-		}
-		else
-		{
-			m_xrSetting->SetConfigFilePath(configPath);
-			m_xrSetting->Init();
-			m_xrSetting->readData();
-		}
-	
+		// 保留用户设置；新增项由读取逻辑提供默认值，不能按文件行数重置。
+		m_xrSetting->SetConfigFilePath(configPath);
+		m_xrSetting->Init();
+		m_xrSetting->readData();
+
 	}
 	//记录用户路径
 	return true;
@@ -1527,41 +1835,75 @@ bool hnRoadDataProcess::loadConfigData()
 
 
 
-void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
+void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem* item, int column)
 {
 	QElapsedTimer totalTimer;
 	totalTimer.start();
-	 
+
 	QString selectedItemText = item->text(0);
-	#ifdef _DEBUG
+	qInfo().noquote() << "[HN_PROJECT][TreeOpenStart]"
+		<< "item=" << selectedItemText
+		<< "column=" << column;
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][TreeProjectOpenStart]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "item=" << selectedItemText
 		<< "column=" << column;
-	#endif
+#endif
 	int grade = item->data(1, Qt::UserRole).value<int>();
 	if (grade == 1)  //用户点击的是有效节点  二维工程名
 	{
-		#ifdef _DEBUG
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenEnd]"
+			<< "reason=grade1"
+			<< "totalMs=" << totalTimer.elapsed();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 			<< "reason=grade1"
 			<< "item=" << selectedItemText
 			<< "totalMs=" << totalTimer.elapsed();
-		#endif
+#endif
 		return;
 	}
 
 	QString projectName = selectedItemText;
+	hnPro::hnProject* projectBeforeSelection =
+		hnApp::hnDataManager::getDataManager()->getCurrentProject();
+	const bool selectedProjectAlreadyLoaded = projectBeforeSelection
+		&& (projectName == projectBeforeSelection->get2DProName()
+			|| projectName == projectBeforeSelection->get3DProName());
 
 	//检查工程 人工模式自动化模式类型冲突
 	if (!this->checkProjectFrameTypeConflict(projectName))
 	{
-		#ifdef _DEBUG
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenEnd]"
+			<< "reason=frameTypeConflict"
+			<< "totalMs=" << totalTimer.elapsed();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 			<< "reason=frameTypeConflict"
 			<< "item=" << selectedItemText
 			<< "totalMs=" << totalTimer.elapsed();
-		#endif
+#endif
+		return;
+	}
+	// The import workflow already initialized the project, loaded every view,
+	// rebuilt the tree, and refreshed the disease list. A user's immediate
+	// double-click on that same real tree child should therefore be a no-op;
+	// repeating the list rebuild and map signals can still block the UI for
+	// seconds on a mechanical disk. The recent-project bootstrap uses a
+	// synthetic top-level item (no parent) and intentionally continues below.
+	if (selectedProjectAlreadyLoaded && item->parent())
+	{
+		updateLineCameraAreaActionState();
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenEnd]"
+			<< "reason=alreadyLoaded"
+			<< "totalMs=" << totalTimer.elapsed();
+#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
+			<< "reason=alreadyLoaded"
+			<< "item=" << selectedItemText
+			<< "totalMs=" << totalTimer.elapsed();
+#endif
 		return;
 	}
 	auto curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
@@ -1570,34 +1912,49 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 	{
 		QElapsedTimer stepTimer;
 		hnCommon::hnProjectSetInfo setting = curProject->getCurProSetInfo();
-		// 清空所有视图图片
-		stepTimer.start();
-		this->clearAllWidgetPixs();
-		#ifdef _DEBUG
-		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=clearAllWidgetPixs" << "elapsedMs=" << stepTimer.elapsed();
-		#endif
-		loading.setMessage(QStringLiteral("所有窗口加载图片..."));
-		//所有窗口加载图片
-		stepTimer.restart();
-		this->allWidgetLoadPictures();
-		#ifdef _DEBUG
-		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
-		#endif
+		if (!selectedProjectAlreadyLoaded)
+		{
+			// 清空所有视图图片
+			stepTimer.start();
+			this->clearAllWidgetPixs();
+			qInfo().noquote() << "[HN_PROJECT][TreeOpenStep]"
+				<< "name=clearAllWidgetPixs"
+				<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
+			qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=clearAllWidgetPixs" << "elapsedMs=" << stepTimer.elapsed();
+#endif
+			loading.setMessage(QStringLiteral("所有窗口加载图片..."));
+			//所有窗口加载图片
+			stepTimer.restart();
+			this->allWidgetLoadPictures();
+			qInfo().noquote() << "[HN_PROJECT][TreeOpenStep]"
+				<< "name=allWidgetLoadPictures"
+				<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
+			qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
+#endif
+		}
 		loading.setMessage(QStringLiteral("更新病害列表..."));
 
 		//更新病害列表
 		stepTimer.restart();
 		this->m_diseaseListWidget->updateAllDiseases();
-		#ifdef _DEBUG
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenStep]"
+			<< "name=updateAllDiseases"
+			<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateAllDiseases" << "elapsedMs=" << stepTimer.elapsed();
-		#endif
+#endif
 		loading.setMessage(QStringLiteral("更新树状视图..."));
 		//更新树状视图
 		stepTimer.restart();
 		this->updateTreeWidget();
-		#ifdef _DEBUG
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenStep]"
+			<< "name=updateTreeWidget"
+			<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
-		#endif
+#endif
 		QVector<hnCommon::hnMarkInfo> marks;
 		if (m_projects->getCurrentProject()->getProjectType() == PROJECT_JD_3D_TYPE)
 		{
@@ -1614,7 +1971,7 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 		QVector<hnCommon::hnMilePile> datas = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
 		if (2 == hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType)
 		{
-			
+
 			slot_addLineDiseaseMode();
 		}
 		else
@@ -1625,9 +1982,12 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 
 		emit signal_updateProject(setting, marks, datas);
 		emit signal_loadBaiduMap();
-		#ifdef _DEBUG
+		qInfo().noquote() << "[HN_PROJECT][TreeOpenStep]"
+			<< "name=emitUpdateSignals"
+			<< "totalMsSoFar=" << totalTimer.elapsed();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][TreeProjectOpenStep]" << "step=emitUpdateSignals" << "totalMsSoFar=" << totalTimer.elapsed();
-		#endif
+#endif
 		auto type = curProject->getProjectType();
 
 		//获取二三维里程差值，如果是0，提示用户做差值处理
@@ -1645,12 +2005,16 @@ void hnRoadDataProcess::slot_dClickTreeItem(QTreeWidgetItem *item, int column)
 		}
 	}
 	updateLineCameraAreaActionState();
-	#ifdef _DEBUG
+	qInfo().noquote() << "[HN_PROJECT][TreeOpenEnd]"
+		<< "item=" << selectedItemText
+		<< "hasProject=" << (curProject != nullptr)
+		<< "totalMs=" << totalTimer.elapsed();
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][TreeProjectOpenEnd]"
 		<< "item=" << selectedItemText
 		<< "hasProject=" << (curProject != nullptr)
 		<< "totalMs=" << totalTimer.elapsed();
-	#endif
+#endif
 }
 
 void hnRoadDataProcess::slot_selectNodeChange()
@@ -1661,7 +2025,7 @@ void hnRoadDataProcess::slot_selectNodeChange()
 void hnRoadDataProcess::slot_showContextMenu(const QPoint pos)
 {
 	//获取鼠标点击位置处的item
-	QTreeWidgetItem *item = nullptr;
+	QTreeWidgetItem* item = nullptr;
 	item = this->m_projectListTreeWidget->itemAt(pos);
 
 	//没有item的话就返回  右键菜单m_treeWidgetRightButtonMenu
@@ -1679,6 +2043,11 @@ void hnRoadDataProcess::slot_toStandard2View()
 
 void hnRoadDataProcess::slot_toStandard23View()
 {
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || project->getProjectType() == PROJECT_2D_TYPE)
+	{
+		return;
+	}
 	setLayout(PROJECT_23D_TYPE);
 }
 
@@ -1696,20 +2065,9 @@ void hnRoadDataProcess::slot_calculateIrm()
 	//判断磁盘空间
 
 	calculateIrmForm* form = new calculateIrmForm(this);
-	connect(form, &calculateIrmForm::error, this, [=](QString msg)
-	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), msg,
-			QString::fromLocal8Bit("确定"));
-	}
-	);
-
-	connect(form, &calculateIrmForm::calculationFinished, this, [=]()
-	{
-		QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("完成"),
-			QString::fromLocal8Bit("确定"));
-	}
-	);
+	connect(form, &calculateIrmForm::calculationFinished, m_IrmShowWidget, &IrmActualTimeShow::resetData);
 	form->exec();
+	delete form;
 
 	//添加
 }
@@ -1727,12 +2085,12 @@ void hnRoadDataProcess::slot_compute()
 
 	auto* curProject = hnDataManager::getDataManager()->getCurrentProject();
 	PROJECT_TYPE type = curProject->getProjectType();
-	if (type != PROJECT_TYPE::PROJECT_23D_TYPE&&
-		type != PROJECT_TYPE::PROJECT_JD_3D_TYPE&&
+	if (type != PROJECT_TYPE::PROJECT_23D_TYPE &&
+		type != PROJECT_TYPE::PROJECT_JD_3D_TYPE &&
 		type != PROJECT_TYPE::PROJECT_XD_3D_TYPE)
 	{
 		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能仅支持二三维工程使用!"), QString::fromLocal8Bit("确定"));
-		 
+
 		return;
 	}
 
@@ -1801,35 +2159,39 @@ void hnRoadDataProcess::slot_compute()
 		const QString text = m_geometryCalculationThread->progressText();
 		if (!text.isEmpty())
 			progressDialog->setLabelText(text);
-	});
+		});
 	connect(progressDialog, &QProgressDialog::canceled, this, [this, progressDialog]() {
 		if (m_geometryCalculationThread)
 			m_geometryCalculationThread->requestCancel();
 		progressDialog->setLabelText(QStringLiteral("正在安全取消，请稍候..."));
-	});
+		});
 	connect(m_geometryCalculationThread, &QThread::finished, this,
 		[this, progressDialog, progressTimer]() {
-		progressTimer->stop();
-		const GeometryCalculationResult result = m_geometryCalculationThread->result();
-		m_geometryCalculationThread->deleteLater();
-		m_geometryCalculationThread = nullptr;
-		m_ComputeGeoaligAction->setEnabled(true);
-		if (m_projectWidget)
-			m_projectWidget->setEnabled(true);
-		progressDialog->close();
-		progressDialog->deleteLater();
+			progressTimer->stop();
+			const GeometryCalculationResult result = m_geometryCalculationThread->result();
+			m_geometryCalculationThread->deleteLater();
+			m_geometryCalculationThread = nullptr;
+			m_ComputeGeoaligAction->setEnabled(true);
+			if (m_projectWidget)
+				m_projectWidget->setEnabled(true);
+			progressDialog->close();
+			progressDialog->deleteLater();
 
-		if (result.status == GeometryCalculationStatus::Success)
-		{
-			QMessageBox::information(this, QStringLiteral("提示窗口"),
-				QStringLiteral("几何线型数据计算完毕，共生成%1个10米结果，可进行报表输出！")
-				.arg(result.outputSamples.size()));
-		}
-		else if (result.status != GeometryCalculationStatus::Cancelled)
-		{
-			QMessageBox::critical(this, QStringLiteral("几何线型计算失败"), result.errorMessage);
-		}
-	});
+			if (result.status == GeometryCalculationStatus::Success)
+			{
+				QString message = QStringLiteral("几何线型数据计算完毕，共生成%1个10米结果，可进行报表输出！")
+					.arg(result.outputSamples.size());
+				if (!result.warningMessage.isEmpty())
+				{
+					message += QStringLiteral("\n\n注意：") + result.warningMessage;
+				}
+				QMessageBox::information(this, QStringLiteral("提示窗口"), message);
+			}
+			else if (result.status != GeometryCalculationStatus::Cancelled)
+			{
+				QMessageBox::critical(this, QStringLiteral("几何线型计算失败"), result.errorMessage);
+			}
+		});
 
 	progressTimer->start(100);
 	progressDialog->show();
@@ -1899,7 +2261,18 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 		return;
 	}
 
-	m_centerToast->showMessage(QStringLiteral("进入绘制病害模式"), QStringLiteral("左键绘制病害区域,右键退出当前绘制"), 2000);
+	const bool continuousDrawingWasEnabled = m_2dPixScrollWidget->getPixWidget()->isContinuousDiseaseDrawing()
+		|| m_3dPixScrollWidget->getPixWidget()->isContinuousDiseaseDrawing();
+	if (continuousDrawingWasEnabled)
+	{
+		m_2dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+		m_3dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+		m_centerToast->showMessage(QStringLiteral("已退出连续绘制"), QStringLiteral("下一笔病害将重新选择类型"), 2500);
+	}
+	else
+	{
+		m_centerToast->showMessage(QStringLiteral("进入绘制病害模式"), QStringLiteral("左键绘制病害区域,右键退出当前绘制"), 2000);
+	}
 
 	//路面破损窗口设置为画病害模式
 	this->m_2dPixScrollWidget->getPixWidget()->setAddDiseaseMode();
@@ -1923,6 +2296,9 @@ void hnRoadDataProcess::slot_changeToAddDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 {
+	// 切换到其他病害工具时不保留连续绘制类型。
+	this->m_3dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	this->m_2dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
 	m_centerToast->showMessage(QStringLiteral("进入删除病害模式"), QStringLiteral("左键点击病害删除"), 2000);
 
 	//取消画病害
@@ -1946,7 +2322,13 @@ void hnRoadDataProcess::slot_changeToDeleteDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToEditDiseaseMode()
 {
-	m_centerToast->showMessage(QStringLiteral("进入编辑病害模式"), QStringLiteral("左键点击病害区域,右键退出当前编辑"), 2000);
+	// 切换到其他病害工具时不保留连续绘制类型。
+	this->m_3dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	this->m_2dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	m_centerToast->showMessage(
+		QStringLiteral("进入编辑病害模式"),
+		QStringLiteral("单击病害修改类型；拖动面状病害主体整体移动；拖动四角调整大小"),
+		3500);
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -1960,6 +2342,9 @@ void hnRoadDataProcess::slot_changeToEditDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToMoveDiseaseMode()
 {
+	// 切换到其他病害工具时不保留连续绘制类型。
+	this->m_3dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	this->m_2dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
 	//取消画病害
 	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
@@ -1973,41 +2358,53 @@ void hnRoadDataProcess::slot_changeToMoveDiseaseMode()
 
 void hnRoadDataProcess::slot_changeToMergeDiseaseMode()
 {
+	// 切换到其他病害工具时不保留连续绘制类型。
+	this->m_3dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	this->m_2dPixScrollWidget->getPixWidget()->clearContinuousDiseaseDrawing();
+	m_centerToast->showMessage(
+		QStringLiteral("进入合并病害模式(F4)"),
+		QStringLiteral("依次点击两个同绘制类型、同病害表的病害；设计线状病害不支持合并"),
+		3500);
 	//取消画病害
-    this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
-    this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
 
-    //路面破损窗口设置模式
-    this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
+	//路面破损窗口设置模式
+	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 
-    //三维窗口设置模式
-    this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
+	//三维窗口设置模式
+	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::MERGE);
 }
 
 void hnRoadDataProcess::slot_changeTo23dMileCorrectMode()
 {
-    if (!m_projects->isOpenProject())
-    {
-        return;
-    }
+	if (!m_projects->isOpenProject())
+	{
+		return;
+	}
+	if (m_projects->getCurrentProject()->getProjectType() != PROJECT_23D_TYPE)
+	{
+		QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("二三维里程矫正仅支持二三维工程。"));
+		return;
+	}
 
 	//取消画病害
-    this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
-    this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
-    this->m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
-    this->m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
-    this->m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
-    this->m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+	this->m_3dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+	this->m_2dPixScrollWidget->getPixWidget()->slot_cancelDrawDiseases();
+	this->m_2dPixScrollWidget->getPixWidget()->claerSelectPoint();
+	this->m_3dPixScrollWidget->getPixWidget()->claerSelectPoint();
+	this->m_2dPixScrollWidget->getPixWidget()->refreshSdkViewState();
+	this->m_3dPixScrollWidget->getPixWidget()->refreshSdkViewState();
 
-    //路面破损窗口设置模式
-    this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
+	//路面破损窗口设置模式
+	this->m_2dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-    //三维窗口设置模式
-    this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
+	//三维窗口设置模式
+	this->m_3dPixScrollWidget->getPixWidget()->setMode(hnWorkMode::GET_MILE);
 
-    QMessageBox::information(this, QStringLiteral("提示"),
+	QMessageBox::information(this, QStringLiteral("提示"),
 		QStringLiteral("请依次点击二维视图、三维视图上相同的位置，然后键盘按Shift + C，进行矫正"),
-        QString::fromLocal8Bit("确定"));
+		QString::fromLocal8Bit("确定"));
 }
 
 void hnRoadDataProcess::slot_changeAddCtrlPointMode()
@@ -2060,7 +2457,7 @@ void hnRoadDataProcess::slot_addFacetsDiseaseMode()
 	//景观窗口设置为添加病害模式
 	this->m_pStreetViewWidget->m_pStreetView->setAddDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
-	this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
+		this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
 }
 
 void hnRoadDataProcess::slot_addLineDiseaseMode()
@@ -2091,82 +2488,171 @@ void hnRoadDataProcess::slot_addLineDiseaseMode()
 	//景观窗口设置为添加病害模式
 	this->m_pStreetViewWidget->m_pStreetView->setAddDiseaseMode();
 	if (this->m_pStreetViewWidget->m_pStreetViewDouble)
-	this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
+		this->m_pStreetViewWidget->m_pStreetViewDouble->setAddDiseaseMode();
+}
+
+
+// 同类报表合并不依赖当前工程，允许直接处理既有交付报表。
+void hnRoadDataProcess::slot_mergeSimilarReports()
+{
+    hnReportMergeDlg dialog(this);
+    dialog.exec();
+}
+
+void hnRoadDataProcess::slot_exportManualRoadDiseases()
+{
+    exportRoadDiseaseSamples(false);
+}
+
+void hnRoadDataProcess::slot_exportRoadDiseaseImages()
+{
+    hnApp::hnDataManager* data = hnApp::hnDataManager::getDataManager();
+    if (!data->isOpenProject()) { QMessageBox::information(this, QStringLiteral("导出路面病害图像"), QStringLiteral("请先打开工程。")); return; }
+    hnPro::hnProject* currentProject = data->getCurrentProject();
+    if (!currentProject) { QMessageBox::information(this, QStringLiteral("导出路面病害图像"), QStringLiteral("当前工程不可用。")); return; }
+    const auto projects = data->getProjectManager()->getAllBaseProject();
+    QProgressDialog progress(QStringLiteral("正在准备病害图像导出…"), QStringLiteral("取消"), 0, 100, this);
+    progress.setWindowTitle(QStringLiteral("导出路面病害图像")); progress.setWindowModality(Qt::ApplicationModal); progress.setMinimumDuration(0); progress.setAutoClose(false); progress.show();
+    hnRoadDiseaseImageExporter exporter;
+    hnRoadDiseaseImageExporter::Result result = exporter.exportProjects(projects, currentProject->getAbsulotelyPath(), [&progress](int current, int total, const QString& projectName) {
+        progress.setValue(total > 0 ? qMin(100, current * 100 / total) : 0);
+        progress.setLabelText(QStringLiteral("正在处理：%1\n已完成 %2 / %3 张影像").arg(projectName).arg(current).arg(total));
+        QApplication::processEvents(); return !progress.wasCanceled();
+    });
+    progress.close();
+    if (!result.success) { QMessageBox::warning(this, QStringLiteral("导出路面病害图像"), result.error); return; }
+    QMessageBox::information(this, QStringLiteral("导出路面病害图像"), QStringLiteral("导出完成。\n图像 %1 张，跳过 %2 条。\n输出目录：\n%3").arg(result.exported).arg(result.skipped).arg(QDir::toNativeSeparators(result.outputPath)));
+}
+void hnRoadDataProcess::slot_exportRoadNegativeSamples()
+{
+    exportRoadDiseaseSamples(true);
+}
+
+void hnRoadDataProcess::exportRoadDiseaseSamples(bool deleted)
+{
+    // 当前工程的完整数据库副本，按数据定义筛选，不受界面病害过滤条件影响。
+    hnApp::hnDataManager* data = hnApp::hnDataManager::getDataManager();
+    hnPro::hnProject* project = data->getCurrentProject();
+    QString title = QStringLiteral("导出路面人工病害");
+    if (deleted) title = QStringLiteral("导出路面负样本");
+    if (!data->isOpenProject() || !project)
+    {
+        QMessageBox::information(this, title, QStringLiteral("请先打开工程。"));
+        return;
+    }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    hnDiseaseSampleExporter exporter;
+    QString output;
+    QString error;
+    qint64 count = 0;
+    bool ok = exporter.exportDatabase(project->getDB(), project->getAbsulotelyPath(), deleted, output, count, error);
+    QApplication::restoreOverrideCursor();
+    if (!ok)
+    {
+        QMessageBox::warning(this, title, error);
+        return;
+    }
+    QMessageBox::information(this, title, QStringLiteral("导出完成，共 %1 条路面病害。\n完整数据库已保存到：\n%2")
+        .arg(count).arg(QDir::toNativeSeparators(output)));
 }
 
 void hnRoadDataProcess::slot_import2dDiseases()
 {
-	//异常处理
-	if (!hnDataManager::getDataManager()->isOpenProject())
-	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请打开工程"),
-			QString::fromLocal8Bit("确定"));
-		return;
-	}
+    hnApp::hnDataManager* data = hnApp::hnDataManager::getDataManager();
+    if (!data->isOpenProject()) return;
+    const auto projects = data->getProjectManager()->getAllBaseProject();
+    QVector<hnPro::hnProject*> eligible;
+    QStringList details;
+    QSet<QString> databases;
+    for (hnPro::hnProject* project : projects)
+    {
+        if (!project) continue;
+        const int mode = project->getCurProSetInfo().nDrawType;
+        if (!project->get2DProject() || (mode != 0 && mode != 1) || !project->getDB())
+        {
+            details << QStringLiteral("【跳过】%1：工程类型或绘制模式不支持二维病害导入。").arg(project->getProjectName());
+            continue;
+        }
+        const QString key = QDir::cleanPath(QString::fromLocal8Bit(project->getDB()->getDBPath())).toLower();
+        if (databases.contains(key)) continue;
+        databases.insert(key);
+        eligible.append(project);
+    }
+    if (eligible.isEmpty())
+    {
+        QMessageBox::information(this, QStringLiteral("导入二维软件病害"), QStringLiteral("没有可导入的工程。\n") + details.join(QStringLiteral("\n")));
+        return;
+    }
+    if (QMessageBox::warning(this, QStringLiteral("批量覆盖二维病害"),
+        QStringLiteral("将处理全部 %1 个可导入工程。\n\n将清空这些工程已有的路面和景观病害，包括在二三维软件内新增和修改的病害，再按二维源文件原样导入，不合并病害。\n\n每个工程覆盖前自动备份成果库；导入失败保留原病害。是否继续？").arg(eligible.size()),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
 
-	//获取框选类型
-	int frameType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurProSetInfo().nDrawType;
-
-	PROJECT_TYPE projectType = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType();
-
-
-
-	if (2 == frameType)
-	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("设计模式不支持病害导入"), QString::fromLocal8Bit("确定"));
-		return;
-	}
-
-	if (projectType != PROJECT_TYPE::PROJECT_2D_TYPE)
-	{
-		//二三维工程由于起始存在里程的原因 即 打标和较桩必须减去起始里程 导致二三维中的二维工程的较桩和打标无法一致
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能仅支持导入二维工程病害"), QString::fromLocal8Bit("确定"));
-		return;
-	}
-
-
-
-	//提示用户是否继续
-	QString frameTypeQString = frameType == 0 ? QString::fromLocal8Bit("人工模式") : QString::fromLocal8Bit("自动化模式");
-	auto reply = QMessageBox::question(this, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("您即将进行%1二维软件病害的病害导入，"
-		"注意！重复使用会导致添加多个一样的病害；此过程不可逆，请做好备份工作，是否继续？").arg(frameTypeQString),
-		QString::fromLocal8Bit("是"), QString::fromLocal8Bit("否"));
-	if (1 == reply)
-	{
-		return;
-	}
-
-	// 设置标题和默认值
-	QString frameTypeTitle = frameType == 0 ? QString::fromLocal8Bit("导入人工模式病害") : QString::fromLocal8Bit("导入自动化模式病害");
-	this->m_mergeLittleFrameDlg->setWindowTitle(frameTypeTitle);
-	if (frameType == 0)
-	{
-		this->m_mergeLittleFrameDlg->ui.vThreshold->setValue(300);
-		this->m_mergeLittleFrameDlg->ui.hThreshold->setValue(400);
-	}
-	else if (frameType == 1)
-	{
-		this->m_mergeLittleFrameDlg->ui.vThreshold->setValue(700);
-		this->m_mergeLittleFrameDlg->ui.hThreshold->setValue(700);
-	}
-	if (this->m_mergeLittleFrameDlg->exec() == QDialog::Rejected)
-	{
-		return;
-	}
-	hnApp::hnDataManager::getDataManager()->vMergeLittleFrameThr = this->m_mergeLittleFrameDlg->vDisThreshold();
-	hnApp::hnDataManager::getDataManager()->hMergeLittleFrameThr = this->m_mergeLittleFrameDlg->hDisThreshold();
-	bool isMerge = this->m_mergeLittleFrameDlg->importMergeFlag();
-	bool isMap = this->m_mergeLittleFrameDlg->importMapFlag();
-
-	//定义导出对象
-	//hnImportAidcDiseases importDisease(frameType,this);
-	hnImportAidcDiseases importDisease(frameType, isMerge, isMap, this);
-
-	//执行导出操作
-	importDisease.import2dDisease();
-
-	//更新所有视图
-	this->updateAllWidget();
+    QProgressDialog progress(this);
+    progress.setMinimumDuration(0);
+    progress.setWindowTitle(QStringLiteral("批量导入二维病害"));
+    progress.setWindowModality(Qt::ApplicationModal);
+    progress.setCancelButtonText(QStringLiteral("停止"));
+    progress.setRange(0, eligible.size());
+    progress.setAutoClose(false);
+    progress.setAutoReset(false);
+    progress.setFixedSize(560, 150);
+    progress.setLabelText(QStringLiteral("准备导入，请稍候…"));
+    progress.ensurePolished();
+    progress.setValue(0);
+    progress.show();
+    int successes = 0;
+    int failures = 0;
+    int skippedRecords = 0;
+    int next = 0;
+    for (; next < eligible.size(); ++next)
+    {
+        if (progress.wasCanceled()) break;
+        hnPro::hnProject* project = eligible.at(next);
+        const QString name = project->getProjectName();
+        progress.setLabelText(QStringLiteral("正在处理 %1 / %2\n%3").arg(next + 1).arg(eligible.size()).arg(progress.fontMetrics().elidedText(name, Qt::ElideMiddle, 510)));
+        progress.setToolTip(name);
+        hn2dDiseaseExchangeService service(project);
+        hn2dDiseaseExchangeService::Result result;
+        try
+        {
+            result = service.replaceDiseases([&progress]() {
+                QApplication::processEvents();
+                return progress.wasCanceled();
+            });
+        }
+        catch (...)
+        {
+            result.error = QStringLiteral("导入发生异常，请核对成果库及备份。");
+        }
+        if (result.success)
+        {
+            ++successes;
+            skippedRecords += result.skippedCount;
+            details << QStringLiteral("【成功】%1：路面 %2 条，景观 %3 条，跳过 %4 条。\n备份：%5").arg(name).arg(result.roadCount).arg(result.streetCount).arg(result.skippedCount).arg(result.backupPath);
+            if (!result.warnings.isEmpty())
+                details << result.warnings.join(QStringLiteral("\n"));
+        }
+        else
+        {
+            if (!result.stopped) ++failures;
+            details << QStringLiteral("【%1】%2：%3").arg(result.stopped ? QStringLiteral("停止") : QStringLiteral("失败"), name, result.error);
+        }
+        progress.setValue(next + 1);
+        if (result.stopped) { ++next; break; }
+    }
+    for (int i = next; i < eligible.size(); ++i)
+        details << QStringLiteral("【未处理】%1：用户停止。").arg(eligible.at(i)->getProjectName());
+    progress.close();
+    // 服务始终显式使用目标工程，批次期间无需切换当前工程。
+    data->getDiseaseService()->setProject(data->getCurrentProject());
+    data->getDiseaseService()->invalidateCache();
+    updateAllWidget();
+    QMessageBox result(this);
+    result.setWindowTitle(QStringLiteral("二维病害批量导入结果"));
+    result.setIcon(failures > 0 || skippedRecords > 0 ? QMessageBox::Warning : QMessageBox::Information);
+    result.setText(QStringLiteral("导入结束：成功 %1 个，失败 %2 个，跳过记录 %3 条。\n各工程处理状态、跳过原因及备份路径见详细信息。").arg(successes).arg(failures).arg(skippedRecords));
+    result.setDetailedText(details.join(QStringLiteral("\n\n")));
+    result.exec();
 }
 
 void hnRoadDataProcess::slot_output2dDiseases()
@@ -2186,7 +2672,7 @@ void hnRoadDataProcess::slot_output2dDiseases()
 	int frameType = curProjet->getCurProSetInfo().nDrawType;
 	PROJECT_TYPE projectType = curProjet->getProjectType();
 
-	if (2 == frameType || frameType == 0)
+	if (2 == frameType)
 	{
 		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该模式不支持病害导出"), QString::fromLocal8Bit("确定"));
 		return;
@@ -2194,23 +2680,40 @@ void hnRoadDataProcess::slot_output2dDiseases()
 
 	if (projectType != PROJECT_TYPE::PROJECT_2D_TYPE && projectType != PROJECT_TYPE::PROJECT_23D_TYPE)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能仅支持导入二维工程病害"), QString::fromLocal8Bit("确定"));
+		QMessageBox::warning(this, QString::fromLocal8Bit("警告"),
+			QString::fromLocal8Bit("当前工程没有可用的二维图片，无法导出二维软件病害。"),
+			QString::fromLocal8Bit("确定"));
 		return;
 	}
 
-	//获取所有病害
-
-	QVector<hnRoadDiseaseInfo> allDiseaseInfos;
-
-	QVector<hnMile> miles = curProjet->getCurrentMileVector();
-
-	if (frameType == 1)
+	const QMessageBox::StandardButton answer = QMessageBox::question(this,
+		QString::fromLocal8Bit("导出二维软件病害"),
+		QString::fromLocal8Bit("导出会覆盖二维图片目录中现有的病害文本，是否继续？"),
+		QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+	if (answer != QMessageBox::Yes)
 	{
-	 
-		allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
-
+		return;
 	}
 
+	hn2dDiseaseExchangeService exchangeService(curProjet);
+	const hn2dDiseaseExchangeService::Result result = exchangeService.exportDiseases(frameType);
+	if (!result.success)
+	{
+		QMessageBox::warning(this, QString::fromLocal8Bit("导出失败"), result.error,
+			QString::fromLocal8Bit("确定"));
+		return;
+	}
+
+	QMessageBox message(this);
+	message.setIcon(QMessageBox::Information);
+	message.setWindowTitle(QString::fromLocal8Bit("导出完成"));
+	message.setText(QString::fromLocal8Bit("已导出路面病害 %1 条、景观病害 %2 条，跳过 %3 条。")
+		.arg(result.roadCount).arg(result.streetCount).arg(result.skippedCount));
+	if (!result.warnings.isEmpty())
+	{
+		message.setDetailedText(result.warnings.join(QStringLiteral("\n")));
+	}
+	message.exec();
 }
 
 void hnRoadDataProcess::slot_importAidcDiseases()
@@ -2278,6 +2781,11 @@ void hnRoadDataProcess::slot_importAidcDiseases()
 
 void hnRoadDataProcess::slot_changeGray3dMode()
 {
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || project->getProjectType() == PROJECT_2D_TYPE)
+	{
+		return;
+	}
 	this->m_3dPixScrollWidget->getPixWidget()->setGrayMode();
 	this->m_3dPixScrollWidget->laodPicRetainScrollBarValue();
 	this->m_3dPixScrollWidget->getPixWidget()->update();
@@ -2285,6 +2793,11 @@ void hnRoadDataProcess::slot_changeGray3dMode()
 
 void hnRoadDataProcess::slot_changeRgb3dMode()
 {
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || project->getProjectType() == PROJECT_2D_TYPE)
+	{
+		return;
+	}
 	this->m_3dPixScrollWidget->getPixWidget()->setRgbMode();
 	this->m_3dPixScrollWidget->laodPicRetainScrollBarValue();
 	this->m_3dPixScrollWidget->getPixWidget()->update();
@@ -2292,6 +2805,11 @@ void hnRoadDataProcess::slot_changeRgb3dMode()
 
 void hnRoadDataProcess::slot_cutImage()
 {
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || project->getProjectType() == PROJECT_2D_TYPE)
+	{
+		return;
+	}
 	QProcess process;
 
 	//获取裁切软件绝对路径
@@ -2302,7 +2820,7 @@ void hnRoadDataProcess::slot_cutImage()
 	process.startDetached(cutImageSoftName, arguments);
 }
 
- 
+
 
 bool hnRoadDataProcess::UTCT2GPST(const DATE_TIME_INFO& stTime, int& nGpsWeek, double& dGpsSeconds, double dGPSSubUTC /*= 0*/)
 {
@@ -2357,6 +2875,69 @@ bool hnRoadDataProcess::UTCT2GPST(const DATE_TIME_INFO& stTime, int& nGpsWeek, d
 	return true;
 }
 
+// 用户确认后从外业文本完整重建校桩和打标，成功提交后重新加载当前工程视图。
+void hnRoadDataProcess::slot_reimportMileagePilesAndMarks()
+{
+	auto dataManager = hnDataManager::getDataManager();
+	auto project = dataManager ? dataManager->getCurrentProject() : nullptr;
+	if (!project)
+	{
+		QMessageBox::warning(this, QStringLiteral("重新导入校桩打标"),
+			QStringLiteral("当前没有打开的工程。"));
+		return;
+	}
+	if (project->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE ||
+		project->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
+	{
+		QMessageBox::warning(this, QStringLiteral("重新导入校桩打标"),
+			QStringLiteral("当前工程没有可用的二维外业校桩和打标文本。"));
+		return;
+	}
+
+	const QString confirmText = QStringLiteral(
+		"该操作会使用 MileStoneCaliInfo.txt 和 RoadStatuMarkInfo.txt 替换当前成果库中的校桩和打标。\n"
+		"系统会先校验文本并备份成果库，校验失败时不会清空数据库。是否继续？");
+	if (QMessageBox::question(this, QStringLiteral("确认重新导入"), confirmText,
+		QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+	{
+		return;
+	}
+
+	QString backupPath;
+	QString errorMessage;
+	int pileCount = 0;
+	int markCount = 0;
+	QApplication::setOverrideCursor(Qt::WaitCursor);
+	const bool success = project->reimportMileagePilesAndMarks(
+		&backupPath, &pileCount, &markCount, &errorMessage);
+	QApplication::restoreOverrideCursor();
+	if (!success)
+	{
+		QMessageBox::critical(this, QStringLiteral("重新导入失败"), errorMessage);
+		return;
+	}
+
+	QVector<hnCommon::hnMarkInfo> marks = project->getCurrentMarkVector();
+	QVector<hnCommon::hnMilePile> piles = project->getCurrentMilePileVector();
+	emit signal_updateProject(project->getCurProSetInfo(), marks, piles);
+	m_2dPixScrollWidget->loadRoadPicture();
+	if (project->getProjectType() != PROJECT_2D_TYPE)
+		m_3dPixScrollWidget->load3dImage();
+	updateAllWidget();
+	QMessageBox::information(this, QStringLiteral("重新导入完成"),
+		QStringLiteral("已写入 %1 条校桩、%2 条打标。\n成果库备份：%3")
+		.arg(pileCount).arg(markCount).arg(backupPath));
+}
+void hnRoadDataProcess::slot_viewResultData()
+{
+	if (!m_projects || !m_projects->isOpenProject() || !m_projects->isHasProject())
+	{
+		QMessageBox::information(this, QString::fromLocal8Bit("成果库数据"), QString::fromLocal8Bit("请先打开工程。"));
+		return;
+	}
+	hnResultDataDialog dialog(m_projects->getCurrentProject(), this);
+	dialog.exec();
+}
 void hnRoadDataProcess::slot_backupsDatabase()
 {
 	if (!hnApp::hnDataManager::getDataManager()->isOpenProject()) {
@@ -2441,18 +3022,18 @@ void hnRoadDataProcess::syncStreetViewBy2dEncoderMile(double encoderMile)
 		return;
 	}
 
-	// 景观控件现有接口收的是“行驶距离整数”，内部再按 StreetDis/StreetDis2 算图片序号。
-    {
-        QSignalBlocker blocker(m_pStreetViewWidget);
-        m_pStreetViewWidget->updateViewImage(qMax(0, qRound(encoderMile)));
-    }
+	// 景观控件现有接口收的是“行驶距离（米，保留小数）”，内部再按 StreetDis/StreetDis2 算图片序号。
+	{
+		QSignalBlocker blocker(m_pStreetViewWidget);
+		m_pStreetViewWidget->updateViewImage(qMax(0.0, encoderMile));
+	}
 
-    const QString streetImagePath = m_pStreetViewWidget->currentStreetImagePath();
-    m_2dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
-    if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
-    {
-        m_3dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
-    }
+	const QString streetImagePath = m_pStreetViewWidget->currentStreetImagePath();
+	m_2dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+	if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+	{
+		m_3dPixScrollWidget->getPixWidget()->setCurrentStreetPictureNameForStatus(streetImagePath);
+	}
 }
 
 void hnRoadDataProcess::syncContinuousViews(ContinuousViewSyncSource source, double sourceEncoderMile)
@@ -2482,19 +3063,19 @@ void hnRoadDataProcess::syncContinuousViews(ContinuousViewSyncSource source, dou
 	const double sourceMile = qMax(0.0, sourceEncoderMile);
 	const double syncToleranceMeters = 0.01;
 	auto scrollBottomIfNeeded = [syncToleranceMeters](hn2d3dPixBaseWidget* pixWidget, double targetMile)
-	{
-		if (!pixWidget)
 		{
-			return;
-		}
+			if (!pixWidget)
+			{
+				return;
+			}
 
-		const double clampedTargetMile = qMax(0.0, targetMile);
-		if (qAbs(pixWidget->currentBottomEncoderMile() - clampedTargetMile) >= syncToleranceMeters)
-		{
-			pixWidget->scrollBottomToEncoderMile(clampedTargetMile);
-		}
-		pixWidget->refreshSdkViewState();
-	};
+			const double clampedTargetMile = qMax(0.0, targetMile);
+			if (qAbs(pixWidget->currentBottomEncoderMile() - clampedTargetMile) >= syncToleranceMeters)
+			{
+				pixWidget->scrollBottomToEncoderMile(clampedTargetMile);
+			}
+			pixWidget->refreshSdkViewState();
+		};
 
 	QScopedValueRollback<bool> syncingGuard(m_isProgrammaticViewSync, true);
 
@@ -2559,24 +3140,24 @@ void hnRoadDataProcess::syncContinuousViews(ContinuousViewSyncSource source, dou
 		}
 	}
 }
-void hnRoadDataProcess::slot_streetWidgetFrameIdxChanged(int streetFrameIdx)
+void hnRoadDataProcess::slot_streetWidgetFrameIdxChanged(double streetFrameIdx)
 {
-    if (m_isProgrammaticViewSync)
-    {
-        return;
-    }
+	if (m_isProgrammaticViewSync)
+	{
+		return;
+	}
 
-    if (!hnDataManager::getDataManager()->isOpenProject())
-    {
-        return;
-    }
-    if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
-    {
-        return;
-    }
+	if (!hnDataManager::getDataManager()->isOpenProject())
+	{
+		return;
+	}
+	if (!hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+	{
+		return;
+	}
 
-    // 景观信号传出来的是行驶距离，不是纯图片下标，直接作为 2D 编码器里程使用。
-    syncContinuousViews(ContinuousViewSyncSource::Street, qMax(0, streetFrameIdx));
+	// 景观信号传出来的是行驶距离，不是纯图片下标，直接作为 2D 编码器里程使用。
+	syncContinuousViews(ContinuousViewSyncSource::Street, qMax(0.0, streetFrameIdx));
 }
 
 void hnRoadDataProcess::slot_setDepthCaculate(bool isCaculate)
@@ -2647,9 +3228,9 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 	auto setting = project->getCurProSetInfo();
 	QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
 	if (type == 2)
-	{ 
+	{
 		//设计模式病害
-	allDiseaseInfos=	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDesignDiseases();
+		allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllDesignDiseases();
 
 	}
 	else
@@ -2683,7 +3264,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (diseaseInfo.vec3dRect.size() <= 0)
 				{
-			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 				auto rect3d = diseaseInfo.vec3dRect.at(0);
@@ -2691,7 +3272,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d))
 				{
-			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 
@@ -2752,7 +3333,7 @@ void hnRoadDataProcess::slot_exportDiseaseDXf()
 
 				if (false == hnDataManager::getDataManager()->getDisease3DPoint(rect3d.p0, pt3d00))
 				{
-			QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
+					QMessageBox::warning(nullptr, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("该功能不支持纯三维工程！"));
 					return;
 				}
 				else
@@ -2822,17 +3403,17 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 
 		hnPro::hnProject* project = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 
-	 
+
 		QString  highGpsFilePath = project->get2DProject()->getBasePath() + "\\HighGps2Mile.txt";
 		if (!QFile::exists(highGpsFilePath))
-		{ 
+		{
 			QMessageBox::critical(this, QStringLiteral("警告"), QStringLiteral("非高精度模块或未进行gps桩号匹配，无法导出高精度病害dxf!"));
 			return;
 		}
 		else
 		{
-			project->get2DProject()->initGpsInfos(); 
-		} 
+			project->get2DProject()->initGpsInfos();
+		}
 		QVector<hnMile> miles = project->getCurrentMileVector();
 		auto setting = project->getCurProSetInfo();
 		QString standard = HnProjectEnums::roadTypeEnumToQString(project->getBaseStandard());
@@ -2841,8 +3422,8 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 		if (PROJECT_TYPE::PROJECT_23D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType() ||
 			PROJECT_TYPE::PROJECT_2D_TYPE == hnApp::hnDataManager::getDataManager()->getCurrentProject()->getProjectType())
 		{
-	
-			allDiseaseInfos = 	hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(); 
+
+			allDiseaseInfos = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 		}
 		else
 		{
@@ -2873,13 +3454,13 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 				hnCommon::hn2dGpsPoint pt2d00, pt2d01, pt2d02, pt2d03;
 				hnCommon::hn2dGpsPoint ptResult0, ptResult1, ptResult2, ptResult3;
 
-				 
-			m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
+
+				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
 				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p1.m_dmi), rect2d.p1.x, rect2d.p1.y, pt2d01.x, pt2d01.y, pt2d01.z);
 				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p2.m_dmi), rect2d.p2.x, rect2d.p2.y, pt2d02.x, pt2d02.y, pt2d02.z);
 				m_highAccuracy->getHighAccPosition(true, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p3.m_dmi), rect2d.p3.x, rect2d.p3.y, pt2d03.x, pt2d03.y, pt2d03.z);
 
-			
+
 				plane.convertBLHToProjection(pt2d00.x, pt2d00.y, pt2d00.z, ptResult0.x, ptResult0.y, ptResult0.z);
 				plane.convertBLHToProjection(pt2d01.x, pt2d01.y, pt2d01.z, ptResult1.x, ptResult1.y, ptResult1.z);
 				plane.convertBLHToProjection(pt2d02.x, pt2d02.y, pt2d02.z, ptResult2.x, ptResult2.y, ptResult2.z);
@@ -2890,20 +3471,20 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 
 				hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>* hn2dDis =
 					new hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>(ptResult0, ptResult1, ptResult2, ptResult3, diseaseInfo.strDisName, diseaseInfo.dMileage);
- 
-				
 
 
-			/*	m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
-				m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p1.m_dmi), rect2d.p1.x, rect2d.p1.y, pt2d01.x, pt2d01.y, pt2d01.z);
-				m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p2.m_dmi), rect2d.p2.x, rect2d.p2.y, pt2d02.x, pt2d02.y, pt2d02.z);
-				m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p3.m_dmi), rect2d.p3.x, rect2d.p3.y, pt2d03.x, pt2d03.y, pt2d03.z);
- 
 
 
-				hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>* hn2dDis =
-					new hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>(pt2d00, pt2d01, pt2d02, pt2d03, diseaseInfo.strDisName, diseaseInfo.dMileage);
-*/
+				/*	m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p0.m_dmi), rect2d.p0.x, rect2d.p0.y, pt2d00.x, pt2d00.y, pt2d00.z);
+					m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p1.m_dmi), rect2d.p1.x, rect2d.p1.y, pt2d01.x, pt2d01.y, pt2d01.z);
+					m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p2.m_dmi), rect2d.p2.x, rect2d.p2.y, pt2d02.x, pt2d02.y, pt2d02.z);
+					m_highAccuracy->getHighAccPosition(false, m_xrSetting->equipType, project->enclToTrueMile(rect2d.p3.m_dmi), rect2d.p3.x, rect2d.p3.y, pt2d03.x, pt2d03.y, pt2d03.z);
+
+
+
+					hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>* hn2dDis =
+						new hnCommon::hn2dDiseaseDef<hnCommon::hn2dGpsPoint>(pt2d00, pt2d01, pt2d02, pt2d03, diseaseInfo.strDisName, diseaseInfo.dMileage);
+	*/
 
 				disVector.push_back(hn2dDis);
 			}
@@ -2936,7 +3517,7 @@ void hnRoadDataProcess::slot_exportHighAccuracyDiseaseDXf()
 
 void hnRoadDataProcess::slot_exportGjDatas()
 {
-	//导出国检转换中间数据 
+	// 根据全部已导入工程选择并批量生成与二维软件一致的国检转换中间数据。
 	if (!m_projects->isOpenProject())
 	{
 		return;
@@ -2948,178 +3529,172 @@ void hnRoadDataProcess::slot_exportGjDatas()
 			QStringLiteral("确定"));
 		return;
 	}
-	auto reply = QMessageBox::question(this, QStringLiteral("提示"), QStringLiteral("出总表时间较长,是否继续"), QMessageBox::Yes | QMessageBox::No);
+	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+	auto allPorject = manager->getAllBaseProject();
+	if (allPorject.empty())
+	{
+		return;
+	}
+
+	bool containsRuralRoad = false;
+	bool containsDegreeRoad = false;
+	for (hnPro::hnProject* project : allPorject)
+	{
+		if (!project)
+		{
+			continue;
+		}
+		if (project->getBaseStandard() == HnProjectEnums::CityRoad)
+		{
+			QMessageBox::information(this, QStringLiteral("国检转换不可用"),
+				QStringLiteral("当前导入工程中包含城镇道路工程，仅提供标准规范报表导出，不支持国检转换。"));
+			return;
+		}
+		containsDegreeRoad = containsDegreeRoad || project->getBaseStandard() == HnProjectEnums::DegreeRoad2018;
+		containsRuralRoad = containsRuralRoad
+			|| project->getBaseStandard() == HnProjectEnums::RuralRoadlowLevel;
+	}
+
+	hnGjExportModeDialog modeDialog(containsRuralRoad, this, containsDegreeRoad);
+	if (modeDialog.exec() != QDialog::Accepted)
+	{
+		return;
+	}
+	const hnGjExportStandard exportStandard = modeDialog.selectedStandard();
+	const hnGjOutputSelection outputSelection = modeDialog.selectedOutputSelection();
+	auto reply = QMessageBox::question(this, QStringLiteral("生成国检转换中间数据"),
+		QStringLiteral("国检转换一次只能处理同一个县区的工程。\n\n"
+			"请确认当前导入的全部道路都属于同一个县级行政区，程序随后只需输入一次县级行政区划代码。\n\n"
+			"将对全部已导入工程按【%1】生成 ConverSource。\n"
+			"单工程生成成功后会直接替换该二维工程原有的 ConverSource，是否继续？")
+		.arg(hnGjConvertSourceService::standardDisplayName(exportStandard)),
+		QMessageBox::Yes | QMessageBox::No);
 
 	if (reply != QMessageBox::Yes)
 		return;
-	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
-	auto allPorject = manager->getAllBaseProject();
-	if (allPorject.size() < 1)
+	QSet<QString> existingCountyCodes;
+	for (hnPro::hnProject* project : allPorject)
 	{
+		if (!project)
+		{
+			continue;
+		}
+		const QString existingCode = hnGjConvertSourceService::readCountyCode(project);
+		if (!existingCode.isEmpty()) existingCountyCodes.insert(existingCode);
+	}
+	if (existingCountyCodes.size() > 1)
+	{
+		QMessageBox::critical(this, QStringLiteral("工程县区不一致"),
+			QStringLiteral("当前批次工程中检测到多个县级行政区划代码：%1。\n\n"
+				"国检转换一次只能处理同一个县区，请重新导入同一县区的道路工程。")
+			.arg(QStringList(existingCountyCodes.toList()).join(QStringLiteral("、"))));
 		return;
 	}
 
-
-	auto defaultStarndar = HnProjectEnums::roadTypeQStringToEnum(allPorject.at(0)->getCurProSetInfo().strRoadStandard);
-	auto defaultDrawType = allPorject.at(0)->getCurProSetInfo().nDrawType;
-	QString defaultStanardStr = HnProjectEnums::roadTypeEnumToQString_ForExcel(defaultStarndar);
-	QString defaultDrawTypeStr = QString::fromLocal8Bit(hnCommon::workTypeToQString((ROAD_WORK_TYPE)defaultDrawType));
-
-	double sMile = 0, eMile = 0;
-	m_xrSetting->outMileWithMark = true;
-	QApplication::setOverrideCursor(Qt::WaitCursor);
-	QApplication::processEvents();
-	bool outSucceed = true;
-	QVector<int> splitValueVec = { 10,100,1000 };
-
-
-	QString excelDir;
-
-
-
-	QString segment = "10,100,1000";
-	int excelIndexs[] = { 0,1,2,3,4,5,7,8,9,10,11,12 };
-	//计算总任务数量
-	int totalTasks = 3 * 11 * allPorject.size();
-	int currentTask = 0;
-
-	//创建进度对话框
-	QProgressDialog progress(QStringLiteral("处理工程数据..."), QStringLiteral("取消"), 0, totalTasks);
-	progress.setWindowTitle(QStringLiteral("导出所有数据"));
-	progress.setWindowModality(Qt::WindowModal);  //模态
-	progress.setMinimumDuration(0);   //立即显示
-
-	QString selectModelTxt = QStringLiteral("单项指标出表");
-	m_xrSetting->outExcelFormatDmi = false;
-	m_xrSetting->outRoadUnitMark = true;
-	m_xrSetting->diseaseExcelOutPicture = false;
-
-	for each (auto curProject in allPorject)
+	bool countyCodeAccepted = false;
+	const QString defaultCountyCode = existingCountyCodes.isEmpty() ? QString() : *existingCountyCodes.constBegin();
+	const QString batchCountyCode = QInputDialog::getText(this, QStringLiteral("输入县级行政区划代码"),
+		QStringLiteral("当前批次共 %1 条道路，必须全部属于同一个县区。\n"
+			"请输入本批次统一使用的 6 位县级行政区划代码：").arg(allPorject.size()),
+		QLineEdit::Normal, defaultCountyCode, &countyCodeAccepted).trimmed();
+	if (!countyCodeAccepted)
 	{
-
-		QString projectBasePath = curProject->get2DProPath();
-		if (projectBasePath.isEmpty())
-		{
-			currentTask++;
-			progress.setValue(currentTask);
-			QApplication::processEvents();
-			continue;
-		}
-		excelDir = curProject->get2DProPath() + QStringLiteral("/结果表格/") + defaultStanardStr + "/" + defaultDrawTypeStr + "/";
-		QDir outDir(excelDir);
-		if (!outDir.exists())
-		{
-			outDir.mkpath(excelDir);
-		}
-		sMile = curProject->getCurProSetInfo().dBegMile;
-		eMile = curProject->getCurProSetInfo().dEndMile;
-
-		QStringList segmentList = segment.split(',');
-
-		for each (QString  splitValueStr in segmentList)
-		{
-			for (int index : excelIndexs)
-			{
-
-				double splitValue = splitValueStr.toDouble();
-
-				switch (defaultStarndar)
-				{
-
-				case HnProjectEnums::DegreeRoad2018:
-				{
-					switch (defaultDrawType)
-					{
-					case hnCommon::ROAD_WORK_LARGE_RECT:
-						hnOutExcelManage::outBigRectExcel2018(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::ROAD_WORK_SMALL_RECT:
-						hnOutExcelManage::outExcelSmallRectDegreeRoad2018(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::DESIGN:
-						hnOutExcelManage::outDesignExcel2018(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					default:
-						break;
-					}
-				}
-
-				case HnProjectEnums::CityRoad:
-					switch (defaultDrawType)
-					{
-					case hnCommon::ROAD_WORK_LARGE_RECT:
-						hnOutExcelManage::outExcelCityRoad(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::ROAD_WORK_SMALL_RECT:
-						hnOutExcelManage::outExcelSmallRectCityRoad(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::DESIGN:
-						hnOutExcelManage::outExcelDesignCityRoad(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					default:
-						break;
-					}
-
-					break;
-				case HnProjectEnums::RuralRoadlowLevel:
-				{
-					switch (defaultDrawType)
-					{
-					case hnCommon::ROAD_WORK_LARGE_RECT:
-						hnOutExcelManage::outBigRectExcelRuralRoadlowLevelRoad(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::ROAD_WORK_SMALL_RECT:
-						hnOutExcelManage::ouSmallRectlRuralRoadlowLevelRoad(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					case hnCommon::DESIGN:
-						hnOutExcelManage::outDesignExcel2018(excelDir, selectModelTxt, index, splitValue, curProject, sMile, eMile);
-
-						break;
-					default:
-						break;
-					}
-					break;
-				}
-
-				default:
-					break;
-				}
-				currentTask++;
-				progress.setValue(currentTask);
-				QApplication::processEvents();
-
-			}
-
-		}
-
-
-		{
-			auto marks = curProject->getCurrentMarkVector();
-			QString markFilePath = curProject->get2DProject()->getFullRoadTypeMarkFilePath();
-			QFile markFile(markFilePath);
-			if (markFile.exists())
-			{
-				QString newFilePath = excelDir + "RoadTypeInfo.txt";
-				QFile fileTemp1(newFilePath);
-				if (!fileTemp1.exists())
-				{
-					markFile.copy(newFilePath);
-				}
-			}
-		}
-
+		return;
 	}
-	QApplication::restoreOverrideCursor();
+	if (!QRegExp(QStringLiteral("^\\d{6}$")).exactMatch(batchCountyCode))
+	{
+		QMessageBox::warning(this, QStringLiteral("行政区划代码无效"),
+			QStringLiteral("县级行政区划代码必须为 6 位数字，当前输入：%1").arg(batchCountyCode));
+		return;
+	}
 
-	QMessageBox::information(this, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("导出完毕"));
+	// 国检格式按桩号分段并保留校桩；临时覆盖设置会在函数退出时自动恢复。
+	QScopedValueRollback<bool> restoreMileWithMark(m_xrSetting->outMileWithMark, true);
+	QScopedValueRollback<bool> restoreFormatDmi(m_xrSetting->outExcelFormatDmi, false);
+	QScopedValueRollback<bool> restoreRoadUnitMark(m_xrSetting->outRoadUnitMark, true);
+	QScopedValueRollback<int> restoreDiseasePicture(m_xrSetting->diseaseExcelOutPicture, 0);
+
+	QProgressDialog progress(QStringLiteral("正在预检全部工程..."), QStringLiteral("取消"), 0, 0, this);
+	progress.hide();
+	progress.setWindowTitle(QStringLiteral("生成国检转换中间数据"));
+	progress.setWindowModality(Qt::WindowModal);
+	progress.setMinimumDuration(0);
+	progress.setAutoClose(false);
+	progress.setAutoReset(false);
+	progress.setFixedSize(QSize(660, 180));
+	progress.ensurePolished();
+	progress.move(window()->frameGeometry().center() - progress.frameGeometry().center());
+	progress.setValue(0);
+	progress.show();
+	QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+	hnGjConvertSourceService service;
+	const hnGjBatchResult batchResult = service.exportBatch(allPorject, batchCountyCode, exportStandard, outputSelection,
+		[&progress](int current, int total, const QString& message)
+		{
+			progress.setMaximum(qMax(1, total));
+			progress.setValue(current);
+			progress.setLabelText(message);
+			QApplication::processEvents();
+			return !progress.wasCanceled();
+		});
+	progress.close();
+
+	QStringList summary;
+	if (!batchResult.preflightErrors.isEmpty())
+	{
+		summary << QStringLiteral("批量预检未通过，未修改任何工程的 ConverSource。") << QString();
+		summary << batchResult.preflightErrors;
+	}
+	else
+	{
+		summary << QStringLiteral("完整成功：%1　部分成功：%2　失败：%3　跳过：%4%5")
+			.arg(batchResult.completeSuccessCount()).arg(batchResult.partialSuccessCount())
+			.arg(batchResult.failedCount()).arg(batchResult.skippedCount())
+			.arg(batchResult.canceled ? QStringLiteral("　（用户已取消）") : QString());
+		for (const hnGjProjectResult& result : batchResult.projects)
+		{
+			summary << QString();
+			const QString state = result.success && !result.skippedOutputs.isEmpty() ? QStringLiteral("部分成功")
+				: result.success ? QStringLiteral("完整成功")
+				: result.skipped ? QStringLiteral("跳过") : QStringLiteral("失败");
+			summary << QStringLiteral("【%1】%2").arg(state, result.projectName);
+			if (!result.outputPath.isEmpty()) summary << QStringLiteral("输出：%1").arg(result.outputPath);
+			if (!result.skippedOutputs.isEmpty())
+			{
+				summary << QStringLiteral("未生成：%1").arg(result.skippedOutputs.join(QStringLiteral("、")));
+			}
+			if (!result.errorMessage.isEmpty()) summary << QStringLiteral("原因：%1").arg(result.errorMessage);
+			for (const QString& warning : result.warnings) summary << QStringLiteral("注意：%1").arg(warning);
+		}
+	}
+
+	QDialog dialog(this);
+	dialog.setWindowTitle(batchResult.preflightErrors.isEmpty()
+		? QStringLiteral("国检转换中间数据批量结果") : QStringLiteral("国检转换中间数据预检失败"));
+	dialog.resize(900, 600);
+	QVBoxLayout* layout = new QVBoxLayout(&dialog);
+	QTextEdit* details = new QTextEdit(&dialog);
+	details->setReadOnly(true);
+	details->setLineWrapMode(QTextEdit::NoWrap);
+	details->setPlainText(summary.join(QStringLiteral("\n")));
+	layout->addWidget(details);
+	QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	layout->addWidget(buttons);
+	dialog.exec();
+}
+
+void hnRoadDataProcess::slot_openGjSoftware()
+{
+	QProcess process;
+
+	//获取影像生成软件绝对路径
+	QString cutImageSoftName = QApplication::applicationDirPath() + "/HNRoadFormatConverter/HNRoadFormatConverter.exe";
+	QStringList arguments;
+
+	//启动程序  非阻塞的方式
+	process.startDetached(cutImageSoftName, arguments);
 }
 
 void hnRoadDataProcess::slot_importCtrlPoints()
@@ -3168,7 +3743,7 @@ void hnRoadDataProcess::slot_importCtrlPoints()
 		// 获取x坐标
 		ctrlPoint.nLocX = list.at(6).toInt();
 		// 获取y坐标
-		const double roadHeight = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImageHeightScale()*
+		const double roadHeight = hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImageHeightScale() *
 			hnDataManager::getDataManager()->getCurrentProject()->get3DProject()->getImagePixelHeight();
 
 		double singlePixMile = fmod(encoderMile, roadHeight);
@@ -3368,7 +3943,7 @@ void hnRoadDataProcess::updateTreeWidget()
 
 	//添加节点到树上
 	QMap<QString, QVector<hnProjectDataInfo>> projectDatas;
-	for each (hnProjectDataInfo data in m_projectDataInfos)
+	for each(hnProjectDataInfo data in m_projectDataInfos)
 	{
 		QString temp(QString::fromLocal8Bit(data.strProJectName));
 		if (projectDatas.keys().contains(temp))
@@ -3388,7 +3963,7 @@ void hnRoadDataProcess::updateTreeWidget()
 	{
 		QString key = it.key();
 		QVector<hnProjectDataInfo> vec = it.value();
-		QTreeWidgetItem  * projectNameItem = new QTreeWidgetItem(m_projectListTreeWidget);
+		QTreeWidgetItem* projectNameItem = new QTreeWidgetItem(m_projectListTreeWidget);
 		projectNameItem->setText(0, key);
 		projectNameItem->setData(1, Qt::UserRole, 1);
 
@@ -3404,11 +3979,11 @@ void hnRoadDataProcess::updateTreeWidget()
 				projectNameItem->setFont(0, font);
 			}
 		}
-		QTreeWidgetItem  * projectTitle2dItem = new QTreeWidgetItem(projectNameItem);
+		QTreeWidgetItem* projectTitle2dItem = new QTreeWidgetItem(projectNameItem);
 		projectTitle2dItem->setText(0, QStringLiteral("二维工程"));
 		projectTitle2dItem->setData(1, Qt::UserRole, 1);
 
-		QTreeWidgetItem  * projectTitle3dItem = new QTreeWidgetItem(projectNameItem);
+		QTreeWidgetItem* projectTitle3dItem = new QTreeWidgetItem(projectNameItem);
 		projectTitle3dItem->setText(0, QStringLiteral("三维工程"));
 		projectTitle3dItem->setData(1, Qt::UserRole, 1);
 
@@ -3420,7 +3995,7 @@ void hnRoadDataProcess::updateTreeWidget()
 			if (projectInfo.proSetInfo.nWorkType == PROJECT_TYPE::PROJECT_2D_TYPE)
 			{
 				//添加二维工程
-				QTreeWidgetItem  * item2d = new QTreeWidgetItem(projectTitle2dItem);
+				QTreeWidgetItem* item2d = new QTreeWidgetItem(projectTitle2dItem);
 
 				//如果是当前二维工程,就加粗处理
 				QString projectName2d(QString::fromLocal8Bit(projectInfo.str2DProName));
@@ -3440,7 +4015,7 @@ void hnRoadDataProcess::updateTreeWidget()
 			else if (projectInfo.proSetInfo.nWorkType == PROJECT_TYPE::PROJECT_23D_TYPE)
 			{
 				//添加二维工程
-				QTreeWidgetItem  * item2d = new QTreeWidgetItem(projectTitle2dItem);
+				QTreeWidgetItem* item2d = new QTreeWidgetItem(projectTitle2dItem);
 
 				//如果是当前二维工程,就加粗处理
 				QString projectName2d(QString::fromLocal8Bit(projectInfo.str2DProName));
@@ -3458,7 +4033,7 @@ void hnRoadDataProcess::updateTreeWidget()
 				item2d->setData(1, Qt::UserRole, 0);
 
 				//添加三维工程  
-				QTreeWidgetItem  * item3d = new QTreeWidgetItem(projectTitle3dItem);
+				QTreeWidgetItem* item3d = new QTreeWidgetItem(projectTitle3dItem);
 
 				//如果是当前三维工程，就加粗处理
 				QString projectName3d(QString::fromLocal8Bit(projectInfo.str3DProName));
@@ -3474,13 +4049,13 @@ void hnRoadDataProcess::updateTreeWidget()
 
 				item3d->setText(0, projectName3d);
 				item3d->setData(1, Qt::UserRole, 1);
-				item3d->setFlags(item3d->flags()&~Qt::ItemIsEnabled);
+				item3d->setFlags(item3d->flags() & ~Qt::ItemIsEnabled);
 			}
 			else
 			{
 				//单独三维工程
 				//添加三维工程  
-				QTreeWidgetItem  * item3d = new QTreeWidgetItem(projectTitle3dItem);
+				QTreeWidgetItem* item3d = new QTreeWidgetItem(projectTitle3dItem);
 
 				//如果是当前三维工程，就加粗处理
 				QString projectName3d(QString::fromLocal8Bit(projectInfo.str3DProName));
@@ -3496,7 +4071,7 @@ void hnRoadDataProcess::updateTreeWidget()
 
 				item3d->setText(0, projectName3d);
 				item3d->setData(1, Qt::UserRole, 2);
-				item3d->setFlags(item3d->flags()&~Qt::ItemIsEnabled);
+				item3d->setFlags(item3d->flags() & ~Qt::ItemIsEnabled);
 			}
 
 
@@ -3517,44 +4092,58 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 	QElapsedTimer totalTimer;
 	QElapsedTimer stepTimer;
 	totalTimer.start();
-	#ifdef _DEBUG
+	qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStart]";
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AllWidgetLoadStart]";
-	#endif
+#endif
 	// 加载当前工程数据
 	hnPro::hnProject* curProject = hnApp::hnDataManager::getDataManager()->getCurrentProject();
 	if (curProject)
 	{
-		#ifdef _DEBUG
+		updateProjectTypeActionVisibility(curProject->getProjectType());
+
+		// Restore project-specific display settings before any image decode is queued.
+		applyProjectImageAdjustments();
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][AllWidgetLoadProject]"
 			<< "projectType=" << static_cast<int>(curProject->getProjectType())
 			<< "projectName=" << curProject->getProjectName();
-		#endif
+#endif
 		if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_23D_TYPE)
 		{
 			// 加载当前工程路面影像
 			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
-			#ifdef _DEBUG
+			qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+				<< "name=2dRoadPicture"
+				<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
-			#endif
+#endif
 
 			// 加载景观影像
 			if (m_pStreetViewWidget)
 			{
 				stepTimer.restart();
 				m_pStreetViewWidget->initView();
-				#ifdef _DEBUG
+				qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+					<< "name=streetView"
+					<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
-				#endif
+#endif
 			}
 			// 加载三维影像
 			if (hnDataManager::getDataManager()->getCurrentProject()->getProjectType() != PROJECT_2D_TYPE)
 			{
 				stepTimer.restart();
 				m_3dPixScrollWidget->load3dImage();
-				#ifdef _DEBUG
+				qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+					<< "name=3dImage"
+					<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
-				#endif
+#endif
 			}
 		}
 		else if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
@@ -3562,18 +4151,24 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 			// 加载当前工程路面影像
 			stepTimer.start();
 			this->m_2dPixScrollWidget->loadRoadPicture();
-			#ifdef _DEBUG
+			qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+				<< "name=2dRoadPicture"
+				<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 			qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=2dRoadPicture" << "elapsedMs=" << stepTimer.elapsed();
-			#endif
+#endif
 
 			// 加载景观影像
 			if (m_pStreetViewWidget)
 			{
 				stepTimer.restart();
 				m_pStreetViewWidget->initView();
-				#ifdef _DEBUG
+				qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+					<< "name=streetView"
+					<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=streetView" << "elapsedMs=" << stepTimer.elapsed();
-				#endif
+#endif
 			}
 		}
 		else
@@ -3583,20 +4178,84 @@ void hnRoadDataProcess::allWidgetLoadPictures()
 			{
 				stepTimer.start();
 				m_3dPixScrollWidget->load3dImage();
-				#ifdef _DEBUG
+				qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadStep]"
+					<< "name=3dImage"
+					<< "elapsedMs=" << stepTimer.elapsed();
+#ifdef _DEBUG
 				qDebug().noquote() << "[HN_PERF][AllWidgetLoadStep]" << "step=3dImage" << "elapsedMs=" << stepTimer.elapsed();
-				#endif
+#endif
 			}
 		}
 
 	}
-	#ifdef _DEBUG
+	qInfo().noquote() << "[HN_PROJECT][AllWidgetLoadEnd]"
+		<< "totalMs=" << totalTimer.elapsed();
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][AllWidgetLoadEnd]" << "totalMs=" << totalTimer.elapsed();
-	#endif
+#endif
+}
+
+void hnRoadDataProcess::updateProjectTypeActionVisibility(PROJECT_TYPE projectType)
+{
+	const bool isVisible = projectType != PROJECT_2D_TYPE;
+
+	m_ComputeGeoaligAction->setVisible(isVisible);
+	m_2d3dMileCorrentAct->setVisible(isVisible);
+	m_createImageAct->setVisible(isVisible);
+	m_cutImageAct->setVisible(isVisible);
+	m_oDViewportAct->setVisible(isVisible);
+	m_3dGrayModeAct->setVisible(isVisible);
+	m_3dRgbModeAct->setVisible(isVisible);
+
+	if (m_exportGJDatasAction)
+	{
+		bool canExport = false;
+		bool containsCityRoad = false;
+		hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+		const std::vector<hnPro::hnProject*> projects = manager
+			? manager->getAllBaseProject() : std::vector<hnPro::hnProject*>();
+		if (!projects.empty())
+		{
+			canExport = true;
+			for (hnPro::hnProject* project : projects)
+			{
+				if (!project || !project->get2DProject())
+				{
+					canExport = false;
+					break;
+				}
+				const HnProjectEnums::StandardParmTypeEnum standard = project->getBaseStandard();
+				if (standard == HnProjectEnums::CityRoad)
+				{
+					containsCityRoad = true;
+					canExport = false;
+					break;
+				}
+				if (standard != HnProjectEnums::DegreeRoad2018
+					&& standard != HnProjectEnums::RuralRoadlowLevel)
+				{
+					canExport = false;
+					break;
+				}
+			}
+		}
+		m_exportGJDatasAction->setEnabled(canExport);
+		m_exportGJDatasAction->setToolTip(containsCityRoad
+			? QStringLiteral("城镇道路工程仅提供标准规范报表导出，不支持国检转换")
+			: QStringLiteral("按已导入工程类型选择并生成国检转换中间数据"));
+	}
 }
 
 void hnRoadDataProcess::clearCurrentProjectUiState()
 {
+	if (m_IrmShowWidget) m_IrmShowWidget->resetData();
+	// 无工程时恢复初始功能区状态，避免保留上一工程的隐藏状态。
+	updateProjectTypeActionVisibility(PROJECT_23D_TYPE);
+	if (m_exportGJDatasAction)
+	{
+		m_exportGJDatasAction->setEnabled(false);
+	}
+
 	if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
 	{
 		m_2dPixScrollWidget->getPixWidget()->clearPix();
@@ -3681,12 +4340,20 @@ void hnRoadDataProcess::setLayout(PROJECT_TYPE projectType)
 
 }
 
-bool hnRoadDataProcess::checkProjectFrameTypeConflict(const QString & projectName)
+bool hnRoadDataProcess::checkProjectFrameTypeConflict(const QString& projectName)
 {
 	//设置当前工程
-	hnApp::hnDataManager::getDataManager()->setCurrentProject(projectName);
+	hnApp::hnDataManager* dataManager = hnApp::hnDataManager::getDataManager();
+	if (!dataManager || !dataManager->getProjectManager())
+	{
+		return false;
+	}
+	if (!dataManager->setCurrentProject(projectName))
+	{
+		return false;
+	}
 
-	if (!hnApp::hnDataManager::getDataManager()->isOpenProject())
+	if (!dataManager->isOpenProject())
 	{
 		return false;
 	}
@@ -3762,7 +4429,7 @@ bool hnRoadDataProcess::handleConflict(QString standard, int drawType)
 
 	if (0 == result)
 	{
-	 
+
 
 		hnApp::hnDataManager::getDataManager()->getDiseaseService()->deleteAllTargetTypeDisease(standard, drawType);
 		return true;
@@ -3819,18 +4486,18 @@ void hnRoadDataProcess::slot_jumpToMark(int markId, double trueMile, double tabl
 
 	// 表格第一列显示的是真实桩号；编码器里程必须和真实桩号能互相校验，避免旧库 EnclMile=0 时误跳到工程开头。
 	auto encoderMatchesTrueMile = [project, trueMile](double encoderMile)
-	{
-		if (encoderMile < 0.0)
 		{
-			return false;
-		}
-		if (trueMile <= 0.0)
-		{
-			return true;
-		}
-		const double checkedTrueMile = project->enclToTrueMile(encoderMile);
-		return qAbs(checkedTrueMile - trueMile) <= 5.0;
-	};
+			if (encoderMile < 0.0)
+			{
+				return false;
+			}
+			if (trueMile <= 0.0)
+			{
+				return true;
+			}
+			const double checkedTrueMile = project->enclToTrueMile(encoderMile);
+			return qAbs(checkedTrueMile - trueMile) <= 5.0;
+		};
 
 	double encoderMile = -1.0;
 	if (encoderMatchesTrueMile(tableEncoderMile))
@@ -3867,13 +4534,13 @@ void hnRoadDataProcess::slot_jumpToMark(int markId, double trueMile, double tabl
 	}
 	encoderMile = qMax(0.0, encoderMile);
 
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_MARK_JUMP]"
 		<< "markId=" << markId
 		<< "trueMile=" << trueMile
 		<< "tableEncoderMile=" << tableEncoderMile
 		<< "targetEncoderMile=" << encoderMile;
-	#endif
+#endif
 
 	const auto projectType = project->getProjectType();
 	QScopedValueRollback<bool> syncingGuard(m_isProgrammaticViewSync, true);
@@ -3919,7 +4586,7 @@ void hnRoadDataProcess::openProjectSlot()
 
 	m_xrSetting->DefaultPath = projectPath;
 	m_xrSetting->writeData();
-	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE; 
+	hnCommon::PROJECT_TYPE  nWorkType = PROJECT_2D_TYPE;
 	//获取所有工程
 	m_projectDataInfos.clear();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
@@ -3927,7 +4594,8 @@ void hnRoadDataProcess::openProjectSlot()
 		QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("未解析任何到符合格式的项目数据，请检查"),
 			QStringLiteral("确定"));
 		return;
-	} 
+	}
+	normalizePreferredDiseaseDrawMode(m_projectDataInfos);
 	//progressDialog.reset();
 	//打开工程对话框
 	auto roadTypes = hnDataManager::getDataManager()->getRoadStandardNames();
@@ -3942,9 +4610,13 @@ void hnRoadDataProcess::openProjectSlot()
 	{
 		return;
 	}
-	 
+	if (!validateProjectsBeforeOpen(m_projectDataInfos, this))
+	{
+		return;
+	}
+
 	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
-	
+
 	clearCurrentProjectUiState();
 	if (m_projects->isHasProject())
 	{
@@ -3955,25 +4627,51 @@ void hnRoadDataProcess::openProjectSlot()
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
 	//初始化工程
 	loading.setMessage(QStringLiteral("正在初始化工程..."));
-	bool initok =  m_projects->initProject(m_projectDataInfos);
+	bool initok = m_projects->initProject(m_projectDataInfos);
 	if (initok)
 	{
-	
+		// 初始化只负责把工程对象加入管理器，当前工程仍需显式选定。
+		// 否则导入路径会跳过视图初始化，后续最近工程恢复也可能拿到空当前工程。
+		QString initialProjectName;
+		if (!m_projectDataInfos.empty())
+		{
+			const hnCommon::hnProjectDataInfo& firstProject = m_projectDataInfos.front();
+			initialProjectName = QString::fromLocal8Bit(firstProject.str2DProName);
+			if (initialProjectName.isEmpty())
+			{
+				initialProjectName = QString::fromLocal8Bit(firstProject.str3DProName);
+			}
+		}
+		if (initialProjectName.isEmpty()
+			|| !checkProjectFrameTypeConflict(initialProjectName)
+			|| !m_projects->isOpenProject()
+			|| !m_projects->getCurrentProject())
+		{
+			qWarning().noquote() << "[HN_PROJECT][ImportOpenFailed]"
+				<< "reason=currentProjectNotSelected"
+				<< "project=" << initialProjectName;
+			return;
+		}
+
 		loading.setMessage(QStringLiteral("正在加载所有视图的图片数据..."));
 		// 加载所有视图的图片数据
-		this->allWidgetLoadPictures(); 
+		this->allWidgetLoadPictures();
 
 		loading.setMessage(QStringLiteral("正在更新树状视图..."));
 
 		//更新树状视图
-		this->updateTreeWidget(); 
+		this->updateTreeWidget();
 		loading.setMessage(QStringLiteral("正在更新更新所有界面..."));
 
+		// 导入及再次导入均从当前工程内存刷新表格，不能仅刷新影像和病害视图。
+		hnPro::hnProject* currentProject = m_projects->getCurrentProject();
+		emit signal_updateProject(currentProject->getCurProSetInfo(),
+			currentProject->getCurrentMarkVector(), currentProject->getCurrentMilePileVector());
 		//更新所有界面
 		this->updateAllWidget();
-		
+
 	}
- 
+
 }
 
 void hnRoadDataProcess::openLastProjectSlot()
@@ -3981,21 +4679,21 @@ void hnRoadDataProcess::openLastProjectSlot()
 	QElapsedTimer totalTimer;
 	QElapsedTimer stepTimer;
 	totalTimer.start();
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStart]"
 		<< "time=" << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz")
 		<< "defaultPath=" << m_xrSetting->DefaultPath
 		<< "lastProject=" << m_xrSetting->lastProjectName
 		<< "lastFrame=" << m_xrSetting->lastProjectFn;
-	#endif
-	 
+#endif
+
 	//获取用户选择的文件夹
 	QString projectPath = m_xrSetting->DefaultPath;
 	if (projectPath.isEmpty())
 	{
-		#ifdef _DEBUG
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=emptyDefaultPath" << "totalMs=" << totalTimer.elapsed();
-		#endif
+#endif
 		QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未找到最近工程"),
 			QStringLiteral("确定"));
 		return;
@@ -4009,106 +4707,150 @@ void hnRoadDataProcess::openLastProjectSlot()
 	stepTimer.start();
 	if (!m_projects->getAllProject(projectPath, m_projectDataInfos, nWorkType))
 	{
-		#ifdef _DEBUG
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
 			<< "reason=getAllProjectFailed"
 			<< "stepMs=" << stepTimer.elapsed()
 			<< "totalMs=" << totalTimer.elapsed();
-		#endif
+#endif
 		QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("未找到最近工程"),
 			QStringLiteral("确定"));
 		return;
 	}
-	#ifdef _DEBUG
+	normalizePreferredDiseaseDrawMode(m_projectDataInfos);
+	if (!validateProjectsBeforeOpen(m_projectDataInfos, this))
+	{
+#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=projectValidationFailed";
+#endif
+		return;
+	}
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]"
 		<< "step=getAllProject"
 		<< "elapsedMs=" << stepTimer.elapsed()
 		<< "projectCount=" << m_projectDataInfos.size();
-	#endif
+#endif
 	if (!ensureLineCameraAreasForRecentProjects(m_projectDataInfos, this))
 	{
-		#ifdef _DEBUG
+#ifdef _DEBUG
 		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]" << "reason=lineCameraAreaNotConfigured";
-		#endif
+#endif
 		return;
 	}
 
 	BusyLoadingGuard loading(this, QStringLiteral("打开工程"), QStringLiteral("正在打开工程，请稍后......"));
- 
+
 	stepTimer.restart();
 	clearCurrentProjectUiState();
 	if (m_projects->isHasProject())
 	{
 		m_projects->closeProject();
 	}
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=closeAndClear" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
-	 
+#endif
+
 
 	//根据各个模块标准设置其病害表名称
 	stepTimer.restart();
 	m_projects->setProjectDiseaseVector(m_projectDataInfos);
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=setProjectDiseaseVector" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
+#endif
 
 	loading.setMessage(QStringLiteral("正在初始化工程..."));
 	//初始化工程
 	stepTimer.restart();
-	m_projects->initProject(m_projectDataInfos);
-	#ifdef _DEBUG
+	const bool initOk = m_projects->initProject(m_projectDataInfos);
+	if (!initOk)
+	{
+#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
+			<< "reason=initProjectFailed"
+			<< "stepMs=" << stepTimer.elapsed()
+			<< "totalMs=" << totalTimer.elapsed();
+#endif
+		return;
+	}
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=initProject" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
+#endif
 
-	 
 	loading.setMessage(QStringLiteral("正在加载所有视图的图片数据..."));
-	// 加载所有视图的图片数据
 	stepTimer.restart();
 	this->allWidgetLoadPictures();
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=allWidgetLoadPictures" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
+#endif
 
 	loading.setMessage(QStringLiteral("正在更新树状视图..."));
 
 	//更新树状视图
 	stepTimer.restart();
 	this->updateTreeWidget();
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=updateTreeWidget" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
-	QTreeWidgetItem  * item = new QTreeWidgetItem(m_projectListTreeWidget);
+#endif
+	QTreeWidgetItem* item = new QTreeWidgetItem(m_projectListTreeWidget);
 	item->setText(0, m_xrSetting->lastProjectName);
 	item->setData(1, Qt::UserRole, 0);
 	//选中最后工程
 	stepTimer.restart();
 	slot_dClickTreeItem(item, 0);
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=slot_dClickTreeItem" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
+#endif
+	// slot_dClickTreeItem 是兼容历史接口的 void 槽函数，不能从返回值判断选择是否成功。
+	// 最近工程名过期、工程改名或冲突取消时，必须在恢复上次帧号前终止流程。
+	hnPro::hnProject* currentProject = hnDataManager::getDataManager()->getCurrentProject();
+	if (!currentProject || !m_projects->isOpenProject())
+	{
+		qWarning().noquote() << "[HN_PROJECT][RecentProjectEnd]"
+			<< "reason=currentProjectNotSelected"
+			<< "lastProject=" << m_xrSetting->lastProjectName;
+		QMessageBox::warning(this, QStringLiteral("最近工程打开失败"),
+			QStringLiteral("最近工程记录已失效或工程选择未完成，请使用“导入工程”重新选择工程。"),
+			QStringLiteral("确定"));
+		return;
+	}
 
 	// Jump to the frame remembered by the last-project setting.
 	int frameNum2d = m_xrSetting->lastProjectFn;
 
 	stepTimer.restart();
-	double roadImageDistance = 2.0;
-	if (hnDataManager::getDataManager()->getCurrentProject()->get2DProject())
+	if (currentProject->get2DProject()
+		&& m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
 	{
-		roadImageDistance = hnDataManager::getDataManager()->getCurrentProject()->get2DProject()->_RoadImgDis;
+		const double roadImageDistance = currentProject->get2DProject()->_RoadImgDis;
+		const double targetEncoderMile = qMax(0, frameNum2d - 1) * roadImageDistance;
+		m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetEncoderMile);
+		syncContinuousViews(ContinuousViewSyncSource::Road2D, targetEncoderMile);
+
+#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=scrollSdkToLastFrame" << "elapsedMs=" << stepTimer.elapsed();
+		qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
+			<< "totalMs=" << totalTimer.elapsed()
+			<< "targetFrame=" << frameNum2d;
+#endif
+		return;
 	}
-	const double targetEncoderMile = qMax(0, frameNum2d - 1) * roadImageDistance;
-	m_2dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetEncoderMile);
-    syncContinuousViews(ContinuousViewSyncSource::Road2D, targetEncoderMile);
-	#ifdef _DEBUG
-	qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=scrollSdkToLastFrame" << "elapsedMs=" << stepTimer.elapsed();
-	#endif
-	#ifdef _DEBUG
+
+	if (currentProject->get3DProject()
+		&& m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+	{
+		const double targetEncoderMile = qMax(0, frameNum2d - 1) * 2.0;
+		m_3dPixScrollWidget->getPixWidget()->scrollBottomToEncoderMile(targetEncoderMile);
+#ifdef _DEBUG
+		qDebug().noquote() << "[HN_PERF][RecentProjectStep]" << "step=scrollSdkToLastFrame3D" << "elapsedMs=" << stepTimer.elapsed();
+#endif
+	}
+#ifdef _DEBUG
 	qDebug().noquote() << "[HN_PERF][RecentProjectEnd]"
 		<< "totalMs=" << totalTimer.elapsed()
 		<< "targetFrame=" << frameNum2d;
-	#endif
-	 
+#endif
+
 }
 
 void hnRoadDataProcess::slot_openCurrentProjectDir()
@@ -4133,109 +4875,184 @@ void hnRoadDataProcess::slot_openCurrentProjectDir()
 	QDesktopServices::openUrl(QUrl::fromLocalFile(url));
 }
 
+void hnRoadDataProcess::slot_exportRoutePhotos()
+{
+	QVector<hnRoutePhotoProject> projects;
+	const auto imported = hnDataManager::getDataManager()->getProjectManager()->getAllBaseProject();
+	for (hnPro::hnProject* project : imported)
+	{
+		hnRoutePhotoProject item;
+		if (project)
+		{
+			item.name = project->getProjectName();
+			item.path = project->get2DProPath();
+			hnPro::hn2DProject* data = project->get2DProject();
+			if (data)
+			{
+				item.roadCode = data->_RoadCode.trimmed();
+				item.date = QDate::fromString(data->_DataDate.trimmed(), QStringLiteral("yyyyMMdd"));
+				item.startMile = data->_StartMile;
+				item.endMile = data->_EndMile;
+			}
+		}
+		projects.append(item);
+	}
+	hnRoutePhotoExportDialog dialog(projects, this);
+	dialog.exec();
+}
+
 void hnRoadDataProcess::slot_outSimpleProject()
 {
-	//选择输出目录
-	//获取用户选择的文件夹
-	QString outProjectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择工程路径"));
-	if (outProjectPath.isEmpty())
+	if (!m_projects->isOpenProject())
+	{
+		QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("请先打开工程。"));
+		return;
+	}
+
+	hnPro::hnProject* currentProject = hnDataManager::getDataManager()->getCurrentProject();
+	if (currentProject == nullptr)
+	{
+		QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("当前工程不可用。"));
+		return;
+	}
+
+	hnProjectDiagnosticService diagnosticService;
+	bool includeRawRutData = false;
+	QString rawRutCameraDirectory;
+	if (diagnosticService.hasRawRutData(currentProject, rawRutCameraDirectory))
+	{
+		QMessageBox rawRutQuestion(this);
+		rawRutQuestion.setWindowTitle(QStringLiteral("导出车辙原始数据"));
+		rawRutQuestion.setIcon(QMessageBox::Question);
+		rawRutQuestion.setText(QStringLiteral("检测到工程存在车辙原始数据，是否一并导出？"));
+		rawRutQuestion.setInformativeText(
+			QStringLiteral("选择“是”将导出整个 camera0 目录，文件可能较大，导出时间会相应增加。\n\n%1")
+			.arg(rawRutCameraDirectory));
+		rawRutQuestion.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+		rawRutQuestion.setDefaultButton(QMessageBox::No);
+		includeRawRutData = rawRutQuestion.exec() == QMessageBox::Yes;
+	}
+
+	const QString outputDirectory = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择诊断包输出目录"));
+	if (outputDirectory.isEmpty())
 	{
 		return;
 	}
 
-	QList<QString> out2dFilePath
+	ProjectDiagnosticResult result;
+	QString packagePath;
+	const bool isSuccessful = diagnosticService.exportDiagnosticPackage(
+		currentProject,
+		outputDirectory,
+		result,
+		packagePath,
+		includeRawRutData);
+	QMessageBox::information(this, QStringLiteral("诊断包导出"), isSuccessful ? QStringLiteral("诊断包导出完成：%1").arg(packagePath) : QStringLiteral("诊断包导出失败。"));
+	return;
+}
+
+#if 0
+//选择输出目录
+//获取用户选择的文件夹
+QString outProjectPath = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择工程路径"));
+if (outProjectPath.isEmpty())
+{
+	return;
+}
+
+QList<QString> out2dFilePath
+{
+	R"(\RUT\camera0\orirut.txt)",
+	R"(\RUT\camera1\orirut.txt)",
+	R"(\IRIMTD\DAQ0\IRI_10m.txt)",
+	R"(\IRIMTD\DAQ0\resample.txt)",
+	R"(\IRIMTD\DAQ0\Setting.ini)",
+	R"(\IRIMTD\DAQ0\Coeff.dat)",
+	R"(\IRIMTD\DAQ0\ReSample250.txt)",
+	R"(\IRIMTD\DAQ0\Speed_10m.txt)",
+	R"(\IRIMTD\DAQ1\IRI_10m.txt)",
+	R"(\IRIMTD\DAQ1\resample.txt)",
+	R"(\IRIMTD\DAQ1\Setting.ini)",
+	R"(\IRIMTD\DAQ1\Coeff.dat)",
+	R"(\IRIMTD\DAQ1\ReSample250.txt)",
+	R"(\IRIMTD\DAQ1\Speed_10m.txt)",
+	R"(\IRIMTD\Laser0\MTD_10m.txt)",
+	R"(\IRIMTD\Laser0\Setting.ini)",
+	R"(\IRIMTD\Laser1\MTD_10m.txt)",
+	R"(\IRIMTD\Laser1\Setting.ini)",
+	R"(\IRIMTD\Laser2\MTD_10m.txt)",
+	R"(\IRIMTD\Laser2\Setting.ini)",
+	R"(\IRIMTD\Laser0\MPD_10m.txt)",
+	R"(\IRIMTD\Laser1\MPD_10m.txt)",
+	R"(\IRIMTD\Laser2\MPD_10m.txt)",
+
+	R"(\RoadImg\Camera0\Road2Mile.txt)",
+	R"(\RoadImg\SYN\gps.txt)",
+	R"(\RoadImg\SYN\trigger.txt)",
+	R"(\StreetImg\Camera0\Street2Mile.txt)",
+	R"(\StreetImg\SYN\gps.txt)",
+	R"(\StreetImg\SYN\trigger.txt)",
+	R"(\StreetImg\Camera1\Street2Mile.txt)",
+
+	R"(\DegreeInfo.txt)",
+	R"(\Dmi2Mile.txt)",
+	R"(\GPS2Mile.txt)",
+	R"(\GPSInfo.txt)",
+	R"(\GPSTime2Dmi.txt)",
+	R"(\ProjectInfo.txt)",
+	R"(\RoadTypeInfo.txt)",
+	R"(\Setting.ini)",
+	R"(\2d3dDiffSetting.ini)",
+
+	R"(\MileStoneCaliInfo.txt)"
+};
+
+QList<QString> out3dFilePath
+{
+	R"(\PointCloud\1\Mms-Cam-1.cam)",
+	R"(\Image\pavement-cam-1.idx)",
+	R"(\3dProjectConfig.ini)",
+	R"(\mirroredSetting.ini)",
+	R"(\Mms-Para.config)",
+	R"(\Mms-Para.db)",
+
+};
+
+hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+auto allPorject = manager->getAllBaseProject();
+for (auto project : allPorject)
+{
+	auto type = project->getProjectType();
+	QString outPath = outProjectPath + "\\" + project->getProjectName();
+	QDir outBaseDir(outPath);
+	QString project2dBasePath;
+	QString outBaseProjectDir;
+	if (!outBaseDir.exists())
 	{
-		R"(\RUT\camera0\orirut.txt)",
-		R"(\RUT\camera1\orirut.txt)",
-		R"(\IRIMTD\DAQ0\IRI_10m.txt)",
-		R"(\IRIMTD\DAQ0\resample.txt)",
-		R"(\IRIMTD\DAQ0\Setting.ini)",
-		R"(\IRIMTD\DAQ0\Coeff.dat)",
-		R"(\IRIMTD\DAQ0\ReSample250.txt)",
-		R"(\IRIMTD\DAQ0\Speed_10m.txt)",
-		R"(\IRIMTD\DAQ1\IRI_10m.txt)",
-		R"(\IRIMTD\DAQ1\resample.txt)",
-		R"(\IRIMTD\DAQ1\Setting.ini)",
-		R"(\IRIMTD\DAQ1\Coeff.dat)",
-		R"(\IRIMTD\DAQ1\ReSample250.txt)",
-		R"(\IRIMTD\DAQ1\Speed_10m.txt)",
-		R"(\IRIMTD\Laser0\MTD_10m.txt)",
-		R"(\IRIMTD\Laser0\Setting.ini)",
-		R"(\IRIMTD\Laser1\MTD_10m.txt)",
-		R"(\IRIMTD\Laser1\Setting.ini)",
-		R"(\IRIMTD\Laser2\MTD_10m.txt)",
-		R"(\IRIMTD\Laser2\Setting.ini)",
-		R"(\IRIMTD\Laser0\MPD_10m.txt)",
-		R"(\IRIMTD\Laser1\MPD_10m.txt)",
-		R"(\IRIMTD\Laser2\MPD_10m.txt)",
-
-		R"(\RoadImg\Camera0\Road2Mile.txt)",
-		R"(\RoadImg\SYN\gps.txt)",
-		R"(\RoadImg\SYN\trigger.txt)",
-		R"(\StreetImg\Camera0\Street2Mile.txt)",
-		R"(\StreetImg\SYN\gps.txt)",
-		R"(\StreetImg\SYN\trigger.txt)",
-		R"(\StreetImg\Camera1\Street2Mile.txt)",
-
-		R"(\DegreeInfo.txt)",
-		R"(\Dmi2Mile.txt)",
-		R"(\GPS2Mile.txt)",
-		R"(\GPSInfo.txt)",
-		R"(\GPSTime2Dmi.txt)",
-		R"(\ProjectInfo.txt)",
-		R"(\RoadTypeInfo.txt)",
-		R"(\Setting.ini)",
-		R"(\2d3dDiffSetting.ini)",
-
-		R"(\MileStoneCaliInfo.txt)"
-	};
-
-	QList<QString> out3dFilePath
-	{
-		R"(\PointCloud\1\Mms-Cam-1.cam)",
-		R"(\Image\pavement-cam-1.idx)",
-		R"(\3dProjectConfig.ini)",
-		R"(\mirroredSetting.ini)",
-		R"(\Mms-Para.config)",
-		R"(\Mms-Para.db)",
-
-	};
-
-	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
-	auto allPorject = manager->getAllBaseProject();
-	for (auto project : allPorject)
-	{
-		auto type = project->getProjectType();
-		QString outPath = outProjectPath + "\\" + project->getProjectName();
-		QDir outBaseDir(outPath);
-		QString project2dBasePath;
-		QString outBaseProjectDir;
-		if (!outBaseDir.exists())
+		if (type == hnCommon::PROJECT_2D_TYPE)
 		{
-			if (type == hnCommon::PROJECT_2D_TYPE)
+			project2dBasePath = outPath;
+			outBaseProjectDir = outPath;
+		}
+		else
+		{
+			outBaseDir.mkdir(outPath);
+			QString timeDirName = project->getAbsulotelyPath().split("/").last();
+			outBaseProjectDir = outPath + "\\" + timeDirName;
+			if (!outBaseDir.exists(outBaseProjectDir))
 			{
-				project2dBasePath = outPath;
-				outBaseProjectDir = outPath;
+				outBaseDir.mkdir(outBaseProjectDir);
 			}
-			else
-			{
-				outBaseDir.mkdir(outPath);
-				QString timeDirName = project->getAbsulotelyPath().split("/").last();
-				outBaseProjectDir = outPath + "\\" + timeDirName;
-				if (!outBaseDir.exists(outBaseProjectDir))
-				{
-					outBaseDir.mkdir(outBaseProjectDir);
-				}
 
 #pragma region 复制工程信息
 
-				QString settingInfoFilePath = outBaseProjectDir + "\\ProjectInfo.xml";
-				QFile toolFile;
-				toolFile.copy(project->getAbsulotelyPath() + "\\ProjectInfo.xml", settingInfoFilePath);
-				project2dBasePath = outBaseProjectDir + "\\" + project->get2DProName();
+			QString settingInfoFilePath = outBaseProjectDir + "\\ProjectInfo.xml";
+			QFile toolFile;
+			toolFile.copy(project->getAbsulotelyPath() + "\\ProjectInfo.xml", settingInfoFilePath);
+			project2dBasePath = outBaseProjectDir + "\\" + project->get2DProName();
 #pragma endregion
-			}
 		}
+	}
 
 
 
@@ -4243,130 +5060,130 @@ void hnRoadDataProcess::slot_outSimpleProject()
 
 #pragma region 复制必要的二维数据
 
-		project->getCurDB()->m_mileInfoTable.writeData_Simple(project->getCurrentMileVector());
+	project->getCurDB()->m_mileInfoTable.writeData_Simple(project->getCurrentMileVector());
 
-		if (!outBaseDir.exists(project2dBasePath))
+	if (!outBaseDir.exists(project2dBasePath))
+	{
+		outBaseDir.mkdir(project2dBasePath);
+	}
+	for (QString& file2dPath : out2dFilePath)
+	{
+
+		QString realOriOut2dPath = project->get2DProPath() + file2dPath;
+		QString realOut2dPath = project2dBasePath + file2dPath;
+		QFile tempFile(realOriOut2dPath);
+		QFileInfo tempFileInfo(realOut2dPath);
+		QString tempFolderPath = tempFileInfo.absolutePath();
+		QDir tempDir(tempFolderPath);
+		if (!tempDir.exists())
 		{
-			outBaseDir.mkdir(project2dBasePath);
+			bool mkResult = tempDir.mkpath(tempFolderPath);
 		}
-		for (QString& file2dPath : out2dFilePath)
+		if (tempFile.exists())
+		{
+			tempFile.copy(realOut2dPath);
+		}
+	}
+	//复制5张图像
+	QStringList roadPicturePaths = project->get2DProject()->getRoadPicturePath();
+	for (int picIdx = 0; picIdx <= 5; picIdx++)
+	{
+		if (picIdx >= roadPicturePaths.size())
+		{
+			continue;
+		}
+		QString curFilePath = roadPicturePaths[picIdx];
+		QFile curFile(curFilePath);
+		//构建输出路径
+		QString basePicPath = project2dBasePath + R"(\RoadImg\Camera0\Image_0000\)";
+
+		QDir tempDir(basePicPath);
+		if (!tempDir.exists())
+		{
+			bool mkResult = tempDir.mkpath(basePicPath);
+		}
+
+		if (curFile.exists())
+		{
+			QFileInfo curFileInfo(curFile);
+			QString outPicPath = basePicPath + curFileInfo.fileName();
+			curFile.copy(outPicPath);
+		}
+	}
+#pragma endregion
+
+#pragma region 复制成果数据
+	QString resultDbPath = project->getAbsulotelyPath() + QStringLiteral("\\成果数据\\");
+	QString outResultDbPath = outBaseProjectDir + QStringLiteral("\\成果数据\\");
+	QDir resultDir(resultDbPath);
+	if (resultDir.exists())
+	{
+		if (!resultDir.exists(outResultDbPath))
+		{
+			resultDir.mkpath(outResultDbPath);
+		}
+
+		QFileInfoList entries = resultDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+		for (const QFileInfo& entity : entries)
+		{
+			QString sourceEntryPath = entity.absoluteFilePath();
+			if (entity.isDir())
+			{
+				QString outEntryDirPath = outResultDbPath + entity.fileName();
+				if (!resultDir.exists(outEntryDirPath))
+				{
+					resultDir.mkdir(outEntryDirPath);
+				}
+				QDir oriEntryDirPathDir(outEntryDirPath);
+				QDir orientryDirPathDir(sourceEntryPath);
+				QFileInfoList outEntrys = orientryDirPathDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+				for (const QFileInfo& outEntity : outEntrys)
+				{
+					QString outFilePath = outEntryDirPath + "\\" + outEntity.fileName();
+					QFile outEntityFile(outEntity.absoluteFilePath());
+					outEntityFile.copy(outFilePath);
+				}
+
+			}
+
+
+		}
+	}
+#pragma endregion
+
+	switch (type)
+	{
+	case hnCommon::PROJECT_2D_TYPE:
+		break;
+	case hnCommon::PROJECT_XD_3D_TYPE:
+	case hnCommon::PROJECT_JD_3D_TYPE:
+	case hnCommon::PROJECT_23D_TYPE:
+	{
+#pragma region 复制必要的三维数据
+		QString outPosBaseDir = outPath + "\\POS";
+		if (!outBaseDir.exists(outPosBaseDir))
+		{
+			outBaseDir.mkdir(outPosBaseDir);
+		}
+		QString project3dBasePath = outBaseProjectDir + "\\" + project->get3DProName();
+		for (QString& file3dPath : out3dFilePath)
 		{
 
-			QString realOriOut2dPath = project->get2DProPath() + file2dPath;
-			QString realOut2dPath = project2dBasePath + file2dPath;
-			QFile tempFile(realOriOut2dPath);
-			QFileInfo tempFileInfo(realOut2dPath);
+			QString realOriOut3dPath = project->get3DProPath() + "\\" + project->get3DProName() + file3dPath;
+			QString realOut3dPath = project3dBasePath + file3dPath;
+			QFile tempFile(realOriOut3dPath);
+			QFileInfo tempFileInfo(realOut3dPath);
 			QString tempFolderPath = tempFileInfo.absolutePath();
 			QDir tempDir(tempFolderPath);
 			if (!tempDir.exists())
 			{
-				bool mkResult = tempDir.mkpath(tempFolderPath);
+				tempDir.mkpath(tempFolderPath);
 			}
 			if (tempFile.exists())
 			{
-				tempFile.copy(realOut2dPath);
+				tempFile.copy(realOut3dPath);
 			}
 		}
-		//复制5张图像
-		QStringList roadPicturePaths = project->get2DProject()->getRoadPicturePath();
-		for (int picIdx = 0; picIdx <= 5; picIdx++)
-		{
-			if (picIdx >= roadPicturePaths.size())
-			{
-				continue;
-			}
-			QString curFilePath = roadPicturePaths[picIdx];
-			QFile curFile(curFilePath);
-			//构建输出路径
-			QString basePicPath = project2dBasePath + R"(\RoadImg\Camera0\Image_0000\)";
-
-			QDir tempDir(basePicPath);
-			if (!tempDir.exists())
-			{
-				bool mkResult = tempDir.mkpath(basePicPath);
-			}
-
-			if (curFile.exists())
-			{
-				QFileInfo curFileInfo(curFile);
-				QString outPicPath = basePicPath + curFileInfo.fileName();
-				curFile.copy(outPicPath);
-			}
-		}
-#pragma endregion
-
-#pragma region 复制成果数据
-		QString resultDbPath = project->getAbsulotelyPath() + QStringLiteral("\\成果数据\\");
-		QString outResultDbPath = outBaseProjectDir + QStringLiteral("\\成果数据\\");
-		QDir resultDir(resultDbPath);
-		if (resultDir.exists())
-		{
-			if (!resultDir.exists(outResultDbPath))
-			{
-				resultDir.mkpath(outResultDbPath);
-			}
-
-			QFileInfoList entries = resultDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
-			for (const QFileInfo & entity : entries)
-			{
-				QString sourceEntryPath = entity.absoluteFilePath();
-				if (entity.isDir())
-				{
-					QString outEntryDirPath = outResultDbPath + entity.fileName();
-					if (!resultDir.exists(outEntryDirPath))
-					{
-						resultDir.mkdir(outEntryDirPath);
-					}
-					QDir oriEntryDirPathDir(outEntryDirPath);
-					QDir orientryDirPathDir(sourceEntryPath);
-					QFileInfoList outEntrys = orientryDirPathDir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
-					for (const QFileInfo & outEntity : outEntrys)
-					{
-						QString outFilePath = outEntryDirPath + "\\" + outEntity.fileName();
-						QFile outEntityFile(outEntity.absoluteFilePath());
-						outEntityFile.copy(outFilePath);
-					}
-
-				}
-
-
-			}
-		}
-#pragma endregion
-
-		switch (type)
-		{
-		case hnCommon::PROJECT_2D_TYPE:
-			break;
-		case hnCommon::PROJECT_XD_3D_TYPE:
-		case hnCommon::PROJECT_JD_3D_TYPE:
-		case hnCommon::PROJECT_23D_TYPE:
-		{
-#pragma region 复制必要的三维数据
-			QString outPosBaseDir = outPath + "\\POS";
-			if (!outBaseDir.exists(outPosBaseDir))
-			{
-				outBaseDir.mkdir(outPosBaseDir);
-			}
-			QString project3dBasePath = outBaseProjectDir + "\\" + project->get3DProName();
-			for (QString& file3dPath : out3dFilePath)
-			{
-
-				QString realOriOut3dPath = project->get3DProPath() + "\\" + project->get3DProName() + file3dPath;
-				QString realOut3dPath = project3dBasePath + file3dPath;
-				QFile tempFile(realOriOut3dPath);
-				QFileInfo tempFileInfo(realOut3dPath);
-				QString tempFolderPath = tempFileInfo.absolutePath();
-				QDir tempDir(tempFolderPath);
-				if (!tempDir.exists())
-				{
-					tempDir.mkpath(tempFolderPath);
-				}
-				if (tempFile.exists())
-				{
-					tempFile.copy(realOut3dPath);
-				}
-			}
 
 
 #pragma endregion
@@ -4377,16 +5194,18 @@ void hnRoadDataProcess::slot_outSimpleProject()
 
 #pragma endregion
 
-			break;
-		}
-		default:
-			break;
-		}
+		break;
 	}
-
-
-	QMessageBox::about(this, QStringLiteral("提示"), QStringLiteral("输出完毕!"));
+	default:
+		break;
+	}
 }
+
+
+QMessageBox::about(this, QStringLiteral("提示"), QStringLiteral("输出完毕!"));
+}
+
+#endif
 
 void hnRoadDataProcess::slot_gpsMatching()
 {
@@ -4542,7 +5361,7 @@ bool hnRoadDataProcess::GetRoadGPSTime2Dmi(hnPro::hnProject* project, QString Im
 	QSet<QString> filterSet = { "G", "g", "?" };
 
 	QList<QString> filteredList;
-	for (const QString &item : syntrigstrs)
+	for (const QString& item : syntrigstrs)
 	{
 		if (!(filterSet.contains(item)
 			&& (item.startsWith("%CDA")
@@ -5182,42 +6001,29 @@ bool hnRoadDataProcess::GetGPSMileMapping(hnPro::hnProject* project, QString gps
 
 void hnRoadDataProcess::writeStreetDiseaseMsgToExcel(int disType, hnProject* project, Document& xlsx)
 {
-	QVector<hnCommon::hnRoadDiseaseInfo> diss; 
-
-	diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
-
-	 
-	for (int d = diss.size() - 1; d >= 0; d--)
-	{
-		if (diss[d].ndiseaseType != disType)
-		{
-			diss.removeAt(d);
-		}
-	}
-
+	QVector<hnCommon::hnRoadDiseaseInfo> diss =
+		hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllStreetDiseases();
 	QVector<hnDiseaseSetInfo> diseaseSetInfos = hnApp::hnDataManager::getDataManager()->
 		getCurrentProjectStreetDiseases(project->getBaseStandard(), disType);
 
-	for (int i = 0; i < diss.size(); ++i)
+	// 历史景观病害可能保存了错误的 DiseaseType，出表时以当前道路标准配置为准。
+	QMap<QString, hnDiseaseSetInfo> diseaseSetInfoMap;
+	for (const auto& setInfo : diseaseSetInfos)
 	{
-		hnDiseaseSetInfo  setInfo;
-		auto dis = diss.at(i);
+		QString disName = QString::fromLocal8Bit(setInfo.strDiseaseTypeName);
+		diseaseSetInfoMap.insert(disName, setInfo);
+	}
+
+	int rowCount = 2;
+	for (const auto& dis : diss)
+	{
+		if (dis.ndiseaseType == 3) continue;
 		QString disName = QString::fromLocal8Bit(dis.strDisName);
-
-		for (int setInfoIndex = 0; setInfoIndex < diseaseSetInfos.size(); ++setInfoIndex)
-		{
-			QString name = QString::fromLocal8Bit(diseaseSetInfos.at(setInfoIndex).strDiseaseTypeName);
-			if (name == disName)
-			{
-				setInfo = diseaseSetInfos.at(setInfoIndex);
-			}
-		}
-
-		if (dis.ndiseaseType != disType)
+		if (!diseaseSetInfoMap.contains(disName))
 		{
 			continue;
 		}
-		int rowCount = i + 2;
+		const hnDiseaseSetInfo setInfo = diseaseSetInfoMap.value(disName);
 		int  startTrueMile = qRound(project->enclToTrueMile(dis.dDmi));
 		//开始桩号	
 		int endTrueMile = qRound(project->enclToTrueMile(dis.dDmi));
@@ -5233,287 +6039,424 @@ void hnRoadDataProcess::writeStreetDiseaseMsgToExcel(int disType, hnProject* pro
 		xlsx.write(QString("G%1").arg(rowCount), judgeType); //病害单位
 		xlsx.write(QString("H%1").arg(rowCount), dis.diseaseWeight);
 		xlsx.write(QString("I%1").arg(rowCount), dis.dArea);
+		++rowCount;
 	}
 }
 
 // 检查数据
 void hnRoadDataProcess::checkProSlot()
 {
-
-
-	//弹出界面
-	if (!m_projects->isOpenProject())
+	hnPro::hnProjectManager* projectManager = hnDataManager::getDataManager()->getProjectManager();
+	if (projectManager == nullptr)
 	{
-		QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QStringLiteral("请确保至少打开一个工程!"),
-			QString::fromLocal8Bit("确定"));
+		QMessageBox::warning(this, QStringLiteral("工程检查失败"), QStringLiteral("工程管理器不可用。"));
+		return;
+	}
+	const std::vector<hnPro::hnProject*> projects = projectManager->getAllBaseProject();
+	if (projects.empty())
+	{
+		QMessageBox::warning(this, QStringLiteral("工程检查失败"), QStringLiteral("没有可检查的已打开工程。"));
 		return;
 	}
 
-	hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
-	std::vector<hnPro::hnProject*> allPorject = manager->getAllBaseProject();
-	if (allPorject.size() > 0)
+	hnProjectDiagnosticService diagnosticService;
+	ProjectDiagnosticResult result;
+	result.errorCount = 0;
+	result.warningCount = 0;
+	result.infoCount = 0;
+	QStringList reportPaths;
+	int reportWriteFailureCount = 0;
+	int checkedProjectCount = 0;
+	int nullProjectCount = 0;
+	int invalidRootProjectCount = 0;
+	for (size_t projectIndex = 0; projectIndex < projects.size(); ++projectIndex)
 	{
-		//创建数据检查结果文件txt
-		hnPro::hnProject * firstPro = allPorject.at(0);
-		QString fPath;
-		if (firstPro->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || firstPro->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
+		hnPro::hnProject* project = projects.at(projectIndex);
+		if (project == nullptr)
 		{
-			fPath = firstPro->get3DProPath() + QStringLiteral("/检查结果.txt");;
+			++nullProjectCount;
+			++result.errorCount;
+			continue;
+		}
+		const QString projectRoot = project->getAbsulotelyPath();
+		if (projectRoot.isEmpty() || !QDir::isAbsolutePath(projectRoot))
+		{
+			++invalidRootProjectCount;
+			++result.errorCount;
+			ProjectDiagnosticIssue rootIssue;
+			rootIssue.severity = ProjectDiagnosticError;
+			rootIssue.code = QStringLiteral("PROJECT_ROOT_INVALID");
+			rootIssue.projectName = project->getProjectName().isEmpty()
+				? QStringLiteral("未命名工程_%1").arg(static_cast<qulonglong>(projectIndex + 1))
+				: project->getProjectName();
+			rootIssue.message = QStringLiteral("工程根目录为空或不是绝对路径，已跳过该工程。");
+			rootIssue.path = projectRoot;
+			result.issues.append(rootIssue);
+			continue;
+		}
+
+		const QString projectName = project->getProjectName().isEmpty()
+			? QStringLiteral("未命名工程_%1").arg(static_cast<qulonglong>(projectIndex + 1))
+			: project->getProjectName();
+		QString safeProjectName = projectName;
+		safeProjectName.replace(QChar('/'), QChar('_'));
+		safeProjectName.replace(QChar('\\'), QChar('_'));
+		safeProjectName.replace(QChar(':'), QChar('_'));
+		safeProjectName.replace(QChar('*'), QChar('_'));
+		safeProjectName.replace(QChar('?'), QChar('_'));
+		safeProjectName.replace(QChar('"'), QChar('_'));
+		safeProjectName.replace(QChar('<'), QChar('_'));
+		safeProjectName.replace(QChar('>'), QChar('_'));
+		safeProjectName.replace(QChar('|'), QChar('_'));
+		const QString reportFolderName = QStringLiteral("%1_%2")
+			.arg(static_cast<qulonglong>(projectIndex + 1))
+			.arg(safeProjectName);
+		const QString reportDirectory = QDir(projectRoot)
+			.filePath(QStringLiteral("诊断输出/%1").arg(reportFolderName));
+		const ProjectDiagnosticResult projectResult = diagnosticService.checkProject(project);
+		QString projectReportPath;
+		if (diagnosticService.writeReport(projectResult, reportDirectory, projectReportPath))
+		{
+			reportPaths.append(projectReportPath);
 		}
 		else
 		{
-			fPath = firstPro->get2DProPath() + QStringLiteral("/检查结果.txt");
+			++reportWriteFailureCount;
+			++result.errorCount;
+			ProjectDiagnosticIssue reportIssue;
+			reportIssue.severity = ProjectDiagnosticError;
+			reportIssue.code = QStringLiteral("REPORT_WRITE_FAILED");
+			reportIssue.projectName = projectName;
+			reportIssue.message = QStringLiteral("检查报告写入失败。");
+			reportIssue.path = reportDirectory;
+			result.issues.append(reportIssue);
 		}
-		QFile fFile(fPath);
 
-		if (fFile.exists())
+		++checkedProjectCount;
+		result.errorCount += projectResult.errorCount;
+		result.warningCount += projectResult.warningCount;
+		result.infoCount += projectResult.infoCount;
+		for (int issueIndex = 0; issueIndex < projectResult.issues.size(); ++issueIndex)
 		{
-			fFile.remove();
+			ProjectDiagnosticIssue issue = projectResult.issues.at(issueIndex);
+			issue.projectName = projectName;
+			result.issues.append(issue);
 		}
-		if (!fFile.open(QIODevice::WriteOnly | QIODevice::Text))
-		{
-			qDebug() << QStringLiteral("无法打开文件");
-			return;
-		}
-		QTextStream out(&fFile);
-		for (hnPro::hnProject* curProject : allPorject)
-		{
+	}
 
-			//区分二三维项目类型 分别处理
-			if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || curProject->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
+	const int skippedProjectCount = nullProjectCount + invalidRootProjectCount;
+	if (nullProjectCount > 0)
+	{
+		ProjectDiagnosticIssue skippedIssue;
+		skippedIssue.severity = ProjectDiagnosticError;
+		skippedIssue.code = QStringLiteral("PROJECT_NULL");
+		skippedIssue.message = QStringLiteral("跳过 %1 个无效工程指针。").arg(nullProjectCount);
+		result.issues.append(skippedIssue);
+	}
+
+	QString summaryText = QStringLiteral("已检查 %1/%2 个工程：错误 %3 项，警告 %4 项，通过 / 信息 %5 项。")
+		.arg(checkedProjectCount).arg(projects.size()).arg(result.errorCount).arg(result.warningCount).arg(result.infoCount)
+		;
+	if (skippedProjectCount > 0)
+	{
+		summaryText += QStringLiteral("跳过 %1 个无效工程。").arg(skippedProjectCount);
+	}
+	if (reportWriteFailureCount > 0)
+	{
+		summaryText += QStringLiteral("有 %1 个工程的检查报告写入失败。").arg(reportWriteFailureCount);
+	}
+	else
+	{
+		summaryText += QStringLiteral("已为所有有效工程写入检查报告。");
+	}
+	hnDiagnosticResultDialog dialog(result, summaryText, reportPaths, this);
+	dialog.exec();
+	return;
+}
+
+#if 0
+
+
+//弹出界面
+if (!m_projects->isOpenProject())
+{
+	QMessageBox::warning(this, QString::fromLocal8Bit("警告"), QStringLiteral("请确保至少打开一个工程!"),
+		QString::fromLocal8Bit("确定"));
+	return;
+}
+
+hnPro::hnProjectManager* manager = hnApp::hnDataManager::getDataManager()->getProjectManager();
+std::vector<hnPro::hnProject*> allPorject = manager->getAllBaseProject();
+if (allPorject.size() > 0)
+{
+	//创建数据检查结果文件txt
+	hnPro::hnProject* firstPro = allPorject.at(0);
+	QString fPath;
+	if (firstPro->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || firstPro->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
+	{
+		fPath = firstPro->get3DProPath() + QStringLiteral("/检查结果.txt");;
+	}
+	else
+	{
+		fPath = firstPro->get2DProPath() + QStringLiteral("/检查结果.txt");
+	}
+	QFile fFile(fPath);
+
+	if (fFile.exists())
+	{
+		fFile.remove();
+	}
+	if (!fFile.open(QIODevice::WriteOnly | QIODevice::Text))
+	{
+		qDebug() << QStringLiteral("无法打开文件");
+		return;
+	}
+	QTextStream out(&fFile);
+	for (hnPro::hnProject* curProject : allPorject)
+	{
+
+		//区分二三维项目类型 分别处理
+		if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_JD_3D_TYPE || curProject->getProjectType() == PROJECT_TYPE::PROJECT_XD_3D_TYPE)
+		{
+			//纯三维项目数据检查 
+		}
+		else
+		{
+			QString curProjectName = curProject->get2DProName();
+			//二三维项目数据检查
+			//检查桩号是否合法 工程数据的完整性
+			hnCommon::hnProjectSetInfo setInfo = curProject->getCurProSetInfo();
+			if (setInfo.nLineType == 1)
 			{
-				//纯三维项目数据检查 
+				if (setInfo.dBegMile >= setInfo.dEndMile)
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%6道路名称:%5道路编号:%4,起点桩号:%1,终点桩号:%2,行车方向:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
+						arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("上行") : QStringLiteral("下行")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+				}
 			}
 			else
 			{
-				QString curProjectName = curProject->get2DProName();
-				//二三维项目数据检查
-				//检查桩号是否合法 工程数据的完整性
-				hnCommon::hnProjectSetInfo setInfo = curProject->getCurProSetInfo();
-				if (setInfo.nLineType == 1)
+				if (setInfo.dBegMile <= setInfo.dEndMile)
 				{
-					if (setInfo.dBegMile >= setInfo.dEndMile)
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%6道路名称:%5道路编号:%4,起点桩号:%1,终点桩号:%2,行车方向:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
-							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("上行") : QStringLiteral("下行")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-					}
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%6道路名称:%5道路编号:%4,起点桩号:%1,终点桩号:%2,行车方向:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
+						arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("上行") : QStringLiteral("下行")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+				}
+			}
+			QString settingFile = curProject->get2DProPath() + QStringLiteral("/Setting.ini");
+			if (!QFile::exists(settingFile))
+			{
+				QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少工程配置文件Setting.ini,请从其他同配置工程拷贝同名文件到路径下!")
+					.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+				out << msg;
+				QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+					QString::fromLocal8Bit("确定"));
+			}
+			//检查路面数据的完整性
+			if (curProject->get2DProject()->_IsRoad)
+			{
+				QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\RoadImg");
+				QDir roadDir(roadPath);
+				if (!roadDir.exists())
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少路面文件夹!")
+						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+					return;
+				}
+				auto roadPicData = curProject->get2DProject()->getRoadPicturePath();
+				if (roadPicData.size() <= 0)
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少路面图像!")
+						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+					return;
 				}
 				else
 				{
-					if (setInfo.dBegMile <= setInfo.dEndMile)
+					double dmi = 0;
+					if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
 					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%6道路名称:%5道路编号:%4,起点桩号:%1,终点桩号:%2,行车方向:%3").arg(QString::number(setInfo.dBegMile, 'f', 2)).
-							arg(QString::number(setInfo.dEndMile, 'f', 2)).arg(setInfo.nLineType == 1 ? QStringLiteral("上行") : QStringLiteral("下行")).arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+						dmi = setInfo.dLength;
+					}
+					else
+					{
+						dmi = setInfo.dEndEnclMile;
+					}
+
+					int imgnum = roadPicData.size() * setInfo.dRoadLength;
+					if (imgnum < dmi - setInfo.dRoadLength * 5)
+					{
+						int temp = dmi / setInfo.dRoadLength - imgnum / setInfo.dRoadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,路面图像缺少图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
 						out << msg;
 						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
 							QString::fromLocal8Bit("确定"));
 					}
+					else if (imgnum > dmi + setInfo.dRoadLength * 5)
+					{
+						int temp = imgnum / setInfo.dRoadLength - dmi / setInfo.dRoadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,路面图像多采图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
+						out << msg;
+						QMessageBox::information(this, QString::fromLocal8Bit("信息"), msg,
+							QString::fromLocal8Bit("确定"));
+					}
 				}
-				QString settingFile = curProject->get2DProPath() + QStringLiteral("/Setting.ini");
-				if (!QFile::exists(settingFile))
+			}
+			//TODO 检查数据 CWB 处理中
+			//检查道路标准与道路等级的匹配情况等等
+			//检查车辙数据的完整性  
+
+
+
+
+			//检查路面数据的完整性
+			if (curProject->get2DProject()->_IsStreet)
+			{
+				QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\StreetImg");
+				QDir roadDir(roadPath);
+				if (!roadDir.exists())
 				{
-					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少工程配置文件Setting.ini,请从其他同配置工程拷贝同名文件到路径下!")
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少景观文件夹!")
+						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+					return;
+				}
+
+				auto roadPciData = curProject->get2DProject()->getLeftStreetPicturePath();
+				if (roadPciData.size() <= 0)
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少左侧景观图像!")
+						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+
+				}
+				else
+				{
+					double dmi = 0;
+					if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
+					{
+						dmi = setInfo.dLength;
+					}
+					else
+					{
+						dmi = setInfo.dEndEnclMile;
+					}
+
+					int roadLength = curProject->get2DProject()->_StreetImgDis;
+					int imgnum = roadPciData.size() * roadLength;
+					if (imgnum < dmi - roadLength * 5)
+					{
+						int temp = dmi / roadLength - imgnum / roadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,左侧景观图像缺少图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
+						out << msg;
+						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+							QString::fromLocal8Bit("确定"));
+					}
+					else if (imgnum > dmi + roadLength * 5)
+					{
+						int temp = imgnum / roadLength - dmi / roadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,左侧景观图像多采图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
+						out << msg;
+						QMessageBox::information(this, QString::fromLocal8Bit("提示"), msg,
+							QString::fromLocal8Bit("确定"));
+					}
+				}
+			}
+			if (curProject->get2DProject()->_IsDStreet)
+			{
+				QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\StreetImg");
+				QDir roadDir(roadPath);
+				if (!roadDir.exists())
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少景观文件夹!")
+						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
+					out << msg;
+					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+						QString::fromLocal8Bit("确定"));
+					return;
+				}
+
+				auto roadPciData = curProject->get2DProject()->getRightStreetPicturePath();
+				if (roadPciData.size() <= 0)
+				{
+					QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少右侧景观图像!")
 						.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
 					out << msg;
 					QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
 						QString::fromLocal8Bit("确定"));
 				}
-				//检查路面数据的完整性
-				if (curProject->get2DProject()->_IsRoad)
+				else
 				{
-					QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\RoadImg");
-					QDir roadDir(roadPath);
-					if (!roadDir.exists())
+					double dmi = 0;
+					if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
 					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少路面文件夹!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-						return;
-					}
-					auto roadPicData = curProject->get2DProject()->getRoadPicturePath();
-					if (roadPicData.size() <= 0)
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少路面图像!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-						return;
+						dmi = setInfo.dLength;
 					}
 					else
 					{
-						double dmi = 0;
-						if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
-						{
-							dmi = setInfo.dLength;
-						}
-						else
-						{
-							dmi = setInfo.dEndEnclMile;
-						}
+						dmi = setInfo.dEndEnclMile;
+					}
 
-						int imgnum = roadPicData.size() * setInfo.dRoadLength;
-						if (imgnum < dmi - setInfo.dRoadLength * 5)
-						{
-							int temp = dmi / setInfo.dRoadLength - imgnum / setInfo.dRoadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,路面图像缺少图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
-						else if (imgnum > dmi + setInfo.dRoadLength * 5)
-						{
-							int temp = imgnum / setInfo.dRoadLength - dmi / setInfo.dRoadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,路面图像多采图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(setInfo.dRoadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("信息"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
+
+					int roadLength = curProject->get2DProject()->_StreetImgDis;
+					int imgnum = roadPciData.size() * roadLength;
+					if (imgnum < dmi - roadLength * 5)
+					{
+						int temp = dmi / roadLength - imgnum / roadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,右侧景观图像缺少图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
+						out << msg;
+						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
+							QString::fromLocal8Bit("确定"));
+					}
+					else if (imgnum > dmi + roadLength * 5)
+					{
+						int temp = imgnum / roadLength - dmi / roadLength;
+						QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,右侧景观图像多采图像%3张,设置拍照距离%4!")
+							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
+						out << msg;
+						QMessageBox::information(this, QString::fromLocal8Bit("警告"), msg,
+							QString::fromLocal8Bit("确定"));
 					}
 				}
-				//TODO 检查数据 CWB 处理中
-				//检查道路标准与道路等级的匹配情况等等
-				//检查车辙数据的完整性  
-
-
-
-
-				//检查路面数据的完整性
-				if (curProject->get2DProject()->_IsStreet)
-				{
-					QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\StreetImg");
-					QDir roadDir(roadPath);
-					if (!roadDir.exists())
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少景观文件夹!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-						return;
-					}
-
-					auto roadPciData = curProject->get2DProject()->getLeftStreetPicturePath();
-					if (roadPciData.size() <= 0)
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少左侧景观图像!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-
-					}
-					else
-					{
-						double dmi = 0;
-						if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
-						{
-							dmi = setInfo.dLength;
-						}
-						else
-						{
-							dmi = setInfo.dEndEnclMile;
-						}
-
-						int roadLength = curProject->get2DProject()->_StreetImgDis;
-						int imgnum = roadPciData.size() * roadLength;
-						if (imgnum < dmi - roadLength * 5)
-						{
-							int temp = dmi / roadLength - imgnum / roadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,左侧景观图像缺少图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
-						else if (imgnum > dmi + roadLength * 5)
-						{
-							int temp = imgnum / roadLength - dmi / roadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,左侧景观图像多采图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("提示"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
-					}
-				}
-				if (curProject->get2DProject()->_IsDStreet)
-				{
-					QString roadPath = curProject->get2DProject()->getBasePath() + QStringLiteral("\\StreetImg");
-					QDir roadDir(roadPath);
-					if (!roadDir.exists())
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少景观文件夹!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-						return;
-					}
-
-					auto roadPciData = curProject->get2DProject()->getRightStreetPicturePath();
-					if (roadPciData.size() <= 0)
-					{
-						QString msg = QStringLiteral("不合法数据,请检查!\n工程名称:%3道路名称:%1道路编号:%2,缺少右侧景观图像!")
-							.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(curProjectName);
-						out << msg;
-						QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-							QString::fromLocal8Bit("确定"));
-					}
-					else
-					{
-						double dmi = 0;
-						if (curProject->getProjectType() == PROJECT_TYPE::PROJECT_2D_TYPE)
-						{
-							dmi = setInfo.dLength;
-						}
-						else
-						{
-							dmi = setInfo.dEndEnclMile;
-						}
-
-
-						int roadLength = curProject->get2DProject()->_StreetImgDis;
-						int imgnum = roadPciData.size() * roadLength;
-						if (imgnum < dmi - roadLength * 5)
-						{
-							int temp = dmi / roadLength - imgnum / roadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,右侧景观图像缺少图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::critical(this, QString::fromLocal8Bit("错误"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
-						else if (imgnum > dmi + roadLength * 5)
-						{
-							int temp = imgnum / roadLength - dmi / roadLength;
-							QString msg = QStringLiteral("工程名称:%5道路名称:%1道路编号:%2,右侧景观图像多采图像%3张,设置拍照距离%4!")
-								.arg(QString::fromLocal8Bit(setInfo.strNumber)).arg(QString::fromLocal8Bit(setInfo.strRoadName)).arg(QString::number(temp)).arg(QString::number(roadLength)).arg(curProjectName);
-							out << msg;
-							QMessageBox::information(this, QString::fromLocal8Bit("警告"), msg,
-								QString::fromLocal8Bit("确定"));
-						}
-					}
-				}
-
 			}
-		}
-		fFile.close();
-		QMessageBox::information(this, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("数据检查结束"));
 
+		}
 	}
+	fFile.close();
+	QMessageBox::information(this, QString::fromLocal8Bit("提示"), QString::fromLocal8Bit("数据检查结束"));
+
+}
 }
 
 // 影像生成
+#endif
+
 void hnRoadDataProcess::createImageSlot()
 {
+	auto project = hnDataManager::getDataManager()->getCurrentProject();
+	if (!project || project->getProjectType() == PROJECT_2D_TYPE)
+	{
+		return;
+	}
 	QProcess process;
 
 	//获取影像生成软件绝对路径
@@ -5533,14 +6476,20 @@ void hnRoadDataProcess::slot_mileCorrectSlot()
 		return;
 	}
 	QVector<hnCommon::hnMilePile> datas = hnApp::hnDataManager::getDataManager()->getCurrentProject()->getCurrentMilePileVector();
-	hnMileAdjustDlg*  dlg = new  hnMileAdjustDlg(datas, this);
+	hnMileAdjustDlg* dlg = new  hnMileAdjustDlg(datas, this);
 	auto result = dlg->exec();
 	if (result == QDialog::Accepted)
 	{
 		QVector<hnCommon::hnMilePile> nowPileInfos = dlg->getAllMileVec();
-		//更新marks ，xml里面  mark.txt 里面 数据库 里面
-
-		m_projects->getCurrentProject()->changeMilePile(nowPileInfos);
+		QString errorMessage;
+		if (!m_projects->getCurrentProject()->changeMilePile(nowPileInfos, &errorMessage))
+		{
+			QMessageBox::warning(this, QStringLiteral("校桩保存失败"),
+				errorMessage.isEmpty() ? QStringLiteral("校桩未写入成果数据库。") : errorMessage);
+			delete dlg;
+			return;
+		}
+		nowPileInfos = m_projects->getCurrentProject()->getCurrentMilePileVector();
 		//更新视图
 		// 加载当前工程数据
 		if (hnApp::hnDataManager::getDataManager()->getCurrentProject())
@@ -5568,6 +6517,7 @@ void hnRoadDataProcess::slot_mileCorrectSlot()
 	{
 		//
 	}
+	delete dlg;
 }
 
 // 采集打标
@@ -5594,7 +6544,16 @@ void hnRoadDataProcess::slot_markInfoSlot()
 		QVector<hnCommon::hnMarkInfo> nowMarkInfos = dlg->getNewMarkVec();
 		QVector<int> nowDeleteMarkInfoIndexs = dlg->getDeleteMarkVec();
 		//更新marks ，xml里面  mark.txt 里面 数据库 里面
-		bool needUpdate = m_projects->getCurrentProject()->changeMark(nowMarkInfos, nowDeleteMarkInfoIndexs);
+		bool needUpdate = false;
+		QString errorMessage;
+		if (!m_projects->getCurrentProject()->changeMark(nowMarkInfos,
+			nowDeleteMarkInfoIndexs, &needUpdate, &errorMessage))
+		{
+			QMessageBox::warning(this, QStringLiteral("打标保存失败"),
+				errorMessage.isEmpty() ? QStringLiteral("打标未写入成果数据库。") : errorMessage);
+			delete dlg;
+			return;
+		}
 
 		//更新视图
 		// 加载当前工程数据
@@ -5619,7 +6578,7 @@ void hnRoadDataProcess::slot_markInfoSlot()
 			}
 		}
 
-			this->updateAllWidget();
+		this->updateAllWidget();
 	}
 	else if (result == QDialog::Rejected)
 	{
@@ -5649,9 +6608,65 @@ void hnRoadDataProcess::slot_regionJump()
 
 }
 //软件设置
+void hnRoadDataProcess::applyProjectImageAdjustments()
+{
+	auto dataManager = hnDataManager::getDataManager();
+	auto project = dataManager ? dataManager->getCurrentProject() : nullptr;
+	if (!project) return;
+
+	const ImageDisplayAdjustments twoD = readImageDisplayAdjustments(project->get2DProPath());
+	if (m_2dPixScrollWidget && m_2dPixScrollWidget->getPixWidget())
+		m_2dPixScrollWidget->getPixWidget()->setSdkImageAdjustments(twoD);
+	if (m_adjustImageWidget)
+		m_adjustImageWidget->setAdjustments(true, twoD.brightness, twoD.contrast, twoD.sharpen);
+
+	const ImageDisplayAdjustments threeD = readImageDisplayAdjustments(project->get3DProPath());
+	if (m_3dPixScrollWidget && m_3dPixScrollWidget->getPixWidget())
+		m_3dPixScrollWidget->getPixWidget()->setSdkImageAdjustments(threeD);
+	if (m_adjustImageWidget)
+		m_adjustImageWidget->setAdjustments(false, threeD.brightness, threeD.contrast, threeD.sharpen);
+	if (m_imageAdjustAct)
+		m_imageAdjustAct->setEnabled(!project->get2DProPath().isEmpty() || !project->get3DProPath().isEmpty());
+}
+
+void hnRoadDataProcess::saveProjectImageAdjustments(bool is2d, int brightness, int contrast, int sharpen)
+{
+	auto dataManager = hnDataManager::getDataManager();
+	auto project = dataManager ? dataManager->getCurrentProject() : nullptr;
+	if (!project) return;
+	ImageDisplayAdjustments adjustments;
+	adjustments.brightness = brightness;
+	adjustments.contrast = contrast;
+	adjustments.sharpen = sharpen;
+	writeImageDisplayAdjustments(is2d ? project->get2DProPath() : project->get3DProPath(), adjustments);
+}
+
+void hnRoadDataProcess::slot_openImageAdjustments()
+{
+	if (!m_adjustImageWidget || !hnDataManager::getDataManager()->isOpenProject()) return;
+	m_adjustImageWidget->show();
+	m_adjustImageWidget->raise();
+	m_adjustImageWidget->activateWindow();
+}
+
 void hnRoadDataProcess::slot_openConfigWidget()
 {
 	m_projectConfgDialog->exec();
+}
+
+void hnRoadDataProcess::slot_openUserDirectory()
+{
+	const QString userDirectory = MyCommonMethods::GetUserPath();
+	if (!QDir(userDirectory).exists())
+	{
+		QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("无法创建软件本地用户配置目录。"));
+		return;
+	}
+
+	if (!QDesktopServices::openUrl(QUrl::fromLocalFile(userDirectory)))
+	{
+		QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("无法打开软件本地用户配置目录。"));
+	}
 }
 
 void hnRoadDataProcess::slot_oepnCourseDocument()
@@ -5668,7 +6683,7 @@ void hnRoadDataProcess::slot_oepnCourseDocument()
 
 void hnRoadDataProcess::slot_aboutInfosWidget()
 {
-	hnAboutInfoWidgets*  aboutWidget = new hnAboutInfoWidgets(this);
+	hnAboutInfoWidgets* aboutWidget = new hnAboutInfoWidgets(this);
 	aboutWidget->exec();
 }
 
@@ -5788,7 +6803,7 @@ void hnRoadDataProcess::slot_outputExcel()
 	//vector<hnRoadDiseaseInfo>& vecData, char* strQuery/* = NULL*/)
 	vector<hnRoadDiseaseInfo> vecData;
 	roadDisease.readAllData(vecData);
-	hnExcelIO * excel = new hnExcelIO("D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\报表模板\\CPMS路面病害调查表.xlsx",
+	hnExcelIO* excel = new hnExcelIO("D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\报表模板\\CPMS路面病害调查表.xlsx",
 		"D:\\TFS\\24-hnRoadDataProcess\\hnRoadDataProcess\\bin\\Debug-X64\\输出报表\\CPMS路面病害调查表Copy.xlsx");
 	if (excel->OpenExcel())
 	{
@@ -5796,7 +6811,7 @@ void hnRoadDataProcess::slot_outputExcel()
 		qDebug() << "复制成功" << endl;
 	}
 #endif
-					}
+}
 
 void hnRoadDataProcess::slot_adjustLineCameraArea()
 {
@@ -5892,7 +6907,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 		break;
 	}
 
-	for each (auto project in allPorject)
+	for each(auto project in allPorject)
 	{
 		auto starndar = HnProjectEnums::roadTypeQStringToEnum(project->getCurProSetInfo().strRoadStandard);
 		auto drawType = project->getCurProSetInfo().nDrawType;
@@ -5919,7 +6934,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 	QProgressDialog progress(QStringLiteral("处理工程数据..."), QStringLiteral("取消"), 0, totalTasks);
 	progress.setWindowModality(Qt::WindowModal);  //模态
 	progress.setMinimumDuration(0);   //立即显示
-	for each (auto project in allPorject)
+	for each(auto project in allPorject)
 	{
 		/*QElapsedTimer timer;
 		timer.start();
@@ -5964,7 +6979,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			setEquip.JHXX = true;
 			setEquip.SMTD = true;
 			if (m_xrSetting->outSpeedAndMarkExcel)
-			setEquip.SPEED = true;
+				setEquip.SPEED = true;
 			setEquip.GPS = true;
 			m_outExcelManage = QSharedPointer<hnOutExcelMileManage>
 				(new hnOutExcelMileManage(defaultStarndar, project, sMile, eMile, splitValue, setEquip));
@@ -6160,7 +7175,7 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 			//获取病害
 			QVector<hnCommon::hnRoadDiseaseInfo> diss;
 
-			diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases(); 
+			diss = hnApp::hnDataManager::getDataManager()->getDiseaseService()->getAllRoadDiseases();
 			int rowCount = 2;
 			QVector<hnMile> curMiles = project->getCurrentMileVector();
 			if (projectInfo.nDrawType == 0)
@@ -6419,4 +7434,127 @@ void hnRoadDataProcess::slot_outAllResultDatas()
 
 }
 
+void hnRoadDataProcess::setupWorkspaceFeedback()
+{
+	m_projectStatus = new QLabel(this);
+	m_projectStatus->setTextFormat(Qt::PlainText);
+	m_projectStatus->setMaximumWidth(460);
+	m_projectStatus->setStyleSheet(QStringLiteral("padding: 4px 10px; color: #303E4B; font-family: 'Microsoft YaHei';"));
+	statusBar()->addPermanentWidget(m_projectStatus);
+	m_openProjectHint = new QPushButton(QStringLiteral("打开工程"), this);
+	statusBar()->addPermanentWidget(m_openProjectHint);
+	connect(m_openProjectHint, &QPushButton::clicked, m_openProjectAct, &QAction::trigger);
+	m_road2dHint = new hnViewModeHint(m_2dPixScrollWidget);
+	m_road3dHint = new hnViewModeHint(m_3dPixScrollWidget);
+	QTimer* timer = new QTimer(this);
+	timer->setInterval(500);
+	connect(timer, &QTimer::timeout, this, &hnRoadDataProcess::refreshWorkspaceFeedback);
+	timer->start();
+	connect(m_IrmShowWidget, &IrmActualTimeShow::requestCalculation, this, &hnRoadDataProcess::slot_calculateIrm);
+	refreshWorkspaceFeedback();
+}
 
+void hnRoadDataProcess::refreshWorkspaceFeedback()
+{
+	const bool opened = m_projects && m_projects->isOpenProject();
+	hnPro::hnProject* project = opened ? m_projects->getCurrentProject() : nullptr;
+	m_openProjectHint->setVisible(!project);
+	QString imageHint;
+	if (project && !project->get2DProject()) imageHint = QStringLiteral("当前工程不含二维影像。");
+	else if (project && project->getCurrentMileVector().isEmpty()) imageHint = QStringLiteral("暂无二维影像里程记录，请使用“检查数据”核查采集文件与映射。");
+	m_road2dHint->updateMode(project != nullptr, m_2dPixScrollWidget->getPixWidget()->getMode(), imageHint);
+	m_road3dHint->updateMode(project != nullptr, m_3dPixScrollWidget->getPixWidget()->getMode());
+	QString text = QStringLiteral("未打开工程 · 请先打开工程");
+	if (project)
+	{
+		const auto settings = project->getCurProSetInfo();
+		const QString direction = settings.nLineType == 1 ? QStringLiteral("上行") :
+			settings.nLineType == -1 ? QStringLiteral("下行") : QStringLiteral("方向未设置");
+		const bool use2d = project->getProjectType() == hnCommon::PROJECT_2D_TYPE || project->getProjectType() == hnCommon::PROJECT_23D_TYPE;
+		const double dmi = use2d ? m_2dPixScrollWidget->getPixWidget()->currentBottomEncoderMile() : m_3dPixScrollWidget->getPixWidget()->currentBottomEncoderMile();
+		text = QStringLiteral("工程：%1 | %2 | 视图底部 %3 | DMI %4 m").arg(project->getProjectName(), direction,
+			MyCommonMethods::convertMileToString(project->enclToTrueMile(dmi)), QString::number(dmi, 'f', 1));
+	}
+	m_projectStatus->setToolTip(text);
+	m_projectStatus->setText(m_projectStatus->fontMetrics().elidedText(text, Qt::ElideMiddle, 440));
+}
+
+void hnRoadDataProcess::finishEditing()
+{
+	for (auto view : { static_cast<hn2d3dPixBaseWidget*>(m_2dPixScrollWidget->getPixWidget()),
+		static_cast<hn2d3dPixBaseWidget*>(m_3dPixScrollWidget->getPixWidget()) })
+	{
+		view->clearContinuousDiseaseDrawing();
+		view->slot_cancelDrawDiseases();
+		view->setMode(hnWorkMode::NO_MODE);
+	}
+	m_pStreetViewWidget->m_pStreetView->setMode(hnWorkMode::NO_MODE);
+	if (m_pStreetViewWidget->m_pStreetViewDouble) m_pStreetViewWidget->m_pStreetViewDouble->setMode(hnWorkMode::NO_MODE);
+	refreshWorkspaceFeedback();
+}
+
+void hnRoadDataProcess::restoreDefaultWorkspace()
+{
+	QString name = QStringLiteral("Layout.ini");
+	if (m_projects && m_projects->isOpenProject())
+	{
+		const auto type = m_projects->getCurrentProject()->getProjectType();
+		name = type == hnCommon::PROJECT_2D_TYPE ? QStringLiteral("Layout2D.ini") :
+			type == hnCommon::PROJECT_23D_TYPE ? QStringLiteral("Layout23D.ini") : QStringLiteral("Layout3D.ini");
+	}
+	QFile file(QCoreApplication::applicationDirPath() + QStringLiteral("/") + name);
+	QByteArray layout;
+	if (file.open(QIODevice::ReadOnly))
+	{
+		QDataStream stream(&file);
+		stream >> layout;
+	}
+	if (layout.isEmpty() || !m_DockManager->restoreState(layout))
+	{
+		if (m_factoryDockLayout.isEmpty() || !m_DockManager->restoreState(m_factoryDockLayout))
+		{
+			QMessageBox::warning(this, QStringLiteral("恢复布局失败"), QStringLiteral("标准布局无法读取或恢复，请检查软件目录中的布局文件。"));
+			return;
+		}
+	}
+	saveLayout();
+	statusBar()->showMessage(QStringLiteral("已恢复默认布局"), 4000);
+}
+
+void hnRoadDataProcess::slot_exportProjectLedger()
+{
+    const auto projects = hnApp::hnDataManager::getDataManager()->getProjectManager()->getAllBaseProject();
+    if (projects.empty())
+    {
+        QMessageBox::information(this, QStringLiteral("生成工程台账"), QStringLiteral("工程列表为空，请先加载工程。"));
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("保存工程台账"), QStringLiteral("多车道统计.xlsx"), QStringLiteral("Excel 工作簿 (*.xlsx)"));
+    if (path.isEmpty()) return;
+    hnProjectLedgerWriter writer;
+    QString error;
+    if (!writer.write(projects, path, error))
+    {
+        QMessageBox::warning(this, QStringLiteral("生成工程台账失败"), error);
+        return;
+    }
+    QMessageBox::information(this, QStringLiteral("生成工程台账"), QStringLiteral("已生成 %1 个工程的台账：\n%2").arg(projects.size()).arg(QDir::toNativeSeparators(path)));
+}
+
+// 自定义景观从数据库读取，输出位置由用户选择，不改动外业原文件。
+void hnRoadDataProcess::slot_outputCustomStreetDiseases()
+{
+    auto project = m_projects ? m_projects->getCurrentProject() : nullptr;
+    if (!project || !project->get2DProject()) return;
+    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("输出自定义景观明细"),
+        m_xrSetting->OutPath + QStringLiteral("/自定义景观病害.xlsx"), QStringLiteral("Excel 工作簿 (*.xlsx)"));
+    if (path.isEmpty()) return;
+    hn2dDiseaseExchangeService service(project);
+    const auto result = service.exportCustomStreetReport(path);
+    if (!result.success)
+    {
+        QMessageBox::warning(this, QStringLiteral("输出失败"), result.error); return;
+    }
+    QMessageBox::information(this, QStringLiteral("输出完成"),
+        QStringLiteral("已输出 %1 条自定义景观记录。\n%2\n%3").arg(result.streetCount).arg(path).arg(result.warnings.join(QStringLiteral("\n"))));
+}

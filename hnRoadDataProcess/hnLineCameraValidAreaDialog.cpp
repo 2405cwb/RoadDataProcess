@@ -1,6 +1,7 @@
 ﻿#include "hnLineCameraValidAreaDialog.h"
 
 #include <QDialogButtonBox>
+#include <QCheckBox>
 #include <QFile>
 #include <QGraphicsItem>
 #include <QGraphicsPixmapItem>
@@ -80,6 +81,7 @@ namespace
 		std::function<QPair<qreal, qreal>()> allowedRange;
 		std::function<void(bool)> selected;
 		std::function<void()> changed;
+		std::function<void(bool, qreal)> moved;
 
 	protected:
 		QVariant itemChange(GraphicsItemChange change, const QVariant& value) override
@@ -94,6 +96,7 @@ namespace
 			}
 			if (change == ItemPositionHasChanged && changed)
 			{
+				if (moved) moved(m_leftBoundary, pos().x());
 				changed();
 			}
 			return QGraphicsLineItem::itemChange(change, value);
@@ -139,6 +142,8 @@ public:
 		m_rightLine->selected = [this](bool) { m_activeLeft = false; };
 		m_leftLine->changed = [this]() { refreshOverlay(); };
 		m_rightLine->changed = [this]() { refreshOverlay(); };
+		m_leftLine->moved = [this](bool left, qreal x) { movePairedBoundary(left, x); };
+		m_rightLine->moved = [this](bool left, qreal x) { movePairedBoundary(left, x); };
 		setRenderHint(QPainter::SmoothPixmapTransform, true);
 		setDragMode(QGraphicsView::NoDrag);
 		setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
@@ -183,6 +188,8 @@ public:
 	{
 		setBounds(0, m_imageWidth);
 	}
+
+	void setWidthLocked(bool locked) { m_widthLocked = locked; if (locked) m_lockedPixelWidth = qMax(1, rightPixel() - leftPixel()); }
 
 	void fitImage()
 	{
@@ -255,7 +262,9 @@ public:
 		}
 
 	private:
-		void refreshOverlay()
+		void movePairedBoundary(bool movedLeft, qreal movedX) { if (!m_widthLocked || m_adjustingPair) return; m_adjustingPair = true; const int width = qMax(1, m_lockedPixelWidth); if (movedLeft) { const qreal left = qBound(0.0, movedX, static_cast<qreal>(qMax(0, m_imageWidth - width))); m_leftLine->setPos(left, 0.0); m_rightLine->setPos(left + width, 0.0); } else { const qreal right = qBound(static_cast<qreal>(width), movedX, static_cast<qreal>(m_imageWidth)); m_rightLine->setPos(right, 0.0); m_leftLine->setPos(right - width, 0.0); } m_adjustingPair = false; }
+
+	void refreshOverlay()
 		{
 			const qreal left = leftPixel();
 			const qreal right = rightPixel();
@@ -272,6 +281,9 @@ public:
 		int m_imageHeight = 0;
 		bool m_activeLeft = true;
 		bool m_panning = false;
+		bool m_widthLocked = false;
+		bool m_adjustingPair = false;
+		int m_lockedPixelWidth = 1;
 		QPoint m_lastPanPoint;
 		BoundaryLineItem* m_leftLine = nullptr;
 		BoundaryLineItem* m_rightLine = nullptr;
@@ -323,6 +335,8 @@ hnLineCameraValidAreaDialog::hnLineCameraValidAreaDialog(const hnPro::hnLineCame
 	QPushButton* applyWidthButton = new QPushButton(QStringLiteral("\u6309\u5bbd\u5ea6\u5c45\u4e2d"), this);
 	connect(applyPixelsButton, &QPushButton::clicked, this, [this]() { applyPixelInputs(); });
 	connect(applyWidthButton, &QPushButton::clicked, this, [this]() { applyRoadWidthInput(); });
+	QCheckBox* lockWidthCheck = new QCheckBox(QStringLiteral("锁定道路宽度"), this);
+	connect(lockWidthCheck, &QCheckBox::toggled, this, &hnLineCameraValidAreaDialog::setRoadWidthLocked);
 	QHBoxLayout* inputLayout = new QHBoxLayout();
 	inputLayout->addWidget(new QLabel(QStringLiteral("\u5de6\u8fb9\u754c(px)"), this));
 	inputLayout->addWidget(m_leftPixelEdit);
@@ -333,6 +347,7 @@ hnLineCameraValidAreaDialog::hnLineCameraValidAreaDialog(const hnPro::hnLineCame
 	inputLayout->addWidget(new QLabel(QStringLiteral("\u9053\u8def\u5bbd\u5ea6(m)"), this));
 	inputLayout->addWidget(m_roadWidthEdit);
 	inputLayout->addWidget(applyWidthButton);
+	inputLayout->addWidget(lockWidthCheck);
 	inputLayout->addStretch();
 	QLabel* helpLabel = new QLabel(QStringLiteral("拖动青色左边界和黄色右边界；中键拖动平移，滚轮缩放；方向键微调 1px，Shift+方向键微调 10px。"), this);
 	helpLabel->setStyleSheet(QStringLiteral("color:#536273;"));
@@ -427,6 +442,12 @@ bool hnLineCameraValidAreaDialog::applyPendingInput()
 	if (m_pendingInputMode == 1) return applyPixelInputs();
 	if (m_pendingInputMode == 2) return applyRoadWidthInput();
 	return true;
+}
+
+void hnLineCameraValidAreaDialog::setRoadWidthLocked(bool locked)
+{
+	 m_roadWidthLocked = locked;
+	 if (m_previewView) m_previewView->setWidthLocked(locked);
 }
 
 void hnLineCameraValidAreaDialog::updateSummary()

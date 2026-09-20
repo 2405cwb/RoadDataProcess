@@ -1,0 +1,57 @@
+{
+  "DegreeRoad2018": {
+    "displayName": "等级公路",
+    "inspectionStandards": {
+      "Standard2025": {
+        "displayName": "检测规程模式",
+        "summary": "等级公路检测规程成果，可按接收方要求选择结果数据和原始数据。",
+        "resultData": [
+          { "key": "DR", "label": "DR（病害）", "interval": "10 m 基础分段 + 打标拆分", "description": "路面损坏结果" },
+          { "key": "IRI", "label": "IRI（平整度）", "interval": "10 m 连续分段", "description": "平整度结果" },
+          { "key": "RD", "label": "RD（车辙）", "interval": "10 m 连续分段", "description": "车辙结果" },
+          { "key": "PB", "label": "PB（跳车）", "interval": "10 m 连续分段", "description": "跳车结果" },
+          { "key": "MPD", "label": "MPD", "interval": "10 m 连续分段", "description": "平均构造深度结果" },
+          { "key": "SMTD", "label": "SMTD", "interval": "10 m 连续分段", "description": "传感器测得纹理深度结果" }
+        ],
+        "rawData": [
+          { "key": "LBIFile", "label": "LBIFile", "interval": "10 m 连续分段", "description": "经纬度原始数据" },
+          { "key": "HAFile", "label": "HAFile", "interval": "10 m 连续分段", "description": "路面几何原始数据" },
+          { "key": "RIFile", "label": "RIFile / LP", "interval": "0.1 m", "description": "纵断面高程与速度" },
+          { "key": "RDFile", "label": "RDFile / TP", "interval": "纵向 0.1 m，横向 1.5 mm", "description": "车辙横断面原始数据" },
+          { "key": "TTFile", "label": "TTFile", "interval": "1 mm", "description": "lasval.txt 第二列纹理高程" },
+          { "key": "LFile", "label": "LFile", "interval": "按规范", "description": "检测线相关原始数据" }
+        ],
+        "note": "只有 DR 考虑打标；其他成果不被打标打断。SFC、SSR、SFCFile 因设备不支持不导出。"
+      },
+      "NationalRoad2026": {
+        "displayName": "农养国省道 · 2026 格式",
+        "summary": "按日期、路线和方向组织结果数据。",
+        "resultData": [
+          { "key": "IRI", "label": "IRI（平整度）", "interval": "10 m 连续分段", "description": "平整度结果，同时生成 5 m GPS" },
+          { "key": "RD", "label": "RDFile（车辙）", "interval": "10 m 连续分段", "description": "配置车辙设备时生成" },
+          { "key": "PB", "label": "BUMP（跳车）", "interval": "10 m 连续分段", "description": "跳车结果" }
+        ],
+        "rawData": [],
+        "note": "本模式不生成原始数据，只生成结果数据。"
+      }
+    }
+  },
+  "RuralRoadlowLevel": {
+    "displayName": "低等级农村公路",
+    "inspectionStandards": {
+      "Standard2025": {
+        "displayName": "检测规程模式",
+        "summary": "低等级农村公路检测规程基础成果。",
+        "resultData": [
+          { "key": "DR", "label": "DR（病害）", "interval": "10 m 基础分段 + 打标拆分", "description": "路面损坏结果" },
+          { "key": "IRI", "label": "IRI（平整度）", "interval": "10 m 连续分段", "description": "平整度结果" }
+        ],
+        "rawData": [
+          { "key": "LBIFile", "label": "LBIFile", "interval": "10 m 连续分段", "description": "经纬度原始数据" },
+          { "key": "RIFile", "label": "RIFile / LP", "interval": "0.1 m", "description": "纵断面高程与速度" }
+        ],
+        "note": "另建立 Images、ViewImages 图片目录；不生成等级公路专用成果。"
+      }
+    }
+  }
+}

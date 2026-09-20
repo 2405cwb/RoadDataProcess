@@ -1,7 +1,10 @@
-
+ï»¿
 #include "CalculationThread.h"
+#include "RutProfileDebugExporter.h"
 #include <QMenu>
 #include <QFile>
+#include <QSaveFile>
+#include <QTextStream>
 #include <vector>
 #include <QMessageBox>
 #include <QDir>
@@ -19,24 +22,149 @@
 #include <QtCore/QtMath>  
 #include <array>
 #include <QTimer>  
+namespace
+{
+	int RutRand100(int index, int salt)
+	{
+		uint32_t x =
+			0x9E3779B9u ^
+			static_cast<uint32_t>(index + 1) * 0x85EBCA6Bu ^
+			static_cast<uint32_t>(salt + 1) * 0xC2B2AE35u;
 
+		x ^= x >> 16;
+		x *= 0x7FEB352Du;
+		x ^= x >> 15;
+		x *= 0x846CA68Bu;
+		x ^= x >> 16;
+
+		return static_cast<int>(x % 100u);
+	}
+
+	float RutNoise(int index, int salt)
+	{
+		return RutRand100(index, salt) * 0.01f - 0.5f;
+	}
+
+	void RemoveBigErrCore(
+		float* rutval,
+		int length,
+		float errorRutTh2,
+		int salt)
+	{
+		if (rutval == nullptr || length <= 0)
+		{
+			return;
+		}
+
+		float sumval = 0.0f;
+		float oldval = rutval[0];
+		float curval = rutval[0];
+
+		for (int i = 0; i < length; ++i)
+		{
+			curval = rutval[i];
+
+			if (curval < 0.1f)
+			{
+				if (i > 0)
+				{
+					curval =
+						sumval / i +
+						RutNoise(i, salt);
+				}
+				else
+				{
+					curval = oldval;
+				}
+			}
+			else if (
+				curval - oldval >=
+				errorRutTh2)
+			{
+				if (oldval >= 0.1f)
+				{
+					if (i > 0)
+					{
+						curval =
+							sumval / i +
+							RutNoise(i, salt);
+					}
+					else
+					{
+						curval = oldval;
+					}
+				}
+				else if (curval > errorRutTh2)
+				{
+					if (i > 0)
+					{
+						curval =
+							sumval / i +
+							RutNoise(i, salt);
+					}
+					else
+					{
+						curval = 5.0f;
+					}
+				}
+			}
+
+			rutval[i] = curval;
+			oldval = curval;
+			sumval += curval;
+		}
+	}
+}
 CalculationThread::CalculationThread(CalculationType type, int taskId, hnPro::hnProject* project)
 	: m_type(type), m_stopRequested(false), currentPorject(project), m_taskID(taskId)
 {
+	setAutoDelete(false);
 	_Setting = HnXRSettings::getInstance();
 	m_stdProcessValue = 0;
 	m_spdProcessValue = 0;
 	m_Project = project;
 }
 
-void CalculationThread::StartIRMThread(hnPro::hnProject* pro, const QString iriPath, const QString & daqBasePath, const QString& resamplePath, int side)
+void CalculationThread::StartIRMThread(hnPro::hnProject* pro, const QString iriPath, const QString& daqBasePath, const QString& resamplePath, int side)
 {
-	bool datasrc = JudgMTDval(iriPath, side); 
-	GenerateIRI_NEW(resamplePath.toStdString(), 10, "resample.txt", datasrc);
+	bool datasrc = JudgMTDval(iriPath, side);
+	auto project2D = pro->get2DProject();
+
+	int effectiveLength =pro->getCurProSetInfo().dLength;
+
+	int markedRoadLength =
+		std::abs(project2D->_EndMile - project2D->_StartMile);
+
+	if (markedRoadLength > 0)
+	{
+		effectiveLength =
+			(std::min)(effectiveLength, markedRoadLength);
+	}
+
+	GenerateIRI_NEW(
+		resamplePath.toStdString(),
+		10,
+		"resample.txt",
+		datasrc,
+		effectiveLength);
+
+	emit progressUpdated(
+		m_Project,
+		m_type,
+		90,
+		true);
+	// â‘¡ ç„¶åå’Œ C# ä¸€æ ·æ‰§è¡Œ AdjustVal
+	QString iriFile = daqBasePath + "/IRI_10m.txt";
+	AdjustVal(
+		iriFile,
+		_Setting->ErrorIRI,
+		0.001);
+
+	//GenerateIRI_NEW(resamplePath.toStdString(), 10, "resample.txt", datasrc);
 	emit progressUpdated(m_Project, m_type, 90, true);
 }
 
-void CalculationThread::CheckSetting(hnPro::hnProject*  project)
+void CalculationThread::CheckSetting(hnPro::hnProject* project)
 {
 	bool IsCopy = false;
 	QString rpath = QApplication::applicationDirPath() + "\\Setting\\Project\\Setting.ini";
@@ -139,7 +267,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 	}
 	int len = sdata.length();
 
-	//²»×ã1Ã×
+	//ä¸è¶³1ç±³
 	if (len < 20)
 		return;
 	QVector<double> lasval(len);
@@ -191,7 +319,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 		}
 	}
 
-	//ÏÈ¸ù¾İÏàÁÚ²â¾àÖµµÄ²î´óÓÚÖ¸¶¨ãĞÖµ£¬½«ÕâÖÖ¹ÂÁ¢µÄÒì³£ÖµÌŞ³ı
+	//å…ˆæ ¹æ®ç›¸é‚»æµ‹è·å€¼çš„å·®å¤§äºæŒ‡å®šé˜ˆå€¼ï¼Œå°†è¿™ç§å­¤ç«‹çš„å¼‚å¸¸å€¼å‰”é™¤
 	for (int i = 2; i < len; ++i)
 	{
 		if (diffval[i] >= thresh1 && diffval[i - 1] >= thresh1)
@@ -200,7 +328,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 		}
 	}
 
-	//È»ºó¸ù¾İÏàÁÚµÄ¶¯Ì¬²â¾à²îÖµ´óÓÚÖ¸¶¨ãĞÖµ£¬ÕÒ³öµÚÒ»²½³ÉÆ¬µÄÒì³£ÖµµÄ±ßÔµÎ»ÖÃ£¬½«ÕâÖÖÒì³£ÖµÌŞ³ı
+	//ç„¶åæ ¹æ®ç›¸é‚»çš„åŠ¨æ€æµ‹è·å·®å€¼å¤§äºæŒ‡å®šé˜ˆå€¼ï¼Œæ‰¾å‡ºç¬¬ä¸€æ­¥æˆç‰‡çš„å¼‚å¸¸å€¼çš„è¾¹ç¼˜ä½ç½®ï¼Œå°†è¿™ç§å¼‚å¸¸å€¼å‰”é™¤
 	for (int i = 1; i < len; ++i)
 	{
 		if (std::abs(lasval[i] - lasval[i - 1]) >= thresh2)
@@ -292,11 +420,11 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //			double value = 0;
 //			//iri.calculateIRI(dIntervel, listIRIInfo, value);
 //
-//			//¼ÆËã10mµÄÆ½Õû¶È
+//			//è®¡ç®—10mçš„å¹³æ•´åº¦
 //			double irisum = 0.0;
 //			int plusenum = (int)(dIntervel / DeltLen);
 //
-//			//iridata: 250mm²ÉÑù¼ä¾à×İ¶ÏÃæ
+//			//iridata: 250mmé‡‡æ ·é—´è·çºµæ–­é¢
 //			for (int i = 1; i < listIRIInfo.size(); ++i)
 //			{
 //				YSU = (listIRIInfo[i] - listIRIInfo[i - 1]) / DeltLen;
@@ -320,7 +448,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //			value = irisum / plusenum;
 //
 //
-//			//¸ù¾İ³µËÙ½øĞĞ½ÃÕı 
+//			//æ ¹æ®è½¦é€Ÿè¿›è¡ŒçŸ«æ­£ 
 //			if (datasrc)
 //			{
 //				value = value *m_IRI_k + m_IRI_b;
@@ -329,7 +457,7 @@ void CalculationThread::FilterLaserData(QString fpath, double thresh1/*=5*/, dou
 //			{
 //				if (IsParmFile)
 //				{
-//					//¸ù¾İ³µËÙ»ñÈ¡ËÙ¶ÈÏµÊık¡¢b
+//					//æ ¹æ®è½¦é€Ÿè·å–é€Ÿåº¦ç³»æ•°kã€b
 //					double kparm = kparms[parmnum - 1];
 //					double bparm = bparms[parmnum - 1];
 //					for (int pi = 0; pi < parmnum; ++pi)
@@ -411,7 +539,7 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 	double irisum = 0;
 	double irival = 0;
 	double 	DeltLen = 0.25;
-	int plusenum = (int)(dIntervel / DeltLen);//IRI¾àÀëÄÚÓĞ¶àÉÙ¸ö250mm 
+	int plusenum = (int)(dIntervel / DeltLen);//IRIè·ç¦»å†…æœ‰å¤šå°‘ä¸ª250mm 
 	double stime = 0;
 	double etime = 0;
 
@@ -449,13 +577,13 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 
 	for (int i = 1; i < listIRI.size(); i++)  //10/0.25   100/0.25  1000/0.25 
 	{
-		if (i%sumCount == 0)
+		if (i % sumCount == 0)
 		{
 			irival = irisum / plusenum;
 			if (datasrc)
 			{
 
-				irival = irival *m_IRI_k + m_IRI_b;
+				irival = irival * m_IRI_k + m_IRI_b;
 			}
 			else
 			{
@@ -467,7 +595,7 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 						speedInx++;
 					}
 
-					//¸ù¾İ³µËÙ»ñÈ¡ËÙ¶ÈÏµÊık¡¢b
+					//æ ¹æ®è½¦é€Ÿè·å–é€Ÿåº¦ç³»æ•°kã€b
 					double kparm = kparms[parmnum - 1];
 					double bparm = bparms[parmnum - 1];
 					for (int pi = 0; pi < parmnum; ++pi)
@@ -519,7 +647,7 @@ void CalculationThread::startCalculateIRI(QString dataPath, const QString& outPa
 tuple_bool_vec_vec_vec_int CalculationThread::LoadParameters(const std::string& fpath, const std::string& fname)
 {
 	bool isParmFile = false;
-	std::string fparmpath = fpath.substr(0, fpath.find_last_of("/\\")) + "/Coeff.dat";  // ¼ÙÉèÂ·¾¶Ìæ»»
+	std::string fparmpath = fpath.substr(0, fpath.find_last_of("/\\")) + "/Coeff.dat";  // å‡è®¾è·¯å¾„æ›¿æ¢
 	std::vector<double> speedparms, kparms, bparms;
 	int parmnum = 0;
 
@@ -552,7 +680,7 @@ tuple_bool_vec_vec_vec_int CalculationThread::LoadParameters(const std::string& 
 					}
 				}
 				catch (...) {
-					QMessageBox::warning(nullptr, "Error", QString::fromStdString("¶ÁÈ¡ÎÄ¼ş³ö´í£¬Çë¼ì²é£¡\r\n" + fparmpath));
+					QMessageBox::warning(nullptr, "Error", QString::fromStdString("è¯»å–æ–‡ä»¶å‡ºé”™ï¼Œè¯·æ£€æŸ¥ï¼\r\n" + fparmpath));
 				}
 			}
 		}
@@ -560,43 +688,65 @@ tuple_bool_vec_vec_vec_int CalculationThread::LoadParameters(const std::string& 
 	return{ isParmFile, speedparms, kparms, bparms, parmnum };
 }
 
-void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, const std::string& fname, bool datasrc)
+void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, const std::string& fname, bool datasrc, int effectiveLength)
 {
-	// ²½Öè1: ¼ÓÔØËÙ¶ÈĞŞÕı²ÎÊı£¨Èç¹û´æÔÚ£©
+	// æ­¥éª¤1: åŠ è½½é€Ÿåº¦ä¿®æ­£å‚æ•°ï¼ˆå¦‚æœå­˜åœ¨ï¼‰
 	auto result1 = LoadParameters(fpath, fname);
 	bool isParmFile;
 	std::vector<double>  speedparms, kparms, bparms;
 	int parmnum;
-	std::tie(isParmFile, speedparms, kparms, bparms, parmnum) = result1; 
+	std::tie(isParmFile, speedparms, kparms, bparms, parmnum) = result1;
 
-	// ²½Öè2: ¼ÓÔØºÍÔ¤´¦ÀíÔ­Ê¼Êı¾İ
-	double DeltLen = 0.1; // ²ÉÑù¼ä¸ô£¨0.1m »ò 0.25m£©
-	auto result2 =  LoadData(fpath);
+	// æ­¥éª¤2: åŠ è½½å’Œé¢„å¤„ç†åŸå§‹æ•°æ®
+	double DeltLen = 0.1; // é‡‡æ ·é—´éš”ï¼ˆ0.1m æˆ– 0.25mï¼‰
+
+	auto result2 = LoadData(fpath);
 	std::vector<double >oridata, toridata;
 	std::vector<int>oritime;
 	std::vector<std::string> sdata;
 	int len;
 	std::tie(oridata, toridata, oritime, sdata, len) = result2;
-	 
-	// ²½Öè3: Ó¦ÓÃ¾ùÖµÂË²¨£¨¿ÉÑ¡£¬Ä¬ÈÏ×¢ÊÍ£¬ÓëÔ­Ê¼°æ±¾Ò»ÖÂ£©
-	for (int i = 2; i < len - 2; ++i) {
-		oridata[i] = (toridata[i - 2] + toridata[i - 1] + toridata[i] + toridata[i + 1] + toridata[i + 2]) / 5.0;
+
+	// -----------------------------------------------------
+// æŒ‰å·¥ç¨‹æœ‰æ•ˆé‡Œç¨‹è£å‰ªåŸå§‹ resample æ•°æ®
+// resample.txt åŸå§‹é‡‡æ ·é—´éš”ä¸º 0.05m
+// -----------------------------------------------------
+	int maxRawLen = static_cast<int>(
+		std::round(effectiveLength / 0.05)
+		);
+
+	len = (std::min)(len, maxRawLen);
+
+	// è£å‰ªæ‰€æœ‰ç›¸å…³æ•°ç»„ï¼Œå¿…é¡»ä¸€èµ·è£å‰ª
+	oridata.resize(len);
+	toridata.resize(len);
+	oritime.resize(len);
+	sdata.resize(len);
+
+	// æ­¥éª¤3: åº”ç”¨å‡å€¼æ»¤æ³¢ï¼ˆå¯é€‰ï¼Œé»˜è®¤æ³¨é‡Šï¼Œä¸åŸå§‹ç‰ˆæœ¬ä¸€è‡´ï¼‰
+	// æ ‡å‡† IRI é»˜è®¤ç›´æ¥ä½¿ç”¨åŸå§‹çºµæ–­é¢ï¼›å¯ç”¨æ­¤é—ç•™æ»¤æ³¢åï¼Œç»“æœå°†ä¸å†ä¸æœªæ»¤æ³¢ LP çš„æ ‡å‡†å¤ç®—ä¸¥æ ¼ä¸€è‡´ã€‚
+	const bool enableLegacyFivePointMeanFilter = true;
+	if (enableLegacyFivePointMeanFilter) {
+		// åŸå§‹ 5 ç‚¹ï¼ˆ0.25m çª—å£ï¼‰å‡å€¼æ»¤æ³¢é€»è¾‘ï¼Œä¿ç•™ä»…ç”¨äºå¤ç°å†å²ç»“æœã€‚
+		for (int i = 2; i < len - 2; ++i) {
+			oridata[i] = (toridata[i - 2] + toridata[i - 1] + toridata[i] + toridata[i + 1] + toridata[i + 2]) / 5.0;
+		}
 	}
 
-	// ²½Öè3: ³éÑùµ½Ö¸¶¨¼ä¸ô£¨DeltLen£©
-	int qplusenum = static_cast<int>(DeltLen / 0.05); // Ã¿0.1m³éÑùµãÊı£¨0.05mÔ­Ê¼¼ä¸ô£©
+	// æ­¥éª¤3: æŠ½æ ·åˆ°æŒ‡å®šé—´éš”ï¼ˆDeltLenï¼‰
+	int qplusenum = static_cast<int>(DeltLen / 0.05); // æ¯0.1mæŠ½æ ·ç‚¹æ•°ï¼ˆ0.05måŸå§‹é—´éš”ï¼‰
 
 	auto result3 = ResampleData(oridata, oritime, len, qplusenum);
 	std::vector<double> iridata;
 	std::vector<int> iritime;
 	std::tie(iridata, iritime) = result3;
-	 
+
 	len = static_cast<int>(iridata.size());
 
-	// ²½Öè4: ³õÊ¼»¯×´Ì¬±äÁ¿
+	// æ­¥éª¤4: åˆå§‹åŒ–çŠ¶æ€å˜é‡
 	std::vector<double> oldZSU = InitializeState(iridata, DeltLen, len);
 
-	// ²½Öè5: ³õÊ¼»¯Ê±¼äºÍÊä³öÎÄ¼ş
+	// æ­¥éª¤5: åˆå§‹åŒ–æ—¶é—´å’Œè¾“å‡ºæ–‡ä»¶
 	double stime = ParseTime(iritime[0]);
 	std::string savefname = fpath.substr(0, fpath.rfind('/')) + "/IRI_" + std::to_string(vallen) + "m.txt";
 	QFile fwIRI(QString::fromStdString(savefname));
@@ -608,69 +758,76 @@ void CalculationThread::GenerateIRI_NEW(const std::string& fpath, int vallen, co
 	fwspeed.open(QIODevice::WriteOnly);
 	QTextStream swspeed(&fwspeed);
 
-	// ²½Öè6: Ö÷Ñ­»·¼ÆËãIRIºÍËÙ¶È
-	int plusenum = static_cast<int>(vallen / DeltLen); // Ã¿¶ÎµãÊı£¨e.g., 10m / 0.1m = 100£©
+	// æ­¥éª¤6: ä¸»å¾ªç¯è®¡ç®—IRIå’Œé€Ÿåº¦
+	int plusenum = static_cast<int>(vallen / DeltLen); // æ¯æ®µç‚¹æ•°ï¼ˆe.g., 10m / 0.1m = 100ï¼‰
 	int iricnt = 0;
 	double irisum = 0.0;
 	int count = 0;
-	int start_i = (DeltLen == 0.1) ? 3 : 1; // 0.1mÊ±´Ói=3¿ªÊ¼ÒÔÖ§³ÖÎ²ËæYSU
 	std::vector<double> ZSU(4, 0.0);
 
-	for (int i = start_i; i < len; ++i) {
-		// Ã¿¶Î½áÊøÊ±´¦ÀíËÙ¶ÈºÍIRI
-		if (i % plusenum == 0) {
-			double etime = ParseTime(iritime[i]);
-			double speedval = (etime - stime) > 0 ? (vallen / (etime - stime) * 3.6) : 0.0;
+	// ä»ç¬¬ä¸€ä¸ªç›¸é‚»å·®åˆ†å¼€å§‹ï¼Œä¿è¯ 0.1m è¾“å…¥çš„æ¯ä¸ªçŠ¶æ€æ­¥éƒ½å‚ä¸é€’æ¨ã€‚
+
+	const int start_i = (DeltLen == 0.1) ? 3 : 1;
+
+	for (int i = start_i; i < len; ++i)
+	{
+		// ä¸å½“å‰ C# ä¸€è‡´ï¼šåˆ°è¾¾è¾¹ç•Œæ—¶å…ˆè¾“å‡ºå·²ç´¯è®¡çš„å‰ä¸€æ®µã€‚
+		if (i % plusenum == 0)
+		{
+			const double etime = ParseTime(iritime[i]);
+			const double speedval = (etime - stime) > 0.0
+				? (vallen / (etime - stime) * 3.6)
+				: 0.0;
+
 			double irival = count > 0 ? irisum / count : 0.0;
 
-			// Ó¦ÓÃIRIĞŞÕı£¨¼ÓËÙ¶È»òËÙ¶ÈÒò×Ó£©
-			irival = ApplyCorrection(irival, datasrc, speedval, isParmFile, speedparms, kparms, bparms, parmnum);
+			irival = ApplyCorrection(
+				irival,
+				datasrc,
+				speedval,
+				isParmFile,
+				speedparms,
+				kparms,
+				bparms,
+				parmnum);
 
-			// Ğ´ÈëÊä³ö
 			swIRI << iricnt + 1 << " " << irival << "\n";
 			swspeed << iricnt + 1 << " " << speedval << "\n";
 
-			// ÖØÖÃ
 			irisum = 0.0;
 			count = 0;
 			stime = etime;
 			++iricnt;
 		}
 
-		// ¼ÆËãYSU£¨ÊäÈëÆÂ¶È£©
-		double YSU = ComputeYSU(iridata, i, DeltLen);
-
-		// ¸üĞÂ×´Ì¬
+		// ä¸å½“å‰ C# ä¸€è‡´ï¼šå½“å‰çŠ¶æ€æ­¥è¿›å…¥ä¸‹ä¸€æ®µã€‚
+		const double YSU = ComputeYSU(iridata, i, DeltLen);
 		UpdateState(ZSU, oldZSU, YSU, DeltLen);
 
-		// ÀÛ¼ÓIRI
 		irisum += std::abs(ZSU[0] - ZSU[2]);
 		++count;
-
-		// ¸üĞÂoldZSU
 		oldZSU = ZSU;
 	}
-
-	// ²½Öè7: ´¦Àí×îºóÒ»¸ö²»ÍêÕû¶Î
+	// æ­¥éª¤7: å¤„ç†æœ€åä¸€ä¸ªä¸å®Œæ•´æ®µ
 	if (count > 0) {
 		double etime = ParseTime(iritime[len - 1]);
 		double partial_distance = count * DeltLen;
 		double speedval = (etime - stime) > 0 ? (partial_distance / (etime - stime) * 3.6) : 0.0;
 		double irival = irisum / count;
 
-		// Ó¦ÓÃIRIĞŞÕı
+		// åº”ç”¨IRIä¿®æ­£
 		irival = ApplyCorrection(irival, datasrc, speedval, isParmFile, speedparms, kparms, bparms, parmnum);
 
-		// Ğ´ÈëÊä³ö
+		// å†™å…¥è¾“å‡º
 		swIRI << ++iricnt << " " << irival << "\n";
 		swspeed << iricnt << " " << speedval << "\n";
 	}
 
-	// ²½Öè8: ¹Ø±ÕÊä³öÎÄ¼ş
+	// æ­¥éª¤8: å…³é—­è¾“å‡ºæ–‡ä»¶
 	fwIRI.close();
 	fwspeed.close();
 
-	// ²½Öè9: Éú³É250mm³éÑùÎÄ¼ş
+	// æ­¥éª¤9: ç”Ÿæˆ250mmæŠ½æ ·æ–‡ä»¶
 	savefname = fpath.substr(0, fpath.rfind('/')) + "/ReSample250.txt";
 	QFile fw250(QString::fromStdString(savefname));
 	fw250.open(QIODevice::WriteOnly);
@@ -708,7 +865,7 @@ tuple_vec_vec_vec_int_int CalculationThread::LoadData(const std::string& fpath)
 			s.push_back(line.substr(0, pos));
 			line.erase(0, pos + delim.length());
 		}
-		s.push_back(line);  // ×îºóÒ»¸ötoken
+		s.push_back(line);  // æœ€åä¸€ä¸ªtoken
 
 		if (s.size() <= 1) {
 			delim = " ";
@@ -756,7 +913,7 @@ tuple_vec_int CalculationThread::ResampleData(const std::vector<double>& oridata
 std::vector<double> CalculationThread::InitializeState(const std::vector<double>& iridata, double DeltLen, int len)
 {
 	std::vector<double> oldZSU(4, 0.0);
-	int index = (DeltLen == 0.1) ?qMin(110, len - 1) : qMin(44, len - 1);
+	int index = (DeltLen == 0.1) ? qMin(110, len - 1) : qMin(44, len - 1);
 	if (index > 0 && index < len) {
 		oldZSU[0] = (iridata[index] - iridata[0]) / 11.0;
 		oldZSU[2] = (iridata[index] - iridata[0]) / 11.0;
@@ -781,14 +938,12 @@ double CalculationThread::ParseTime(int timeValue)
 
 double CalculationThread::ComputeYSU(const std::vector<double>& iridata, int i, double DeltLen)
 {
-	if (i < 1) return 0.0;
-	if (DeltLen == 0.1) {
-		if (i < 3) return 0.0;
+	if (DeltLen == 0.1)
+	{
 		return (iridata[i] - iridata[i - 3]) / 0.3;
 	}
-	else {
-		return (iridata[i] - iridata[i - 1]) / DeltLen;
-	}
+
+	return (iridata[i] - iridata[i - 1]) / DeltLen;
 }
 
 
@@ -832,15 +987,15 @@ void CalculationThread::UpdateState(std::vector<double>& ZSU, const std::vector<
 double CalculationThread::ApplyCorrection(double irival, bool datasrc, double speedval, bool isParmFile, const std::vector<double>& speedparms, const std::vector<double>& kparms, const std::vector<double>& bparms, int parmnum)
 {
 	if (datasrc) {
-		irival = irival *  1 + 0;
+		irival = irival * 1 + 0;
 	}
 	else {
-		 
+
 		if (isParmFile)
 		{
 			double kparm = kparms[parmnum - 1];
 			double bparm = bparms[parmnum - 1];
-		/*	for (int pi = 0; pi < parmnum; ++pi)
+			for (int pi = 0; pi < parmnum; ++pi)
 			{
 				if (speedval <= speedparms[pi])
 				{
@@ -848,12 +1003,13 @@ double CalculationThread::ApplyCorrection(double irival, bool datasrc, double sp
 					bparm = bparms[pi];
 					break;
 				}
-				
 
-			}*/
-			kparm = std::accumulate(kparms.begin(), kparms.end(), 0.0) / kparms.size();
-			//	irival = irival * kparm + bparm;
-			irival = irival * kparm;
+
+			}
+			irival = irival * kparm + bparm;
+			//kparm = std::accumulate(kparms.begin(), kparms.end(), 0.0) / kparms.size();
+
+			//irival = irival * kparm;
 		}
 		else
 		{
@@ -861,7 +1017,7 @@ double CalculationThread::ApplyCorrection(double irival, bool datasrc, double sp
 		}
 	}
 	return irival;
-} 
+}
 bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 {
 	std::vector< float>c2wmatrix;
@@ -869,8 +1025,8 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 	std::unique_ptr<double[]>matobj3d;
 	std::unique_ptr<unsigned char[]>rbmat;
 
-	std::unique_ptr<int[]>MP_idx(new int[20]{ 0 });
-	std::unique_ptr<float[]> MP_val(new float[20]{ 0 });
+	std::unique_ptr<int[]>MP_idx(new int[20] { 0 });
+	std::unique_ptr<float[]> MP_val(new float[20] { 0 });
 	float lineK = 0.0f;
 	float _rutk = 1.0f;
 	float _rutb = 0.0f;
@@ -881,11 +1037,42 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 		QString dat[] = { QString("%1\\camera0\\data").arg(basePath), QString("%1\\camera1\\data").arg(basePath) };
 		QString cfg[] = { QString("%1\\camera0\\rutcfg.ini").arg(basePath), QString("%1\\camera1\\rutcfg.ini").arg(basePath) };
 		QString process[] = { QString("%1\\RUT\\camera0\\data").arg(basePath),QString("%1\\RUT\\camera1\\data").arg(basePath) };
+		int cameracnt = valnum == 1 ? 2 : 1;
+
+		// è®¡ç®—å‰ä¸€æ¬¡æ€§æ£€æŸ¥å…¨éƒ¨å¿…éœ€è¾“å…¥ï¼Œé¿å…æ— æ•°æ®æ—¶ç›´æ¥æ˜¾ç¤ºâ€œå®Œæˆâ€ã€‚
+		QStringList inputIssues;
+		for (int cameraIndex = 0; cameraIndex < cameracnt; ++cameraIndex)
+		{
+			if (!QDir(dat[cameraIndex]).exists())
+			{
+				inputIssues.append(QStringLiteral("ç¼ºå°‘åŸå§‹è½¦è¾™æ•°æ®ç›®å½•ï¼š%1").arg(dat[cameraIndex]));
+			}
+			else if (MyCommonMethods::getMyAllDirFile(dat[cameraIndex], QStringList("*.dat")).isEmpty())
+			{
+				inputIssues.append(QStringLiteral("æœªæ‰¾åˆ°å¯è®¡ç®—çš„ DAT åŸå§‹æ–‡ä»¶ï¼š%1").arg(dat[cameraIndex]));
+			}
+
+			if (!QFile::exists(c2w[cameraIndex]))
+			{
+				inputIssues.append(QStringLiteral("ç¼ºå°‘è½¦è¾™æ ‡å®šæ–‡ä»¶ï¼š%1").arg(c2w[cameraIndex]));
+			}
+			if (!QFile::exists(cfg[cameraIndex]))
+			{
+				inputIssues.append(QStringLiteral("ç¼ºå°‘è½¦è¾™é…ç½®æ–‡ä»¶ï¼š%1").arg(cfg[cameraIndex]));
+			}
+		}
+
+		if (!inputIssues.isEmpty())
+		{
+			emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\n%2\r\n\r\nè¯·è¡¥é½ä»¥ä¸Šæ–‡ä»¶åé‡æ–°è®¡ç®—ã€‚")
+				.arg(currentPorject->get2DProName(), inputIssues.join(QStringLiteral("\r\n"))));
+			return false;
+		}
 
 
 		QSettings settings(cfg[0], QSettings::IniFormat);
 
-		//ÉèÖÃÒª¶ÁÈ¡µÄ×éÃû 
+		//è®¾ç½®è¦è¯»å–çš„ç»„å 
 		settings.beginGroup(QString("camera"));
 		float hpix = settings.value("hpixel").toFloat();
 		if (hpix == 0)
@@ -899,23 +1086,22 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 		if (_scaleval == 0)
 			_scaleval = 10;
 		float basezval = settings.value("basezval").toFloat();
-		int cameracnt = valnum == 1 ? 2 : 1;
 		int rbmatSize = 0;
 		if (rutmode == 2)
 		{
 			matobj3d.reset(new double[hpix] {0});
 
-			rbmat.reset(new unsigned   char[hpix * 8]{ 0 });
+			rbmat.reset(new unsigned   char[hpix * 8] { 0 });
 			rbmatSize = hpix * 8;
 		}
 		else
 		{
 			matobj.reset(new float[hpix] {0});
-			rbmat.reset(new unsigned   char[hpix * 4]{ 0 });
+			rbmat.reset(new unsigned   char[hpix * 4] { 0 });
 			rbmatSize = hpix * 4;
 		}
-		//Ê¹ÓÃÒ»Î¬Êı×éÄ£Äâ¶şÎ¬Êı×é
-		c2wmatrix.resize(vpix*hpix, 0);
+		//ä½¿ç”¨ä¸€ç»´æ•°ç»„æ¨¡æ‹ŸäºŒç»´æ•°ç»„
+		c2wmatrix.resize(vpix * hpix, 0);
 		emit progressUpdated(m_Project, m_type, 0.001, false);
 		std::vector<short> profile(hpix, 0);
 		std::vector<short> profobj(hpix, 0);
@@ -926,19 +1112,29 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 		std::vector<unsigned char>rbarr(hpix * 2, 0);
 		//	std::unique_ptr< char[]> wbarr(new  char[hpix * 2]{ 0 });
 		std::vector< unsigned  char>wbarr(hpix * 2, 0);
-		//Ïñ·½¼¤¹âÏß×ªÎï·½¼¤¹âÏß
+		RutProfileDebugExporter profileDebugExporter(currentPorject, basePath,
+			static_cast<int>(hpix), static_cast<int>(vpix), rutmode);
+		QString profileDebugError;
+		if (!profileDebugExporter.initialize(profileDebugError))
+		{
+			emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\n%2")
+				.arg(currentPorject->get2DProName(), profileDebugError));
+			return false;
+		}
+		const bool profileDebugEnabled = profileDebugExporter.isEnabled();
+		//åƒæ–¹æ¿€å…‰çº¿è½¬ç‰©æ–¹æ¿€å…‰çº¿
 		int i = 0, j = 0, n = 0, k = 0, m = 0, temp = 0;
 		long linetotalnum = 0;
 		for (i = 0; i < cameracnt; ++i)
 		{
 			linetotalnum = 0;
-			//Èç¹ûÏà»úÔ­Ê¼Êı¾İÃ»ÓĞ´æÔÚ¹¤³ÌÄÚ¾Í²»´¦Àíµ±Ç°Ïà»úµÄÊı¾İ
+			//å¦‚æœç›¸æœºåŸå§‹æ•°æ®æ²¡æœ‰å­˜åœ¨å·¥ç¨‹å†…å°±ä¸å¤„ç†å½“å‰ç›¸æœºçš„æ•°æ®
 			QDir dir(dat[i]);
 			if (!dir.exists())
 			{
 				continue;
 			}
-			//Èç¹û±ê¶¨ÎÄ¼şºÍÅäÖÃÎÄ¼şÃ»ÓĞ´æÔÚ¹¤³ÌÄÚ¾Í²»´¦Àíµ±Ç°Ïà»úµÄÊı¾İ
+			//å¦‚æœæ ‡å®šæ–‡ä»¶å’Œé…ç½®æ–‡ä»¶æ²¡æœ‰å­˜åœ¨å·¥ç¨‹å†…å°±ä¸å¤„ç†å½“å‰ç›¸æœºçš„æ•°æ®
 			QFile file1(c2w[i]);
 			QFile file2(cfg[i]);
 			if (!file1.exists() || !file2.exists())
@@ -948,22 +1144,37 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 			QDir dir1(process[i]);
 			if (!dir1.exists())
 			{
-				dir1.mkdir(process[i]);
+				if (!QDir().mkpath(process[i]))
+				{
+					emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\næ— æ³•åˆ›å»ºè¾“å‡ºç›®å½•ï¼š%2")
+						.arg(currentPorject->get2DProName(), process[i]));
+					return false;
+				}
 			}
 			string sPath = c2w[i].toLocal8Bit();
-			const char * path = sPath.c_str();
+			const char* path = sPath.c_str();
 			std::ifstream fil(path, std::ios::binary);
+			if (!fil.is_open())
+			{
+				emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\næ— æ³•è¯»å–æ ‡å®šæ–‡ä»¶ï¼š%2")
+					.arg(currentPorject->get2DProName(), c2w[i]));
+				return false;
+			}
 
 
 			fil.seekg(0, std::ios::end);
 			auto  fileSize = fil.tellg();
 			fil.seekg(0, std::ios::beg);
 
-			//¼ÆËãÔ¤ÆÚ´óĞ¡
+			//è®¡ç®—é¢„æœŸå¤§å°
 			size_t  expectedSize = vpix * hpix * (rutmode == 2 ? 8 : 4);
 			if (fileSize < expectedSize)
 			{
-				qDebug() << "rut file too small. Expected" << expectedSize << "Actual" << fileSize;
+				emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\næ ‡å®šæ–‡ä»¶å¤§å°ä¸è¶³ï¼š%2\r\næœŸæœ›è‡³å°‘ %3 å­—èŠ‚ï¼Œå®é™… %4 å­—èŠ‚ã€‚")
+					.arg(currentPorject->get2DProName(), c2w[i])
+					.arg(static_cast<qulonglong>(expectedSize))
+					.arg(static_cast<qlonglong>(fileSize)));
+				return false;
 			}
 			QFile fileC2w(c2w[i]);
 
@@ -976,16 +1187,16 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 					if (rutmode == 2)
 					{
 						temp = hpix * 8;
-						//½«×Ö½Ú×ª»»³Édouble
+						//å°†å­—èŠ‚è½¬æ¢æˆdouble
 						if (stream.readRawData(reinterpret_cast<char*>(rbmat.get()), temp) != temp)
 						{
 							qDebug() << "read error line:" << n;
 							break;
-						} 
+						}
 						std::memcpy(matobj3d.get(), rbmat.get(), temp);
 						for (int k = 0; k < hpix; ++k)
 						{
-							c2wmatrix[n*hpix + k] = static_cast<float>(matobj3d[k]);
+							c2wmatrix[n * hpix + k] = static_cast<float>(matobj3d[k]);
 						}
 					}
 					else
@@ -1003,15 +1214,21 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 								auto datasds = rbmat.get()[ddds];
 							}
 						}
-						//½«×Ö½Ú×ª»»³Éfloat
+						//å°†å­—èŠ‚è½¬æ¢æˆfloat
 						std::memcpy(matobj.get(), rbmat.get(), temp);
 						for (int k = 0; k < hpix; ++k)
 						{
-							c2wmatrix[n*hpix + k] = matobj[k];
+							c2wmatrix[n * hpix + k] = matobj[k];
 						}
 					}
 				}
 				fileC2w.close();
+			}
+			else
+			{
+				emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼š\r\næ— æ³•è¯»å–æ ‡å®šæ–‡ä»¶ï¼š%2")
+					.arg(currentPorject->get2DProName(), c2w[i]));
+				return false;
 			}
 			/*		if (fil.is_open())
 					{
@@ -1099,14 +1316,14 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 							continue;
 						}*/
 					string datPath = _dats[j].toLocal8Bit();
-					const char *  nowDatPath = datPath.c_str();
+					const char* nowDatPath = datPath.c_str();
 					QString nowPath0(process[i] + "\\");
 					QDir dirRes(nowPath0);
 					MyCommonMethods::createMultipleFolders(nowPath0);
-					//¶ÁÈ¡ËùÓĞdatÎÄ¼ş
-					
+					//è¯»å–æ‰€æœ‰datæ–‡ä»¶
+
 					QFile fs(_dats[j]);
-				 
+
 					std::ifstream filDat(nowDatPath, std::ios::binary);
 					if (filDat)
 					{
@@ -1119,7 +1336,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 						}
 
 						string datPath1 = nowDtwPath.toLocal8Bit();
-						const char *  nowDatPath1 = datPath1.c_str();
+						const char* nowDatPath1 = datPath1.c_str();
 						//std::filesystem::
 						std::ofstream filDat1;
 						filDat1.open(nowDatPath1, std::ios::binary);
@@ -1130,13 +1347,16 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 							if (m_stopRequested)
 							{
 								return false;
-
 							}
-							if (filDat.eof())
+
+							// å…ˆè¯»ï¼Œå†åˆ¤æ–­æœ¬æ¬¡æ˜¯å¦çœŸæ­£è¯»æ»¡ä¸€å¸§ã€‚
+							// std::ifstream::eof() åªæœ‰åœ¨â€œè¯»å¤±è´¥ä»¥åâ€æ‰ä¼šç½®ä½ï¼Œ
+							// æ—§å†™æ³•ä¼šåœ¨æ¯ä¸ª DAT æ–‡ä»¶æœ«å°¾æŠŠ rbarr ä¸­ä¸Šä¸€å¸§å†å¤„ç†ä¸€æ¬¡ã€‚
+							filDat.read(reinterpret_cast<char*>(rbarr.data()), temp);
+							if (filDat.gcount() != temp)
 							{
 								break;
 							}
-							filDat.read(reinterpret_cast<char*> (rbarr.data()), temp);
 
 							memcpy(profile.data(), rbarr.data(), hpix * 2);
 
@@ -1154,10 +1374,10 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 							memcpy(wbarr.data(), profobj.data(), hpix * 2);
 							if (filDat1.is_open())
 							{
-								//Ğ´ËùÓĞdtwÎÄ¼ş
+								//å†™æ‰€æœ‰dtwæ–‡ä»¶
 								filDat1.write(reinterpret_cast<char*> (wbarr.data()), hpix * 2);
 
-								//Ğ´ÈëÊı¾İ
+								//å†™å…¥æ•°æ®
 							}
 
 						}
@@ -1171,18 +1391,18 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 				}
 				catch (...)
 				{
-				//	throw; 
-					THROW_EX("³µÕŞ¼ÆËãÊ§°Ü£¡");
+					//	throw; 
+					THROW_EX("è½¦è¾™è®¡ç®—å¤±è´¥ï¼");
 				}
 
 			}
 
-			//ÓÃÎï·½¼¤¹âÏß¼ÆËã³µÕŞÖµ
+			//ç”¨ç‰©æ–¹æ¿€å…‰çº¿è®¡ç®—è½¦è¾™å€¼
 			for (i = 0; i < cameracnt; ++i)
 			{
-				//ÅĞ¶ÁÈç¹û³µÕŞ¼ÆËã½á¹ûÎÄ¼ş´æÔÚ¾Í²»ÓÃÔÙ¼ÆËã
+				//åˆ¤è¯»å¦‚æœè½¦è¾™è®¡ç®—ç»“æœæ–‡ä»¶å­˜åœ¨å°±ä¸ç”¨å†è®¡ç®—
 
-				QString frutname = basePath + "\\RUT\\camera" + QString::number(i) + "\\orirut.txt";
+			/*	QString frutname = basePath + "\\RUT\\camera" + QString::number(i) + "\\orirut.txt";
 				QFile file(frutname);
 				if (file.exists())
 				{
@@ -1193,7 +1413,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 						emit progressUpdated(m_Project, m_type, 0.9, false);
 						continue;
 					}
-				}
+				}*/
 				int profilenum = 0;
 				QString _dtwname = "";
 				int linecnt = 0;
@@ -1207,7 +1427,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 				int _partlen = 256, _asp = 0, _aep = 0, _bsp = 0, _bep = 0, _csp = 0, _cep = 0, _gslen = 0, _ThrPoint = 0;
 				QSettings settings0(cfg[i], QSettings::IniFormat);
 
-				//ÉèÖÃÒª¶ÁÈ¡µÄ×éÃû 
+				//è®¾ç½®è¦è¯»å–çš„ç»„å 
 				settings0.beginGroup(QString("camera"));
 				_asp = settings0.value("rutastart").toInt();
 
@@ -1257,7 +1477,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 					MyQtCommon::MyPoint& nowPt = _pt[pii];
 					nowPt = MyQtCommon::MyPoint(0, 0);
 				}
-				_partlen = _aep - _asp - 2;//157¡¢170¡¢186
+				_partlen = _aep - _asp - 2;//157ã€170ã€186
 				_threshval = settings0.value("threshval").toInt();
 				if (_threshval == 0)
 					_threshval = 28;
@@ -1274,24 +1494,26 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 
 				if (!fworirut.open(QIODevice::WriteOnly | QIODevice::Text))
 				{
+					emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\næ— æ³•å†™å…¥ç»“æœæ–‡ä»¶ï¼š%2")
+						.arg(currentPorject->get2DProName(), fworirut.fileName()));
 					return false;
 				}
 				QTextStream sworirut(&fworirut);
 
 				if (!fwrut.open(QIODevice::WriteOnly | QIODevice::Text))
 				{
+					emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\næ— æ³•å†™å…¥ç»“æœæ–‡ä»¶ï¼š%2")
+						.arg(currentPorject->get2DProName(), fwrut.fileName()));
 					return false;
 				}
 				QTextStream swrut(&fwrut);
-				int tempIndex = 0;
-				int ceshi = 0;
 				for (j = 0; j < _dats.size(); ++j)
 				{
 					try
 					{
 						_dtwname = _dats[j].mid(_dats[j].lastIndexOf("/") + 1);
 						_dtwname = _dtwname.mid(0, _dtwname.lastIndexOf('.'));
-						//¶ÁÈ¡ËùÓĞdatÎÄ¼ş
+						//è¯»å–æ‰€æœ‰datæ–‡ä»¶
 						//QString datPath = process[i] + "\\" + _dtwname + ".dtw";
 						QString datPath = _dats[j];
 						string tempDatPath = datPath.toLocal8Bit();
@@ -1307,41 +1529,54 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 							auto length = filDat.tellg() - s_pos;
 							fsbar = fsbar / length;
 							temp = hpix * 2;
-							//½«Î»ÖÃÒÆ¶¯µ½¿ªÍ·
+							//å°†ä½ç½®ç§»åŠ¨åˆ°å¼€å¤´
 							filDat.seekg(0, std::ios::beg);
 							while (true)
 							{
 								if (m_stopRequested)
 								{
 									return false;
-
 								}
-								if (filDat.eof())
+
+								// å…ˆè¯»ï¼Œå†åˆ¤æ–­æœ¬æ¬¡æ˜¯å¦çœŸæ­£è¯»æ»¡ä¸€å¸§ã€‚
+								// std::ifstream::eof() åªæœ‰åœ¨â€œè¯»å¤±è´¥ä»¥åâ€æ‰ä¼šç½®ä½ï¼Œ
+								// æ—§å†™æ³•ä¼šåœ¨æ¯ä¸ª DAT æ–‡ä»¶æœ«å°¾æŠŠ rbarr ä¸­ä¸Šä¸€å¸§å†å¤„ç†ä¸€æ¬¡ã€‚
+								filDat.read(reinterpret_cast<char*>(rbarr.data()), temp);
+								if (filDat.gcount() != temp)
 								{
 									break;
 								}
-								filDat.read(reinterpret_cast<char*> (rbarr.data()), temp);
 
 								memcpy(profile.data(), rbarr.data(), hpix * 2);
-
+								const qint64 currentFrameIndex = linecnt;
+								const bool exportCurrentFrame =
+									profileDebugEnabled
+									&& profileDebugExporter.shouldExport(currentFrameIndex);
 								for (m = 0, n = 0; m < hpix; ++m)
 								{
-									if (n == 2015)
-									{
-										int tta = 0;
-									}
-									if (profile[m] <= 0 || profile[m] >= vpix)
+									if (profile[m] <= 0 ||
+										profile[m] >= vpix)
 									{
 										profobj[m] = 0x7fff;
 										objlas[m] = 0x7fff;
+
 									}
 									else
 									{
-										float value1 = (c2wmatrix[profile[m] * hpix + m] - basezval);
+										float c2wValue =
+											c2wmatrix[
+												profile[m] * hpix + m
+											];
+
+										float value1 =
+											c2wValue - basezval;
+
 										objlas[m] = value1;
+
+
 										if (rutmode == 2)
 										{
-											objlas[n] = -objlas[n];
+											objlas[m] = -objlas[m];
 										}
 
 										tobjlas[n] = objlas[m];
@@ -1364,7 +1599,7 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 
 									++linecnt;
 
-									QString line = QString::number(linecnt) + "0," + QString::number(arutval) + "\n";
+									QString line = QString::number(linecnt) + "0," + QString::number(arutval, 'f', 3) + "\n";
 									sworirut << line;
 									swrut << line;
 
@@ -1373,55 +1608,101 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 								{
 									if (n > 1200)
 									{
-										tempIndex++;
+										// ä¸ C# ä¿æŒå®Œå…¨ä¸€è‡´ï¼šæ²¿ç”¨ 2025 è°ƒç”¨å£å¾„ï¼Œ
+										// æŒ‰å½“å‰å¸§æ— æ•ˆç‚¹æ•°é‡ç¼©çŸ­å³ä¾§è®¡ç®—ç»ˆç‚¹ã€‚
 										int _cept = _cep - (m - n);
+
 										hnComputeCUT cut;
+										hnRutProfileTrace profileTrace;
+										if (exportCurrentFrame)
+										{
+											brutval = cut.computerut3(hpix, objlas.data(), tobjlas.data(),
+												_asp, _cept, arutval, crutval, lineK, _gslen,
+												MP_idx.get(), MP_val.get(), &profileTrace);
+											if (!profileDebugExporter.writeFrame(currentFrameIndex, datPath,
+												profile, profileTrace.worldHeight, &profileTrace,
+												brutval, profileDebugError))
+											{
+												emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™æ–­é¢è°ƒè¯•å¯¼å‡ºå¤±è´¥ï¼š\r\n%2")
+													.arg(currentPorject->get2DProName(), profileDebugError));
+												return false;
+											}
+										}
+										else
+										{
+											brutval = cut.computerut3(hpix, objlas.data(), tobjlas.data(),
+												_asp, _cept, arutval, crutval, lineK, _gslen,
+												MP_idx.get(), MP_val.get());
+										}
 
-										brutval = cut.computerut3(hpix, objlas.data(), tobjlas.data(), _asp, _cept, arutval, crutval, lineK, _gslen, MP_idx.get(), MP_val.get());
+										// ç¬¬ä¸€å±‚ï¼šå·¥ç¨‹ rutcfg.ini ä¸­çš„ rutk / rutb
+										arutval = qAbs(arutval * _rutk + _rutb);
+										crutval = qAbs(crutval * _rutk + _rutb);
+										brutval = qAbs(brutval * _rutk + _rutb);
 
+										// ç¬¬äºŒå±‚ï¼šè½¯ä»¶è®¾ç½®ä¸­çš„å…¨å±€ K / B
+										double K = 1;
+										double B = 0;
 
-										arutval = qAbs(arutval * _rutk + _rutb);//×ó
-										crutval = qAbs(crutval * _rutk + _rutb);//ÓÒ
-										brutval = qAbs(brutval * _rutk + _rutb);//×î´óÖµ
-										double K = _Setting->rutKCorrect;
-										double B = _Setting->rutBCorrect;  //
+										arutval = qAbs(arutval * K + B);
+										crutval = qAbs(crutval * K + B);
+										brutval = qAbs(brutval * K + B);
 
-										arutval = qAbs(arutval *  K + B);//×ó
-										crutval = qAbs(crutval * K + B);//ÓÒ
-										brutval = qAbs(brutval * K + B);//×î´óÖµ
 									}
-									else
+								else
+								{
+									arutval = 0;
+									crutval = 0;
+									brutval = 0;
+									if (exportCurrentFrame
+										&& !profileDebugExporter.writeFrame(currentFrameIndex, datPath,
+											profile, objlas, nullptr, brutval, profileDebugError))
 									{
-										arutval = 0;
-										crutval = 0;
-										brutval = 0;
+										emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™æ–­é¢è°ƒè¯•å¯¼å‡ºå¤±è´¥ï¼š\r\n%2")
+											.arg(currentPorject->get2DProName(), profileDebugError));
+										return false;
 									}
+								}
 									if (m_stopRequested)
 									{
 										return false;
 
 									}
 									++linecnt;
-									QString line = QString::number(linecnt) + "0," + QString::number(arutval) + "," + QString::number(brutval) + "," + QString::number(crutval) + "\n";
+									QString line = QString::number(linecnt) + "0," + QString::number(arutval, 'f', 3) + "," + QString::number(brutval, 'f', 3) + "," + QString::number(crutval, 'f', 3) + "\n";
 									sworirut << line;
 									swrut << line;
 
 								}
 								if (linecnt % 1000 == 0)
 								{
-									emit progressUpdated(m_Project, m_type, (0.42 + fsbar2 + filDat.tellg()* fsbar), false);
+									emit progressUpdated(m_Project, m_type, (0.42 + fsbar2 + filDat.tellg() * fsbar), false);
 									//if (Isbar) bar.SetRutVal(0.42 + fsbar2 + frstream.Position * fsbar);
 								}
 							}
 
 
 						}
+						else
+						{
+							emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\næ— æ³•è¯»å–åŸå§‹æ•°æ®æ–‡ä»¶ï¼š%2")
+								.arg(currentPorject->get2DProName(), datPath));
+							return false;
+						}
 						filDat.close();
 
 					}
+					catch (const std::exception& exception)
+					{
+						emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\nå¤„ç†åŸå§‹æ•°æ®æ–‡ä»¶å¤±è´¥ï¼š%2\r\n%3")
+							.arg(currentPorject->get2DProName(), _dats[j], QString::fromUtf8(exception.what())));
+						return false;
+					}
 					catch (...)
 					{
-
+						emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\nå¤„ç†åŸå§‹æ•°æ®æ–‡ä»¶å¤±è´¥ï¼š%2")
+							.arg(currentPorject->get2DProName(), _dats[j]));
+						return false;
 					}
 
 				}
@@ -1429,167 +1710,222 @@ bool CalculationThread::ComputeRut(bool Isbar, int valnum, int rutmode)
 				fworirut.close();
 			}
 		}
+		if (!profileDebugExporter.finish(true, QString(), profileDebugError))
+		{
+			emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™æ–­é¢è°ƒè¯•ç›®å½•å‘å¸ƒå¤±è´¥ï¼š\r\n%2")
+				.arg(currentPorject->get2DProName(), profileDebugError));
+			return false;
+		}
+		return true;
+	}
+	catch (const std::exception& exception)
+	{
+		emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼š\r\n%2")
+			.arg(currentPorject->get2DProName(), QString::fromUtf8(exception.what())));
+		return false;
 	}
 	catch (...)
 	{
-		throw;
+		emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—å¤±è´¥ï¼šå‘ç”ŸæœªçŸ¥å¼‚å¸¸ã€‚")
+			.arg(currentPorject->get2DProName()));
+		return false;
 	}
 }
 
 void CalculationThread::AdjustRutVal(int valnum)
 {
-	QStringList LRutsr;
-	QVector<QString> newLRutsr;
-	QStringList RRutsr;
-	QStringList newRRutsr;
 	QString basePath = currentPorject->get2DProPath();
-	QString path(QString("%1\\Rut\\camera0\\orioldrut.txt").arg(basePath));
-	QString path1(QString("%1\\Rut\\camera0\\orirut.txt").arg(basePath));
-	QFile file;
-	QFile file1;
-	file.setFileName(path);
-	file1.setFileName(path1);
-	if (file.exists())
-	{
-		LRutsr = MyCommonMethods::ReadAllLines(path);
 
-	}
-	else if (file1.exists())
-	{
-		LRutsr = MyCommonMethods::ReadAllLines(path1);
-	}
-	else
+	QString leftPath =
+		QString("%1\\Rut\\camera0\\orirut.txt")
+		.arg(basePath);
+
+	QString leftBackupPath =
+		QString("%1\\Rut\\camera0\\orioldrut.txt")
+		.arg(basePath);
+
+	if (!QFile::exists(leftPath))
 	{
 		return;
 	}
-	newLRutsr.resize(LRutsr.size());
-	if (valnum < 2)
-	{
 
-		QString rpath(QString("%1\\Rut\\camera1\\orioldrut.txt").arg(basePath));
-		QString rpath1(QString("%1\\Rut\\camera1\\orirut.txt").arg(basePath));
-		QFile rfile;
-		QFile rfile1;
-		rfile.setFileName(rpath);
-		rfile1.setFileName(rpath1);
-		if (rfile.exists())
-		{
-			RRutsr = MyCommonMethods::ReadAllLines(rpath);
-
-		}
-		else if (rfile1.exists())
-		{
-			RRutsr = MyCommonMethods::ReadAllLines(rpath1);
-		}
-		else
-		{
-			return;
-		}
-		newRRutsr.reserve(RRutsr.size());
-	}
-	int lenval = 0;
-	if (valnum < 2)
+	// orioldrut Ã¿ï¿½Î¸ï¿½ï¿½Ç£ï¿½Ö»ï¿½ï¿½ï¿½æ±¾ï¿½ï¿½ AdjustRutVal Ç°ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½
+	if (QFile::exists(leftBackupPath))
 	{
-		lenval = qMax(LRutsr.size(), RRutsr.size());
-		if (LRutsr.size() < 2)
-			return;
-		if (RRutsr.size() < 2)
-			return;
-	}
-	else
-	{
-		lenval = LRutsr.size();
-		if (LRutsr.size() < 2)
-			return;
+		QFile::remove(leftBackupPath);
 	}
 
-	std::unique_ptr<float[]> Lrutvals(new float[lenval]);
-	std::unique_ptr<float[]> Rrutvals(new float[lenval]);
-	QString LRutstrline, RRutstrline;
-	float Lrutoldval = 0, Rrutoldval = 0;
-	float Lrutcurval = 0, Rrutcurval = 0;
+	if (!QFile::copy(leftPath, leftBackupPath))
+	{
+		return;
+	}
 
-	QStringList trut;
+	QStringList LRutsr =
+		MyCommonMethods::ReadAllLines(leftPath);
+
+	QStringList RRutsr;
+	QString rightPath;
+	QString rightBackupPath;
+
+	if (valnum < 2)//Ë«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	{
+		rightPath =
+			QString("%1\\Rut\\camera1\\orirut.txt")
+			.arg(basePath);
+
+		rightBackupPath =
+			QString("%1\\Rut\\camera1\\orioldrut.txt")
+			.arg(basePath);
+
+		if (!QFile::exists(rightPath))
+		{
+			return;
+		}
+
+		if (QFile::exists(rightBackupPath))
+		{
+			QFile::remove(rightBackupPath);
+		}
+
+		if (!QFile::copy(rightPath, rightBackupPath))
+		{
+			return;
+		}
+
+		RRutsr =
+			MyCommonMethods::ReadAllLines(rightPath);
+	}
+
+	if (LRutsr.size() < 2)
+	{
+		return;
+	}
+
+	if (valnum < 2 && RRutsr.size() < 2)
+	{
+		return;
+	}
+
+	int lenval =
+		valnum < 2
+		? qMax(LRutsr.size(), RRutsr.size())
+		: LRutsr.size();
+
+	std::unique_ptr<float[]> Lrutvals =
+		std::make_unique<float[]>(lenval);
+
+	std::unique_ptr<float[]> Rrutvals =
+		std::make_unique<float[]>(lenval);
+
+	float Lrutoldval = 0.0f;
+	float Rrutoldval = 0.0f;
+	float Lrutcurval = 0.0f;
+	float Rrutcurval = 0.0f;
 
 	for (int i = 0; i < lenval; ++i)
 	{
-		if (valnum < 2)//Ë«³µÕŞ
+		if (valnum < 2)
 		{
 			if (i < LRutsr.size())
 			{
-				LRutstrline = LRutsr[i];
-				trut = LRutstrline.split(',');
-				try
-				{
-					Lrutcurval = trut[1].toFloat();
-				}
-				catch (...)
+				QStringList trut =
+					LRutsr[i].split(',');
+
+				bool ok = false;
+				Lrutcurval =
+					trut.value(1).toFloat(&ok);
+
+				if (!ok)
 				{
 					Lrutcurval = Lrutoldval;
 				}
 
-				if (_Setting->IsThresholdRut)
+				if (_Setting->IsThresholdRut &&
+					Lrutcurval > 0.0f)
 				{
-					if (Lrutcurval > 0)
-					{
-						Lrutcurval = Lrutcurval / qCeil(Lrutcurval / _Setting->ErrorRut);
-					}
+					Lrutcurval =
+						Lrutcurval /
+						qCeil(
+							Lrutcurval /
+							_Setting->ErrorRut);
 				}
 
 				Lrutvals[i] = Lrutcurval;
 				Lrutoldval = Lrutcurval;
 			}
+
 			if (i < RRutsr.size())
 			{
-				RRutstrline = RRutsr[i];
-				trut = RRutstrline.split(",");
-				try
-				{
-					Rrutcurval = trut[1].toFloat();
-				}
-				catch (...)
+				QStringList trut =
+					RRutsr[i].split(',');
+
+				bool ok = false;
+				Rrutcurval =
+					trut.value(1).toFloat(&ok);
+
+				if (!ok)
 				{
 					Rrutcurval = Rrutoldval;
 				}
 
-				if (_Setting->IsThresholdRut)
+				if (_Setting->IsThresholdRut &&
+					Rrutcurval > 0.0f)
 				{
-					if (Rrutcurval > 0)
-					{
-						Rrutcurval = Rrutcurval / qCeil(Rrutcurval / _Setting->ErrorRut);
-					}
+					Rrutcurval =
+						Rrutcurval /
+						qCeil(
+							Rrutcurval /
+							_Setting->ErrorRut);
 				}
 
 				Rrutvals[i] = Rrutcurval;
 				Rrutoldval = Rrutcurval;
 			}
 		}
-		else //µ¥³µÕŞ
+		else
 		{
 			if (i < LRutsr.size())
 			{
-				LRutstrline = LRutsr[i];
-				trut = LRutstrline.split(",");
-				try
-				{
-					Lrutcurval = trut[1].toFloat();
-					Rrutcurval = trut[3].toFloat();
-				}
-				catch (...)
+				QStringList trut =
+					LRutsr[i].split(',');
+
+				bool okL = false;
+				bool okR = false;
+
+				Lrutcurval =
+					trut.value(1).toFloat(&okL);
+
+				Rrutcurval =
+					trut.value(3).toFloat(&okR);
+
+				if (!okL)
 				{
 					Lrutcurval = Lrutoldval;
+				}
+
+				if (!okR)
+				{
 					Rrutcurval = Rrutoldval;
 				}
 
 				if (_Setting->IsThresholdRut)
 				{
-					if (Lrutcurval > 0)
+					if (Lrutcurval > 0.0f)
 					{
-						Lrutcurval = Lrutcurval / qCeil(Lrutcurval / _Setting->ErrorRut);
+						Lrutcurval =
+							Lrutcurval /
+							qCeil(
+								Lrutcurval /
+								_Setting->ErrorRut);
 					}
-					if (Rrutcurval > 0)
+
+					if (Rrutcurval > 0.0f)
 					{
-						Rrutcurval = Rrutcurval / qCeil(Rrutcurval / _Setting->ErrorRut);
+						Rrutcurval =
+							Rrutcurval /
+							qCeil(
+								Rrutcurval /
+								_Setting->ErrorRut);
 					}
 				}
 
@@ -1600,13 +1936,30 @@ void CalculationThread::AdjustRutVal(int valnum)
 				Rrutoldval = Rrutcurval;
 			}
 		}
-
 	}
-	RemoveBigErr(Lrutvals.get(), lenval);
-	RemoveBigErr(Rrutvals.get(), lenval);
-	std::uniform_int_distribution<>::param_type newPara(1, 100);
-	dis.param(newPara);
-	// ×óÓÒ²à³µÕŞÖ®¼äµ÷Õû±È½Ï
+
+	RemoveBigErrCore(
+		Lrutvals.get(),
+		lenval,
+		_Setting->ErrorRutTh2,
+		101);
+
+	RemoveBigErrCore(
+		Rrutvals.get(),
+		lenval,
+		_Setting->ErrorRutTh2,
+		202);
+
+	QStringList newLRutsr;
+	QStringList newRRutsr;
+
+	newLRutsr.reserve(LRutsr.size());
+
+	if (valnum < 2)
+	{
+		newRRutsr.reserve(RRutsr.size());
+	}
+
 	for (int i = 0; i < lenval; ++i)
 	{
 		Lrutoldval = Lrutvals[i];
@@ -1614,93 +1967,109 @@ void CalculationThread::AdjustRutVal(int valnum)
 
 		if (Lrutoldval > Rrutoldval)
 		{
-			if (Rrutoldval > 1.0)
+			if (Rrutoldval > 1.0f)
 			{
-				if ((Lrutoldval - Rrutoldval) >= _Setting->ErrorRutTh1)
+				if ((Lrutoldval - Rrutoldval) >=
+					_Setting->ErrorRutTh1)
 				{
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::mt19937 gen(seed);
-					Lrutoldval = Rrutoldval + dis(gen) * 0.01f - 0.5f;
+					Lrutoldval =
+						Rrutoldval +
+						RutNoise(i, 303);
 				}
 			}
-			else if (Rrutoldval == 0.0)
+			else if (Rrutoldval == 0.0f &&
+				i > 0)
 			{
-				if (i > 0)
-				{
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::mt19937 gen(seed);
-					Rrutoldval = Rrutvals[i - 1] + dis(gen) * 0.01f - 0.5f;
-				}
+				Rrutoldval =
+					Rrutvals[i - 1] +
+					RutNoise(i, 505);
 			}
 		}
 		else
 		{
-			if (Lrutoldval > 1.0)
+			if (Lrutoldval > 1.0f)
 			{
-				if ((Rrutoldval - Lrutoldval) >= _Setting->ErrorRutTh1)
+				if ((Rrutoldval - Lrutoldval) >=
+					_Setting->ErrorRutTh1)
 				{
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::mt19937 gen(seed);
-					Rrutoldval = Lrutoldval + dis(gen)* 0.01f - 0.5f;
+					Rrutoldval =
+						Lrutoldval +
+						RutNoise(i, 404);
 				}
 			}
-			else if (Lrutoldval == 0.0)
+			else if (Lrutoldval == 0.0f &&
+				i > 0)
 			{
-				if (i > 0)
-				{
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::mt19937 gen(seed);
-					Lrutoldval = Lrutvals[i - 1] + dis(gen) * 0.01f - 0.5f;
-				}
+				Lrutoldval =
+					Lrutvals[i - 1] +
+					RutNoise(i, 606);
 			}
 		}
-		Lrutvals[i] = qAbs(Lrutoldval);
-		Rrutvals[i] = qAbs(Rrutoldval);
 
-		if (valnum < 2)//Ë«³µÕŞ
+		// ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ K/B Ö»ï¿½ï¿½ AdjustRutVal ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½Ò»ï¿½Î¡ï¿½
+		Lrutvals[i] =
+			static_cast<float>(
+				_Setting->rutKCorrect *
+				qAbs(Lrutoldval) +
+				_Setting->rutBCorrect);
+
+		Rrutvals[i] =
+			static_cast<float>(
+				_Setting->rutKCorrect *
+				qAbs(Rrutoldval) +
+				_Setting->rutBCorrect);
+
+		if (valnum < 2)
 		{
-			if (i < newLRutsr.size())
+			if (i < LRutsr.size())
 			{
-
-				newLRutsr[i] = QString::number(i + 1) + "0," + QString::number(Lrutvals[i]);
+				newLRutsr.append(
+					QString("%1%2,%3")
+					.arg(i + 1)
+					.arg("0")
+					.arg(QString::number(Lrutvals[i], 'f', 3)));
 			}
-			if (i < newRRutsr.size())
+
+			if (i < RRutsr.size())
 			{
-				newLRutsr[i] = QString::number(i + 1) + "0," + QString::number(Rrutvals[i]);
+				newRRutsr.append(
+					QString("%1%2,%3")
+					.arg(i + 1)
+					.arg("0")
+					.arg(QString::number(Rrutvals[i], 'f', 3)));
 			}
 		}
 		else
 		{
-			newLRutsr[i] = QString::number(i + 1) + "0," + QString::number(Lrutvals[i]) + "," + QString::number(qMax(Lrutvals[i], Rrutvals[i])) + "," + QString::number(Rrutvals[i]);
+			newLRutsr.append(
+				QString("%1%2,%3,%4,%5")
+				.arg(i + 1)
+				.arg("0")
+				.arg(QString::number(Lrutvals[i], 'f', 3))
+				.arg(QString::number(qMax(Lrutvals[i], Rrutvals[i]), 'f', 3))
+				.arg(QString::number(Rrutvals[i], 'f', 3)));
 		}
 	}
 
-	path1 = QString("%1\\Rut\\camera0\\orioldrut.txt").arg(basePath);
-	QString path2 = QString("%1\\Rut\\camera0\\orirut.txt").arg(basePath);
-	file1.setFileName(path1);
-	if (!file1.exists())
-	{
-		QFile::copy(path2, path1);
-	}
-	MyCommonMethods::writeAllLines(path2, newLRutsr);
+	QTextCodec* codeT =
+		QTextCodec::codecForName("utf-8");
 
-	if (valnum < 2)//Ë«³µÕŞ
-	{
-		path1 = QString("%1\\Rut\\camera1\\orioldrut.txt").arg(basePath);
-		path2 = QString("%1\\Rut\\camera1\\orirut.txt").arg(basePath);
-		file1.setFileName(path1);
-		if (!file1.exists())
-		{
-			QFile::copy(path2, path1);
-		}
-		MyCommonMethods::writeAllLines(path2, newRRutsr);
-	}
+	MyCommonMethods::writeAllLines(
+		leftPath,
+		newLRutsr,
+		codeT);
 
+	if (valnum < 2)
+	{
+		MyCommonMethods::writeAllLines(
+			rightPath,
+			newRRutsr,
+			codeT);
+	}
 }
-
-void CalculationThread::CreateGaussFilter(std::unique_ptr<float[]> &  gaus, int size, float sigma)
+void CalculationThread::CreateGaussFilter(std::unique_ptr<float[]>& gaus, int size, float sigma)
 {
-	double PI = 4.0 * atan(1.0); //Ô²ÖÜÂÊ¦Ğ¸³Öµ
+	double PI = 4.0 * atan(1.0); //Ô²ï¿½ï¿½ï¿½Ê¦Ğ¸ï¿½Öµ
 	int center = size / 2;
 	float sum = 0, tsigma = 0;
 	double temp1 = 0, temp2 = 0;
@@ -1712,7 +2081,7 @@ void CalculationThread::CreateGaussFilter(std::unique_ptr<float[]> &  gaus, int 
 	{
 		gaus[i] = (float)(i - center) / center;
 		tsigma = (float)(gaus[i] * temp1);
-		gaus[i] = (float)(temp2 *exp(-tsigma * tsigma));
+		gaus[i] = (float)(temp2 * exp(-tsigma * tsigma));
 		sum += gaus[i];
 	}
 
@@ -1721,11 +2090,16 @@ void CalculationThread::CreateGaussFilter(std::unique_ptr<float[]> &  gaus, int 
 		gaus[i] = gaus[i] / sum;
 	}
 }
+ 
 
 bool CalculationThread::JudgMTDval(QString prj, int side)
 {
 
-	QString resamplefname = QString("%1\\Laser0\\MTD_100.txt").arg(prj).arg(QString::number(side));
+	//QString resamplefname = QString("%1\\Laser0\\MTD_100.txt").arg(prj).arg(QString::number(side));
+	QString resamplefname =
+		QString("%1\\Laser%2\\MTD_100.txt")
+		.arg(prj)
+		.arg(side);
 	if (!QFile::exists(resamplefname))
 	{
 		return false;
@@ -1771,67 +2145,11 @@ bool CalculationThread::JudgMTDval(QString prj, int side)
 
 void CalculationThread::RemoveBigErr(float* rutval, int length)
 {
-	float sumval = 0.0f;
-	float oldval = rutval[0];
-	float curval = rutval[0];
-	std::uniform_int_distribution<>::param_type newPara(1, 100);
-	dis.param(newPara);
-	for (int i = 0; i < length; ++i)
-	{
-		curval = rutval[i];
-
-		if (curval < 0.1)
-		{
-			if (i > 0)
-			{
-				auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-				std::mt19937 gen(seed);
-				curval = sumval / i + dis(gen) * 0.01f - 0.5f;
-			}
-			else
-			{
-				curval = oldval;
-			}
-		}
-		else if (curval - oldval >= _Setting->ErrorRutTh2)
-		{
-			if (oldval >= 0.1)
-			{
-				if (i > 0)
-				{
-					auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-					std::mt19937 gen(seed);
-					curval = sumval / i + dis(gen) * 0.01f - 0.5f;
-				}
-				else
-				{
-					curval = oldval;
-				}
-			}
-			else
-			{
-				if (curval > _Setting->ErrorRutTh2)
-				{
-					if (i > 0)
-					{
-						auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-						std::mt19937 gen(seed);
-
-						curval = sumval / i + dis(gen) * 0.01f - 0.5f;
-					}
-					else
-					{
-						curval = 5.0f;
-					}
-
-				}
-			}
-		}
-
-		rutval[i] = curval;
-		oldval = curval;
-		sumval = sumval + curval;
-	}
+	RemoveBigErrCore(
+		rutval,
+		length,
+		_Setting->ErrorRutTh2,
+		101);
 }
 
 
@@ -1842,8 +2160,8 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 	m_mmutex.lock();
 	if (isIRI)
 	{
-		  dirName = QString("%1\\IRIMTD\\DAQ%2").arg(currentPorject->get2DProject()->getBasePath()).arg(QString::number(side));
-		  QString fileName; 
+		dirName = QString("%1\\IRIMTD\\DAQ%2").arg(currentPorject->get2DProject()->getBasePath()).arg(QString::number(side));
+		QString fileName;
 		dir.setPath(dirName);
 		if (dir.exists())
 		{
@@ -1852,7 +2170,7 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 			file.setFileName(fileName);
 			if (!file.exists())
 			{
-				QString errorMsg = QStringLiteral("¶ªÊ§ÅäÖÃÎÄ¼ş£º\r\n%1\r\nÇë´ÓÆäËû¹¤³ÌÏàÍ¬Î»ÖÃ¿½±´¡¾Setting.ini¡¿ÖÁ´ËÄ¿Â¼").arg(fileName);
+				QString errorMsg = QStringLiteral("ä¸¢å¤±é…ç½®æ–‡ä»¶ï¼š\r\n%1\r\nè¯·ä»å…¶ä»–å·¥ç¨‹ç›¸åŒä½ç½®æ‹·è´ã€Setting.iniã€‘è‡³æ­¤ç›®å½•").arg(fileName);
 				emit error(errorMsg);
 				m_mmutex.unlock();
 				return false;
@@ -1886,15 +2204,15 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 			file.close();
 		}
 	}
-	 
-	
+
+
 	else
 	{
 		_MTDCali.resize(3);
 		_MPDCali.resize(3);
 		_mmPerPoint.resize(3);
-		 
-		for (int i = 0 ; i <3 ; i++)
+
+		for (int i = 0; i < 3; i++)
 		{
 			_MTDCali[i].resize(2);
 			_MPDCali[i].resize(2);
@@ -1913,15 +2231,15 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 				_MPDCali[i][1] = settings.value("MTD_b").toDouble();
 				_mmPerPoint[i] = settings.value("PMode").toInt();
 				settings.endGroup();
-				// Èç¹û´æÔÚÕâ¸öÎÄ¼ş£¬ÓĞÁ½ÖÖÇé¿ö£º1¡¢¾ÉÈí¼ş¼ÆËãµÄ£¬MPD²»¼ÓÏµÊı£¬2¡¢ĞÂÈí¼ş¼ÆËãµÄ£¬MPDÒª¼ÓÏµÊı
-				// Èç¹û²»´æÔÚÕâ¸öÎÄ¼ş£¬ÄÇÃ´¾ÍÖ®¼äÓÃÕâ¸öĞÂÈí¼ş¼ÆËã£¬MTDºÍMPD¶¼»á¼ÓÏµÊı 
+				// å¦‚æœå­˜åœ¨è¿™ä¸ªæ–‡ä»¶ï¼Œæœ‰ä¸¤ç§æƒ…å†µï¼š1ã€æ—§è½¯ä»¶è®¡ç®—çš„ï¼ŒMPDä¸åŠ ç³»æ•°ï¼Œ2ã€æ–°è½¯ä»¶è®¡ç®—çš„ï¼ŒMPDè¦åŠ ç³»æ•°
+				// å¦‚æœä¸å­˜åœ¨è¿™ä¸ªæ–‡ä»¶ï¼Œé‚£ä¹ˆå°±ä¹‹é—´ç”¨è¿™ä¸ªæ–°è½¯ä»¶è®¡ç®—ï¼ŒMTDå’ŒMPDéƒ½ä¼šåŠ ç³»æ•° 
 				QFile file;
 				file.setFileName(mtdfname);
 				if (file.exists())
 				{
 					int tmp = -1;
 					tmp = settings.value("Ver").toInt();
-					if (tmp == -1)//²»´æÔÚÕâ¸öÅäÖÃ£¬ËµÃ÷ÓÃ¾ÉÈí¼ş¼ÆËãµÄ¹¹ÔìÉî¶È£¬MPD²»¼ÓÏµÊı£¬Èç¹û´æÔÚÕâ¸öÅäÖÃ£¬ËµÃ÷ÊÇÓÃĞÂÈí¼ş¼ÆËãµÄ¹¹ÔìÉî¶È£¬MPD¼ÓÏµÊı
+					if (tmp == -1)//ä¸å­˜åœ¨è¿™ä¸ªé…ç½®ï¼Œè¯´æ˜ç”¨æ—§è½¯ä»¶è®¡ç®—çš„æ„é€ æ·±åº¦ï¼ŒMPDä¸åŠ ç³»æ•°ï¼Œå¦‚æœå­˜åœ¨è¿™ä¸ªé…ç½®ï¼Œè¯´æ˜æ˜¯ç”¨æ–°è½¯ä»¶è®¡ç®—çš„æ„é€ æ·±åº¦ï¼ŒMPDåŠ ç³»æ•°
 					{
 						try
 						{
@@ -1950,9 +2268,9 @@ bool CalculationThread::loadParm(bool isIRI, int side)
 			}
 		}
 
-		
-		
-	} 
+
+
+	}
 	m_mmutex.unlock();
 
 	return true;
@@ -1973,7 +2291,7 @@ double CalculationThread::GetLaserThresh(const QString& fpath)
 	}
 
 	size_t len = sdata.size();
-	//²»×ã1Ã×
+	//ä¸è¶³1ç±³
 	if (len < 20)
 		return res;
 
@@ -2017,7 +2335,10 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 	int SizeLaserData = 24;
 	QString  fname = QString("%1\\Laser%2\\MTD_%3m.txt").arg(prj).arg(side).arg(featurelen);
 	QFile file(fname);
-	if (file.exists() && file.size() > 1)
+	const bool hasMtdResult = file.exists() && file.size() > 1;
+	const QString lasvalPath = QStringLiteral("%1/Laser%2/lasval.txt").arg(prj).arg(side);
+	const QFileInfo lasvalInfo(lasvalPath);
+	if (hasMtdResult && lasvalInfo.isFile() && lasvalInfo.size() > 0)
 	{
 		emit progressUpdated(m_Project, m_type, 1.0, false);
 		return;
@@ -2049,13 +2370,13 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 
 	double m_SMTDdSum = 0;
 	int m_SMTDdCnt = 0;
-	int m_SMTDSubcnt = 0;//²»×ãÒ»¸öSMTDµÄµãÊı¼ÆÊı
-	int m_SMTDValCnt = 0;//ÓĞĞ§µÄSMTD¸öÊı
+	int m_SMTDSubcnt = 0;//ä¸è¶³ä¸€ä¸ªSMTDçš„ç‚¹æ•°è®¡æ•°
+	int m_SMTDValCnt = 0;//æœ‰æ•ˆçš„SMTDä¸ªæ•°
 	int m_featureDis = featurelen;
 
 	int m_laspnum = 300 / (MTDPOINT - 1);
-	int m_SMTDdnum = (int)(m_featureDis * 1000 / 300);//×Ü¹²µÄSMTD¸öÊı
-	int m_SMTDSubnum = (m_featureDis * 1000 - m_SMTDdnum * 300) / m_laspnum;//²»×ãÒ»¸öSMTDµÄµãÊı
+	int m_SMTDdnum = (int)(m_featureDis * 1000 / 300);//æ€»å…±çš„SMTDä¸ªæ•°
+	int m_SMTDSubnum = (m_featureDis * 1000 - m_SMTDdnum * 300) / m_laspnum;//ä¸è¶³ä¸€ä¸ªSMTDçš„ç‚¹æ•°
 
 	double m_CurMTD;
 	int m_MTDCnt = 0;
@@ -2065,13 +2386,29 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 	double filtersum = 0.0;
 	double filtermean = 0.0;
 
-	QString tmpstr;
-	QVector<QString> lasstrlist;
+	// ä¸äºŒç»´æ ¼å¼ä¸€è‡´ï¼šç¬¬ä¸€åˆ—ä¸ºé™å¹…åçš„é‡‡æ ·å€¼ï¼Œç¬¬äºŒåˆ—ä¸ºå»å™ªåçš„å€¼ã€‚
+	// æµå¼å†™å…¥ä¸´æ—¶æ–‡ä»¶ï¼Œå®Œæ•´æˆåŠŸåå†æ›¿æ¢æ­£å¼æ–‡ä»¶ï¼Œåœæ­¢æ—¶è‡ªåŠ¨ä¸¢å¼ƒåŠæˆå“ã€‚
+	if (lasfile.isEmpty())
+	{
+		emit error(QStringLiteral("æ— æ³•è¾“å‡ºçº¹ç†åŸå§‹æ•°æ®ï¼šæœªæ‰¾åˆ°æ¿€å…‰åŸå§‹æ–‡ä»¶ã€‚\n%1/Laser%2").arg(prj).arg(side));
+		return;
+	}
+	QSaveFile lasvalFile(lasvalPath);
+	lasvalFile.setDirectWriteFallback(false);
+	if (!lasvalFile.open(QIODevice::WriteOnly | QIODevice::Text))
+	{
+		emit error(QStringLiteral("æ— æ³•åˆ›å»ºçº¹ç†åŸå§‹æ•°æ®æ–‡ä»¶ï¼š\n%1\n%2").arg(lasvalPath, lasvalFile.errorString()));
+		return;
+	}
+	QTextStream lasvalStream(&lasvalFile);
+	lasvalStream.setCodec("UTF-8");
+	double rawLaserValue = 0.0;
+	qint64 lasvalCount = 0;
 	ulong framecnt = 0;
 	QFile fmtd(fname);
 	int lasFileCount = lasfile.size();
 
-	if (fmtd.open(QIODevice::WriteOnly | QIODevice::Text))
+	if (hasMtdResult || fmtd.open(QIODevice::WriteOnly | QIODevice::Text))
 	{
 		if (m_stopRequested)
 		{
@@ -2080,24 +2417,30 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 		}
 
 		QStringList outList;
-		QVector<double> value1M; //Ê¼ÖÕ¼ÇÂ¼Ç°500¸öµã  ÓÃÀ´»ñÈ¡ÖĞ¼äÖµ
+		QVector<double> value1M; //å§‹ç»ˆè®°å½•å‰500ä¸ªç‚¹  ç”¨æ¥è·å–ä¸­é—´å€¼
 
 		for (QString lf : lasfile)
 		{
 			QFileInfo lasf(lf);
-			long filesize = lasf.size();
-			long framenum = filesize / SizeLaserData;
+			qint64 filesize = lasf.size();
+			if (filesize <= 0 || filesize % SizeLaserData != 0)
+			{
+				emit error(QStringLiteral("æ¿€å…‰åŸå§‹æ–‡ä»¶ä¸ºç©ºæˆ–è®°å½•ä¸å®Œæ•´ï¼Œæ— æ³•è¾“å‡ºçº¹ç†åŸå§‹æ•°æ®ï¼š\n%1").arg(lf));
+				return;
+			}
+			qint64 framenum = filesize / SizeLaserData;
 			QFile fileLf(lf);
 			if (!fileLf.open(QIODevice::ReadOnly))
 			{
-				continue;
+				emit error(QStringLiteral("æ— æ³•è¯»å–æ¿€å…‰åŸå§‹æ–‡ä»¶ï¼š\n%1\n%2").arg(lf, fileLf.errorString()));
+				return;
 			}
 			QDataStream in(&fileLf);
 			in.setByteOrder(QDataStream::LittleEndian);
 			QVector<QString> temps;
 			int ceshiInt = 0;
-			//¸üĞÂ×Üµü´ú´ÎÊı   
-			for (int i = 0; i < framenum; ++i, ++framecnt)
+			//æ›´æ–°æ€»è¿­ä»£æ¬¡æ•°   
+			for (qint64 i = 0; i < framenum; ++i, ++framecnt)
 			{
 				if (m_stopRequested)
 				{
@@ -2105,6 +2448,11 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 				}
 				fileLf.seek(fileLf.pos() + 16);
 				in >> ttval;
+				if (in.status() != QDataStream::Ok)
+				{
+					emit error(QStringLiteral("è¯»å–æ¿€å…‰é‡‡æ ·è®°å½•å¤±è´¥ï¼š\n%1").arg(lf));
+					return;
+				}
 				ceshiInt++;
 				if (ttval < 201) ttval = 200;
 				else if (ttval > 399) ttval = 400;
@@ -2117,7 +2465,7 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 
 						++ptcnt;
 					}
-					if (value1M.size() < 500) //¼ÇÂ¼500-¡·1mÊı¾İ 
+					if (value1M.size() < 500) //è®°å½•500-ã€‹1mæ•°æ® 
 					{
 						value1M.push_back(ttval);
 					}
@@ -2127,12 +2475,9 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 					value1M.remove(0);
 					value1M.push_back(ttval);
 				}
-				if (_Setting->IsOutputLasval)
-				{
-					tmpstr = QString::number(ttval);
-				}
-				//È¡25¸öµã£¬ÊÇÒòÎªÆ½Õû¶ÈµÄ×İ¶ÏÃæÔ­Ê¼ÊÇ50mmµÄ²ÉÑù¼ä¾à£¬¹¹ÔìµÄ¼¤¹âÊı×ÖĞÅºÅÊÇ2mmµÄ²ÉÑù¼ä¾à£¬ËùÒÔÈ¡25¸öµã£¬
-				//ÏÈ°ÑÆ½Õû¶ÈµÄ×İ¶ÏÃæÔ­Ê¼¼¤¹âÊı¾İ×ö¸öÈ¥Ôë£¬È»ºóµÃµ½Æ½Õû¶È×İ¶ÏÃæÊı¾İÀïÃæ²î¾à×î´óÖµ×÷Îª¹¹ÔìµÄ¼¤¹âÊı×ÖĞÅºÅÈ¥ÔëµÄ²îÖµãĞÖµ
+				rawLaserValue = ttval;
+				//å–25ä¸ªç‚¹ï¼Œæ˜¯å› ä¸ºå¹³æ•´åº¦çš„çºµæ–­é¢åŸå§‹æ˜¯50mmçš„é‡‡æ ·é—´è·ï¼Œæ„é€ çš„æ¿€å…‰æ•°å­—ä¿¡å·æ˜¯2mmçš„é‡‡æ ·é—´è·ï¼Œæ‰€ä»¥å–25ä¸ªç‚¹ï¼Œ
+				//å…ˆæŠŠå¹³æ•´åº¦çš„çºµæ–­é¢åŸå§‹æ¿€å…‰æ•°æ®åšä¸ªå»å™ªï¼Œç„¶åå¾—åˆ°å¹³æ•´åº¦çºµæ–­é¢æ•°æ®é‡Œé¢å·®è·æœ€å¤§å€¼ä½œä¸ºæ„é€ çš„æ¿€å…‰æ•°å­—ä¿¡å·å»å™ªçš„å·®å€¼é˜ˆå€¼
 				if (ptcnt >= 25)
 				{
 					filtermean = filtersum / ptcnt;
@@ -2148,10 +2493,13 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 				{
 					oldttval = tempSort[tempSort.size() / 2];
 				}
-				if (_Setting->IsOutputLasval)
+				lasvalStream << QString::number(rawLaserValue, 'g', 17) << QLatin1Char('\t')
+					<< QString::number(ttval, 'g', 17) << QLatin1Char('\n');
+				++lasvalCount;
+				if (lasvalStream.status() != QTextStream::Ok)
 				{
-					tmpstr = tmpstr + "\t" + QString::number(ttval);;
-					lasstrlist.push_back(tmpstr);
+					emit error(QStringLiteral("å†™å…¥çº¹ç†åŸå§‹æ•°æ®å¤±è´¥ï¼š\n%1\n%2").arg(lasvalPath, lasvalFile.errorString()));
+					return;
 				}
 				if (m_IsMTDFrame0)
 				{
@@ -2213,8 +2561,37 @@ void CalculationThread::ComputeMTD(const QString& prj, int side, int featurelen,
 			filecnt++;
 
 		}
-		MyCommonMethods::writeAllLines(fname, outList);
-		fmtd.close();
+		if (m_stopRequested)
+		{
+			return;
+		}
+		lasvalStream.flush();
+		if (lasvalCount == 0 || lasvalStream.status() != QTextStream::Ok)
+		{
+			emit error(QStringLiteral("çº¹ç†åŸå§‹æ•°æ®ä¸ºç©ºæˆ–å†™å…¥å¤±è´¥ï¼š\n%1").arg(lasvalPath));
+			return;
+		}
+		if (!lasvalFile.commit())
+		{
+			emit error(QStringLiteral("ä¿å­˜çº¹ç†åŸå§‹æ•°æ®å¤±è´¥ï¼š\n%1\n%2").arg(lasvalPath, lasvalFile.errorString()));
+			return;
+		}
+		// å·²æœ‰ MTD ç»“æœæ—¶åªè¡¥é½çº¹ç†æ–‡ä»¶ï¼Œä¿ç•™åŸæœ‰æŒ‡æ ‡ç»“æœã€‚
+		if (!hasMtdResult)
+		{
+			MyCommonMethods::writeAllLines(fname, outList);
+			fmtd.close();
+		}
+	}
+	else
+	{
+		emit error(QStringLiteral("æ— æ³•åˆ›å»ºæ„é€ æ·±åº¦ç»“æœæ–‡ä»¶ï¼š\n%1\n%2").arg(fname, fmtd.errorString()));
+		return;
+	}
+	if (hasMtdResult)
+	{
+		emit progressUpdated(m_Project, m_type, 1.0, false);
+		return;
 	}
 	//AdjustVal(fname, _Setting->ErrorMTD, 0.0005);
 	QString ininame = QString("%1\\Laser%2\\Setting.ini").arg(prj).arg(side);
@@ -2274,7 +2651,7 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 	{
 
 		QStringList resultData;
-		QVector<double> value1M; //Ê¼ÖÕ¼ÇÂ¼Ç°25¸öµã  ÓÃÀ´»ñÈ¡ÖĞ¼äÖµ				
+		QVector<double> value1M; //å§‹ç»ˆè®°å½•å‰25ä¸ªç‚¹  ç”¨æ¥è·å–ä¸­é—´å€¼				
 
 		for (QString lf : lasfile)
 		{
@@ -2304,15 +2681,15 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 				else if (ttval > 399) ttval = 400;
 				else
 				{
-					//È¡25¸öµã£¬ÊÇÒòÎªÆ½Õû¶ÈµÄ×İ¶ÏÃæÔ­Ê¼ÊÇ50mmµÄ²ÉÑù¼ä¾à£¬¹¹ÔìµÄ¼¤¹âÊı×ÖĞÅºÅÊÇ2mmµÄ²ÉÑù¼ä¾à£¬ËùÒÔÈ¡25¸öµã£¬
-					//ÏÈ°ÑÆ½Õû¶ÈµÄ×İ¶ÏÃæÔ­Ê¼¼¤¹âÊı¾İ×ö¸öÈ¥Ôë£¬È»ºóµÃµ½Æ½Õû¶È×İ¶ÏÃæÊı¾İÀïÃæ²î¾à×î´óÖµ×÷Îª¹¹ÔìµÄ¼¤¹âÊı×ÖĞÅºÅÈ¥ÔëµÄ²îÖµãĞÖµ
+					//å–25ä¸ªç‚¹ï¼Œæ˜¯å› ä¸ºå¹³æ•´åº¦çš„çºµæ–­é¢åŸå§‹æ˜¯50mmçš„é‡‡æ ·é—´è·ï¼Œæ„é€ çš„æ¿€å…‰æ•°å­—ä¿¡å·æ˜¯2mmçš„é‡‡æ ·é—´è·ï¼Œæ‰€ä»¥å–25ä¸ªç‚¹ï¼Œ
+					//å…ˆæŠŠå¹³æ•´åº¦çš„çºµæ–­é¢åŸå§‹æ¿€å…‰æ•°æ®åšä¸ªå»å™ªï¼Œç„¶åå¾—åˆ°å¹³æ•´åº¦çºµæ–­é¢æ•°æ®é‡Œé¢å·®è·æœ€å¤§å€¼ä½œä¸ºæ„é€ çš„æ¿€å…‰æ•°å­—ä¿¡å·å»å™ªçš„å·®å€¼é˜ˆå€¼
 					if (ptcnt < 25)
 					{
 						filtersum += ttval;
 
 						++ptcnt;
 					}
-					if (value1M.size() < 500) //¼ÇÂ¼500-¡·1mÊı¾İ 
+					if (value1M.size() < 500) //è®°å½•500-ã€‹1mæ•°æ® 
 					{
 						value1M.push_back(ttval);
 					}
@@ -2410,76 +2787,148 @@ void CalculationThread::ComputeMPD(const QString& prj, int side, int featurelen,
 
 void CalculationThread::AdjustVal(QString fname, double Thrval, double scale)
 {
+	// C#ï¼š
+	// if (_Setting.ErrorVal != 1)
+	//     return;
+	//
+	// æ³¨æ„ï¼š
+	// å¦‚æœ HnXRSettings ä¸­å­—æ®µåå­—ä¸æ˜¯ ErrorValï¼Œ
+	// è¯·æ›¿æ¢æˆä½  C++ è®¾ç½®ç±»ä¸­çš„å¯¹åº”å­—æ®µã€‚
+	if (_Setting->ErrorVal != 1)
+	{
+		return;
+	}
+
 	QFile file(fname);
+
 	if (!file.exists())
 	{
 		return;
 	}
 
-	QStringList oristrs = MyCommonMethods::ReadAllLines(fname);
+	QStringList oristrs =
+		MyCommonMethods::ReadAllLines(fname);
+
 	int len = oristrs.size();
-	std::unique_ptr<QString[]> newstrs = std::make_unique<QString[]>(len);
-	std::unique_ptr<double[]> orival = std::make_unique<double[]>(len);
-	for (int i = 0; i < len; ++i)
-	{
-		orival[i] = oristrs[i].mid(oristrs[i].lastIndexOf(' ') + 1).toDouble();
-	}
-	if (len < 2) return;
 
-	double lastval = orival[0];
-	double sumval = 0;
-	// orival[0] = MainForm.rdval.NextDouble() * 10;
-	for (int i = 1; i < len; ++i)
-	{
-
-		//
-		//if (orival[i]>12)
-		//{
-		//    orival[i] = MainForm.rdval.NextDouble() * 10;
-		//}
-		// Èç¹ûµ±Ç°Öµ´óÓÚÒì³£ãĞÖµ£¬Ôòµ÷Õûµ±Ç°ÖµÎªÇ°ÃæËùÓĞÖµµÄÆ½¾ùÖµ
-
-		std::uniform_int_distribution<>::param_type newPara(1, 100);
-		dis.param(newPara);
-		auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-		std::mt19937 gen(seed);
-
-		orival[i] = orival[i] > Thrval ? lastval + (dis(gen) - 50) * scale : orival[i];
-		sumval += orival[i];
-		lastval = sumval / i;
-	}
-
-	for (int i = 0; i < len; ++i)
-	{
-		newstrs[i] = QString("%1 %2").arg(oristrs[i].split(' ')[0]).arg(QString::number(orival[i]));
-	}
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+	if (len < 2)
 	{
 		return;
 	}
-	QTextStream sr(&file);
+
+	QVector<double> orival(len);
+
+	// è¯»å– IRI
+	// æ–‡ä»¶æ ¼å¼ï¼š
+	// 1 2.345
+	// 2 2.456
 	for (int i = 0; i < len; ++i)
 	{
-		sr << newstrs[i] + "\t";
+		QString line = oristrs[i].trimmed();
+
+		int pos = line.lastIndexOf(' ');
+
+		if (pos >= 0)
+		{
+			orival[i] =
+				line.mid(pos + 1).toDouble();
+		}
+		else
+		{
+			orival[i] = 0.0;
+		}
 	}
-	file.close();
+
+	double lastval = orival[0];
+	double sumval = 0.0;
+
+	// C# Random.Next(100) èŒƒå›´æ˜¯ 0~99
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<int> randomDist(0, 99);
+
+	// --------------------------------------------------
+	// ç¬¬ä¸€éƒ¨åˆ†ï¼šå¼‚å¸¸ IRI ä¿®æ­£
+	// å¯¹åº” C#ï¼š
+	//
+	// orival[i] = orival[i] > Thrval
+	//     ? lastval +
+	//       (MainForm.rdval.Next(100) - 50) * scale
+	//     : orival[i];
+	// --------------------------------------------------
+	for (int i = 1; i < len; ++i)
+	{
+		if (orival[i] > Thrval)
+		{
+			int randValue = randomDist(gen);
+
+			orival[i] =
+				lastval +
+				(randValue - 50) * scale;
+		}
+
+		sumval += orival[i];
+
+		lastval = sumval / i;
+	}
+
+	QStringList newstrs;
+
+	newstrs.reserve(len);
+
+	// --------------------------------------------------
+	// ç¬¬äºŒéƒ¨åˆ†ï¼šæœ€ç»ˆ IRI K/B ä¿®æ­£
+	//
+	// å¯¹åº” C#ï¼š
+	//
+	// orival[i] =
+	//     _Setting.iriKCorrect * orival[i]
+	//     + _Setting.iriBCorrect;
+	// --------------------------------------------------
+	for (int i = 0; i < len; ++i)
+	{
+		orival[i] =
+			_Setting->iriKCorrect * orival[i]
+			+ _Setting->iriBCorrect;
+
+		QString index =
+			oristrs[i]
+			.trimmed()
+			.section(' ', 0, 0);
+
+		QString line =
+			QString("%1 %2")
+			.arg(index)
+			.arg(QString::number(
+				orival[i],
+				'g',
+				15));
+
+		newstrs.append(line);
+	}
+
+	// ä¸€è¡Œä¸€ä¸ª IRI
+	MyCommonMethods::writeAllLines(
+		fname,
+		newstrs);
 }
 
 
 void CalculationThread::run()
 {
+	if (m_stopRequested) return;
 	/*m_smutex.lock();
 	CheckSetting(currentPorject);
 	m_smutex.unlock();*/
 	switch (m_type)
 	{
 	case CalculationThread::IRI:
-	{  
-		QString iriPath = currentPorject->get2DProject()->getIRIPath(); 
+	{
+		QString iriPath = currentPorject->get2DProject()->getIRIPath();
 		for (int i = 0; i < 2; ++i)
 		{
 			int temp = i;
-			if (!loadParm(true,temp ))
+			if (!loadParm(true, temp))
 			{
 				return;
 			}
@@ -2505,9 +2954,9 @@ void CalculationThread::run()
 					{
 						QFile::remove(fpath);
 						MyCommonMethods::moveFile(fpath + ".bak", fpath);
-					} 
+					}
 				}
-				StartIRMThread(currentPorject, iriPath, nowIriPath, fpath, t); 
+				StartIRMThread(currentPorject, iriPath, nowIriPath, fpath, t);
 			}
 		}
 		if (!m_stopRequested)
@@ -2521,36 +2970,38 @@ void CalculationThread::run()
 
 	case CalculationThread::Rut:
 	{
-		QString iriPath = currentPorject->get2DProject()->getLeftRutPath();
 		auto cur2dPro = currentPorject->get2DProject();
-		bool dataproc1;
+		bool dataproc1 = false;
 		switch (cur2dPro->_RutMode)
 		{
 		case 0:
 			dataproc1 = ComputeRut(true, 3, cur2dPro->_RutMode);
 			if (dataproc1)
 			{
-				AdjustRutVal(3);
+				  AdjustRutVal(3);
 			}
 			break;
 		case  1:
 			dataproc1 = ComputeRut(true, 1, cur2dPro->_RutMode);
 			if (dataproc1)
 			{
-				AdjustRutVal(1);
+				 AdjustRutVal(1); 
 			}
 			break;
 		case  2:
 			dataproc1 = ComputeRut(true, 3, cur2dPro->_RutMode);
 			if (dataproc1)
 			{
-				AdjustRutVal(3);
+				 AdjustRutVal(3);
 			}
 			break;
 		default:
+			emit error(QStringLiteral("å·¥ç¨‹ã€%1ã€‘è½¦è¾™è®¡ç®—æœªå¯åŠ¨ï¼šä¸æ”¯æŒçš„è½¦è¾™æ¨¡å¼ %2ã€‚")
+				.arg(currentPorject->get2DProName())
+				.arg(cur2dPro->_RutMode));
 			break;
 		}
-		if (!m_stopRequested)
+		if (dataproc1 && !m_stopRequested)
 		{
 			emit progressUpdated(m_Project, m_type, 100, true);
 
@@ -2563,7 +3014,7 @@ void CalculationThread::run()
 	case CalculationThread::Smpd:
 	{
 		QString iriPath = currentPorject->get2DProject()->getIRIPath();
-	
+
 		if (currentPorject->get2DProject()->_IsMMTD)
 		{
 		}
@@ -2578,7 +3029,7 @@ void CalculationThread::run()
 		for (int i = 0; i < 3; ++i)
 		{
 			int temp = i;
-		
+
 			if (i == 2)
 			{
 				if (!currentPorject->get2DProject()->_IsMMTD)
@@ -2588,42 +3039,44 @@ void CalculationThread::run()
 			}
 			auto thread = std::make_unique<QThread>(this);
 			QObject::connect(thread.get(), &QThread::started, [this, i, iriPath, thread = thread.get()]()
-			{
-				if (m_stopRequested)
 				{
-					return;
-				}
-				QDir dir;
-				QString laserPath = iriPath + QString("\\Laser%1").arg(i);
-				double lasthreshval = 50;
-				dir.setPath(laserPath);
-				if (dir.exists())
-				{
-					QString fpath = iriPath + QString("\\DAQ%1\\resample.txt").arg(i);
-					if (i == 2)
+					if (m_stopRequested)
 					{
-						fpath = iriPath + QString("\\DAQ%1\\resample.txt").arg(0);
+						thread->quit();
+						return;
 					}
-					QFile daqPath(fpath);
-					if (daqPath.exists())
+					QDir dir;
+					QString laserPath = iriPath + QString("\\Laser%1").arg(i);
+					double lasthreshval = 50;
+					dir.setPath(laserPath);
+					if (dir.exists())
 					{
-						lasthreshval = GetLaserThresh(fpath);
-
-						if (m_type == CalculationThread::Smtd)
+						QString fpath = iriPath + QString("\\DAQ%1\\resample.txt").arg(i);
+						if (i == 2)
 						{
-							ComputeMTD(iriPath, i, 10, lasthreshval);
-							thread->quit();
+							fpath = iriPath + QString("\\DAQ%1\\resample.txt").arg(0);
+						}
+						QFile daqPath(fpath);
+						if (daqPath.exists())
+						{
+							lasthreshval = GetLaserThresh(fpath);
+
+							if (m_type == CalculationThread::Smtd)
+							{
+								ComputeMTD(iriPath, i, 10, lasthreshval);
+								thread->quit();
+
+							}
+							if (m_type == CalculationThread::Smpd)
+							{
+								ComputeMPD(iriPath, i, 10, lasthreshval);
+								thread->quit();
+							}
 
 						}
-						if (m_type == CalculationThread::Smpd)
-						{
-							ComputeMPD(iriPath, i, 10, lasthreshval);
-							thread->quit();
-						}
-
 					}
+					thread->quit();
 				}
-			}
 			);
 			threads.push_back(std::move(thread));
 		}

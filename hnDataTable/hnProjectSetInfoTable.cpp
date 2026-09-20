@@ -408,8 +408,8 @@
 				cmd.BindParam(3, inData.dEndMile);
 				cmd.BindParam(4, inData.dBegEnclMile);
 				cmd.BindParam(5, inData.dEndEnclMile);
-				cmd.BindParam(7, inData.nLineType);
-				cmd.BindParam(6, inData.nDrawType);
+				cmd.BindParam(6, inData.nLineType);
+				cmd.BindParam(7, inData.nDrawType);
 				cmd.BindParam(8, inData.nRSurfaceType);
 				cmd.BindParam(9, inData.dLength);
 				cmd.BindParam(10, inData.nWorkType);

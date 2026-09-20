@@ -1127,11 +1127,6 @@
                  </item>
                  <item>
                   <property name="text">
-                   <string>路面标准(暂不可用)</string>
-                  </property>
-                 </item>
-                 <item>
-                  <property name="text">
                    <string>路面情况</string>
                   </property>
                  </item>

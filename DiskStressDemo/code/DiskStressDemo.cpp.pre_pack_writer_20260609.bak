@@ -1,0 +1,1440 @@
+﻿#include "ImagePool.h"
+#include "SimpleLog.h"
+#include "turbojpeg.h"
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <gdiplus.h>
+#include <Shlobj.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
+#include <queue>
+
+#pragma comment(lib, "gdiplus.lib")
+
+using namespace Gdiplus;
+
+struct DiskStressConfig
+{
+	DiskStressConfig()
+		: fps(20.0)
+		, totalCount(0)
+		, durationSec(0)
+		, threadCount(4)
+		, poolBlockCount(80)
+		, jpegQuality(85)
+		, logIntervalMs(1000)
+		, packMaxMB(800)
+		, packFlushEvery(20)
+	{
+	}
+
+	std::string inputImage;
+	std::string outputDir;
+	std::string saveMode;
+	double fps;
+	long long totalCount;
+	int durationSec;
+	int threadCount;
+	int poolBlockCount;
+	int jpegQuality;
+	int logIntervalMs;
+	int packMaxMB;
+	int packFlushEvery;
+};
+
+#pragma pack(push, 1)
+struct DEMO_IDX_FILE_HEADER
+{
+	char magic[8];
+	DWORD version;
+	DWORD headerSize;
+	DWORD recordSize;
+	DWORD packNo;
+	unsigned long long recordCount;
+	unsigned long long createTimeValue;
+	unsigned long long reserved[4];
+};
+
+struct DEMO_IDX_RECORD
+{
+	unsigned long long sourceIndex;
+	unsigned long long timeValue;
+	unsigned long long datOffset;
+	DWORD jpgSize;
+	DWORD reserved;
+};
+
+struct DEMO_DAT_FRAME_HEADER
+{
+	DWORD magic;
+	DWORD headerSize;
+	unsigned long long sourceIndex;
+	unsigned long long timeValue;
+	DWORD jpgSize;
+	DWORD reserved;
+};
+#pragma pack(pop)
+
+static std::wstring ToWideString(const std::string& src)
+{
+	if (src.empty())
+	{
+		return std::wstring();
+	}
+
+	int size = MultiByteToWideChar(CP_ACP, 0, src.c_str(), -1, NULL, 0);
+	if (size <= 0)
+	{
+		return std::wstring();
+	}
+
+	std::vector<wchar_t> buffer(size);
+	MultiByteToWideChar(CP_ACP, 0, src.c_str(), -1, &buffer[0], size);
+	return std::wstring(&buffer[0]);
+}
+
+static std::string GetExeDir()
+{
+	char path[MAX_PATH];
+	path[0] = 0;
+	GetModuleFileNameA(NULL, path, MAX_PATH);
+
+	char* p = strrchr(path, '\\');
+	if (p != NULL)
+	{
+		*p = 0;
+	}
+	return std::string(path);
+}
+
+static std::string JoinPath(const std::string& left, const std::string& right)
+{
+	if (left.empty())
+	{
+		return right;
+	}
+
+	if (left[left.size() - 1] == '\\' || left[left.size() - 1] == '/')
+	{
+		return left + right;
+	}
+	return left + "\\" + right;
+}
+
+static bool IsAbsolutePath(const std::string& path)
+{
+	if (path.size() >= 2 && path[1] == ':')
+	{
+		return true;
+	}
+	if (path.size() >= 2 && path[0] == '\\' && path[1] == '\\')
+	{
+		return true;
+	}
+	return false;
+}
+
+static std::string NormalizePath(const std::string& path)
+{
+	char fullPath[MAX_PATH];
+	fullPath[0] = 0;
+	DWORD len = GetFullPathNameA(path.c_str(), MAX_PATH, fullPath, NULL);
+	if (len > 0 && len < MAX_PATH)
+	{
+		return std::string(fullPath);
+	}
+	return path;
+}
+
+static std::string ToLowerString(const std::string& text)
+{
+	std::string lower = text;
+	for (size_t i = 0; i < lower.size(); ++i)
+	{
+		if (lower[i] >= 'A' && lower[i] <= 'Z')
+		{
+			lower[i] = (char)(lower[i] - 'A' + 'a');
+		}
+	}
+	return lower;
+}
+
+static std::string ResolvePathByExeDir(const std::string& path)
+{
+	if (path.empty())
+	{
+		return path;
+	}
+	if (IsAbsolutePath(path))
+	{
+		return NormalizePath(path);
+	}
+	return NormalizePath(JoinPath(GetExeDir(), path));
+}
+
+static bool EnsureDirectory(const std::string& path)
+{
+	if (path.empty())
+	{
+		return false;
+	}
+
+	DWORD attr = GetFileAttributesA(path.c_str());
+	if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+	{
+		return true;
+	}
+
+	int ret = SHCreateDirectoryExA(NULL, path.c_str(), NULL);
+	return ret == ERROR_SUCCESS || ret == ERROR_ALREADY_EXISTS || ret == ERROR_FILE_EXISTS;
+}
+
+static std::string MakeNowStringForName()
+{
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	char buf[32];
+	sprintf_s(buf, "%04d%02d%02d_%02d%02d%02d_%03d",
+		st.wYear,
+		st.wMonth,
+		st.wDay,
+		st.wHour,
+		st.wMinute,
+		st.wSecond,
+		st.wMilliseconds);
+	return std::string(buf);
+}
+
+static std::string MakeFrameTimeString()
+{
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	char buf[32];
+	sprintf_s(buf, "%04d%02d%02d%02d%02d%02d%03d",
+		st.wYear,
+		st.wMonth,
+		st.wDay,
+		st.wHour,
+		st.wMinute,
+		st.wSecond,
+		st.wMilliseconds);
+	return std::string(buf);
+}
+
+static unsigned long long ParseFrameTimeValue(const char* timeText)
+{
+	if (timeText == NULL || timeText[0] == 0)
+	{
+		return 0;
+	}
+	return _strtoui64(timeText, NULL, 10);
+}
+
+static bool LoadGrayImage(const std::string& path, std::vector<unsigned char>& grayData, int& width, int& height, std::string& err)
+{
+	std::wstring wpath = ToWideString(path);
+	if (wpath.empty())
+	{
+		err = "inputImage path is empty or invalid.";
+		return false;
+	}
+
+	Bitmap source(wpath.c_str());
+	if (source.GetLastStatus() != Ok)
+	{
+		err = "GDI+ failed to load input image.";
+		return false;
+	}
+
+	width = (int)source.GetWidth();
+	height = (int)source.GetHeight();
+	if (width <= 0 || height <= 0)
+	{
+		err = "inputImage width/height is invalid.";
+		return false;
+	}
+
+	Bitmap converted(width, height, PixelFormat24bppRGB);
+	Graphics graphics(&converted);
+	if (graphics.DrawImage(&source, 0, 0, width, height) != Ok)
+	{
+		err = "GDI+ failed to convert input image.";
+		return false;
+	}
+
+	Rect rect(0, 0, width, height);
+	BitmapData bitmapData;
+	if (converted.LockBits(&rect, ImageLockModeRead, PixelFormat24bppRGB, &bitmapData) != Ok)
+	{
+		err = "GDI+ LockBits failed.";
+		return false;
+	}
+
+	grayData.resize((size_t)width * (size_t)height);
+	for (int y = 0; y < height; ++y)
+	{
+		unsigned char* pRow = (unsigned char*)bitmapData.Scan0 + y * bitmapData.Stride;
+		for (int x = 0; x < width; ++x)
+		{
+			unsigned char b = pRow[x * 3 + 0];
+			unsigned char g = pRow[x * 3 + 1];
+			unsigned char r = pRow[x * 3 + 2];
+			grayData[(size_t)y * (size_t)width + (size_t)x] =
+				(unsigned char)((299 * r + 587 * g + 114 * b + 500) / 1000);
+		}
+	}
+
+	converted.UnlockBits(&bitmapData);
+	return true;
+}
+
+static std::string ReadIniString(const std::string& iniPath, const char* section, const char* key, const char* defaultValue)
+{
+	char buffer[1024];
+	buffer[0] = 0;
+	GetPrivateProfileStringA(section, key, defaultValue, buffer, (DWORD)_countof(buffer), iniPath.c_str());
+	return std::string(buffer);
+}
+
+static int ReadIniInt(const std::string& iniPath, const char* section, const char* key, int defaultValue)
+{
+	return GetPrivateProfileIntA(section, key, defaultValue, iniPath.c_str());
+}
+
+static long long ReadIniInt64(const std::string& iniPath, const char* section, const char* key, long long defaultValue)
+{
+	std::string value = ReadIniString(iniPath, section, key, "");
+	if (value.empty())
+	{
+		return defaultValue;
+	}
+	return _atoi64(value.c_str());
+}
+
+static double ReadIniDouble(const std::string& iniPath, const char* section, const char* key, double defaultValue)
+{
+	std::string value = ReadIniString(iniPath, section, key, "");
+	if (value.empty())
+	{
+		return defaultValue;
+	}
+	return atof(value.c_str());
+}
+
+class CDiskStressApp
+{
+public:
+	CDiskStressApp()
+		: m_width(0)
+		, m_height(0)
+		, m_stopRequested(false)
+		, m_producerFinished(false)
+		, m_nextOutputIndex(0)
+		, m_packDataFile(NULL)
+		, m_packIndexFile(NULL)
+		, m_packSerialNo(0)
+		, m_packCurrentNo(-1)
+		, m_packCreateTimeValue(0)
+		, m_packCurrentFrameCount(0)
+		, m_packFramesSinceFlush(0)
+		, m_totalDropped(0)
+		, m_totalSaved(0)
+		, m_secSavedCount(0)
+		, m_secDroppedCount(0)
+		, m_secCompressMs(0)
+		, m_secWriteMs(0)
+		, m_secOpenMs(0)
+		, m_secFileWriteMs(0)
+		, m_secCloseMs(0)
+		, m_secDirCreateMs(0)
+		, m_secDirCreateCount(0)
+		, m_secCompressMaxMs(0)
+		, m_secWriteMaxMs(0)
+		, m_secOpenMaxMs(0)
+		, m_secFileWriteMaxMs(0)
+		, m_secCloseMaxMs(0)
+		, m_secDirCreateMaxMs(0)
+	{
+		InitializeCriticalSection(&m_statLock);
+		InitializeCriticalSection(&m_lostLock);
+		InitializeCriticalSection(&m_packLock);
+	}
+
+	~CDiskStressApp()
+	{
+		DWORD closeMs = 0;
+		CloseCurrentPackFiles(closeMs);
+		DeleteCriticalSection(&m_packLock);
+		DeleteCriticalSection(&m_lostLock);
+		DeleteCriticalSection(&m_statLock);
+	}
+
+	void RequestStop()
+	{
+		m_stopRequested = true;
+	}
+
+	int Run(const DiskStressConfig& cfg)
+	{
+		m_cfg = cfg;
+		if (!Prepare())
+		{
+			return 1;
+		}
+
+		m_log.PrintLine("DiskStressDemo started.");
+
+		for (int i = 0; i < m_cfg.threadCount; ++i)
+		{
+			m_saveThreads.push_back(std::thread(&CDiskStressApp::SaveThreadProc, this, i));
+		}
+		m_statThread = std::thread(&CDiskStressApp::StatThreadProc, this);
+		m_producerThread = std::thread(&CDiskStressApp::ProducerThreadProc, this);
+
+		m_producerThread.join();
+		for (size_t i = 0; i < m_saveThreads.size(); ++i)
+		{
+			m_saveThreads[i].join();
+		}
+		DWORD packCloseMs = 0;
+		CloseCurrentPackFiles(packCloseMs);
+
+		m_stopRequested = true;
+		m_statThread.join();
+
+		FlushLostLogs();
+		FlushSaveLog(true);
+
+		std::ostringstream oss;
+		oss << "DiskStressDemo finished. saved=" << m_totalSaved
+			<< ", dropped=" << m_totalDropped
+			<< ", outputDir=" << m_runOutputDir;
+		m_log.PrintLine(oss.str());
+		m_log.Close();
+		m_saveLog.Close();
+		return 0;
+	}
+
+private:
+	bool Prepare()
+	{
+		if (m_cfg.inputImage.empty())
+		{
+			std::cout << "inputImage is empty." << std::endl;
+			return false;
+		}
+
+		if (m_cfg.outputDir.empty())
+		{
+			m_cfg.outputDir = JoinPath(GetExeDir(), "output");
+		}
+		if (!EnsureDirectory(m_cfg.outputDir))
+		{
+			std::cout << "failed to create outputDir: " << m_cfg.outputDir << std::endl;
+			return false;
+		}
+
+		m_runOutputDir = JoinPath(m_cfg.outputDir, MakeNowStringForName());
+		if (!EnsureDirectory(m_runOutputDir))
+		{
+			std::cout << "failed to create run directory: " << m_runOutputDir << std::endl;
+			return false;
+		}
+
+		std::string logPath = JoinPath(m_runOutputDir, "log.txt");
+		std::string saveLogPath = JoinPath(m_runOutputDir, "SaveLog.txt");
+		if (!m_log.Open(logPath.c_str()) || !m_saveLog.Open(saveLogPath.c_str()))
+		{
+			std::cout << "failed to open log files." << std::endl;
+			return false;
+		}
+
+		std::string err;
+		if (!LoadGrayImage(m_cfg.inputImage, m_sourceGray, m_width, m_height, err))
+		{
+			std::cout << "load input image failed: " << err << std::endl;
+			m_log.PrintLine(std::string("load input image failed: ") + err);
+			return false;
+		}
+
+		size_t blockSize = (size_t)m_width * (size_t)m_height;
+		if (!m_pool.InitPool(blockSize, m_cfg.poolBlockCount))
+		{
+			std::cout << "InitPool failed." << std::endl;
+			m_log.PrintLine("InitPool failed.");
+			return false;
+		}
+
+		std::ostringstream oss;
+		oss << "config: inputImage=" << m_cfg.inputImage
+			<< ", outputDir=" << m_runOutputDir
+			<< ", saveMode=" << m_cfg.saveMode
+			<< ", width=" << m_width
+			<< ", height=" << m_height
+			<< ", fps=" << m_cfg.fps
+			<< ", totalCount=" << m_cfg.totalCount
+			<< ", durationSec=" << m_cfg.durationSec
+			<< ", threadCount=" << m_cfg.threadCount
+			<< ", poolBlockCount=" << m_cfg.poolBlockCount
+			<< ", jpegQuality=" << m_cfg.jpegQuality
+			<< ", logIntervalMs=" << m_cfg.logIntervalMs
+			<< ", packMaxMB=" << m_cfg.packMaxMB
+			<< ", packFlushEvery=" << m_cfg.packFlushEvery;
+		m_log.PrintLine(oss.str());
+		return true;
+	}
+
+	void ProducerThreadProc()
+	{
+		long long index = 0;
+		std::chrono::steady_clock::time_point beginTime = std::chrono::steady_clock::now();
+		double effectiveFps = m_cfg.fps;
+		if (effectiveFps < 0.1)
+		{
+			effectiveFps = 0.1;
+		}
+
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcNow;
+		QueryPerformanceFrequency(&qpcFreq);
+		QueryPerformanceCounter(&qpcNow);
+
+		LONGLONG intervalTicks = (LONGLONG)((double)qpcFreq.QuadPart / effectiveFps + 0.5);
+		if (intervalTicks < 1)
+		{
+			intervalTicks = 1;
+		}
+		LONGLONG nextTick = qpcNow.QuadPart;
+
+		while (!m_stopRequested)
+		{
+			if (m_cfg.totalCount > 0 && index >= m_cfg.totalCount)
+			{
+				break;
+			}
+
+			if (m_cfg.durationSec > 0)
+			{
+				std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+				long long elapsedMs = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(now - beginTime).count();
+				if (elapsedMs >= (long long)m_cfg.durationSec * 1000)
+				{
+					break;
+				}
+			}
+
+			QueryPerformanceCounter(&qpcNow);
+			if (qpcNow.QuadPart < nextTick)
+			{
+				DWORD sleepMs = (DWORD)(((nextTick - qpcNow.QuadPart) * 1000) / qpcFreq.QuadPart);
+				if (sleepMs > 1)
+				{
+					Sleep(sleepMs - 1);
+				}
+				else
+				{
+					Sleep(0);
+				}
+				continue;
+			}
+
+			char* pBlock = m_pool.AcquireBlock();
+			index++;
+			if (pBlock == NULL)
+			{
+				AddLostFrame(index, "应用层缓存池为空，保存线程处理速度跟不上");
+			}
+			else
+			{
+				memcpy(pBlock, &m_sourceGray[0], m_sourceGray.size());
+				std::string timeText = MakeFrameTimeString();
+				m_pool.PushData(pBlock, m_sourceGray.size(), m_width, m_height, (int)index, timeText.c_str());
+			}
+
+			nextTick += intervalTicks;
+			if (qpcNow.QuadPart - nextTick > intervalTicks * 4)
+			{
+				nextTick = qpcNow.QuadPart + intervalTicks;
+			}
+		}
+
+		m_producerFinished = true;
+		m_log.PrintLine("producer thread finished.");
+	}
+
+	void SaveThreadProc(int workerId)
+	{
+		DISK_IMAGE_TASK task;
+		tjhandle tjInstance = tjInitCompress();
+		unsigned char* jpegBuf = NULL;
+		unsigned long jpegSize = 0;
+		int lastDirIndex = -1;
+		std::string currentDir;
+
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcBegin;
+		LARGE_INTEGER qpcEnd;
+		QueryPerformanceFrequency(&qpcFreq);
+
+		while (true)
+		{
+			if (m_pool.GetDataOne(task))
+			{
+				DWORD dirCreateMs = 0;
+				DWORD compressMs = 0;
+				DWORD openMs = 0;
+				DWORD fileWriteMs = 0;
+				DWORD closeMs = 0;
+
+				jpegBuf = NULL;
+				jpegSize = 0;
+				QueryPerformanceCounter(&qpcBegin);
+				if (tjInstance == NULL ||
+					tjCompress2(
+						tjInstance,
+						(const unsigned char*)task.buff,
+						task.width,
+						0,
+						task.height,
+						TJPF_GRAY,
+						&jpegBuf,
+						&jpegSize,
+						TJSAMP_GRAY,
+						m_cfg.jpegQuality,
+						0) != 0)
+				{
+					QueryPerformanceCounter(&qpcEnd);
+					compressMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+					AddLostFrame(task.index, "TurboJPEG 压缩失败");
+					if (jpegBuf != NULL)
+					{
+						tjFree(jpegBuf);
+						jpegBuf = NULL;
+					}
+					if (tjInstance != NULL)
+					{
+						tjDestroy(tjInstance);
+						tjInstance = tjInitCompress();
+					}
+					m_pool.RecycleBlock(task.buff);
+					continue;
+				}
+				QueryPerformanceCounter(&qpcEnd);
+				compressMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+
+				bool writeOk = false;
+				if (m_cfg.saveMode == "pack")
+				{
+					writeOk = WritePackFrame(task, jpegBuf, jpegSize, openMs, fileWriteMs, closeMs);
+				}
+				else
+				{
+					long long outputIndex = ++m_nextOutputIndex;
+					int dirIndex = (int)((outputIndex - 1) / 1000);
+					int surIndex = (int)((outputIndex - 1) % 1000);
+
+					if (lastDirIndex != dirIndex || currentDir.empty())
+					{
+						if (!EnsureImageDir(dirIndex, currentDir, dirCreateMs))
+						{
+							AddLostFrame(task.index, "创建输出目录失败");
+							if (jpegBuf != NULL)
+							{
+								tjFree(jpegBuf);
+								jpegBuf = NULL;
+							}
+							m_pool.RecycleBlock(task.buff);
+							continue;
+						}
+						lastDirIndex = dirIndex;
+					}
+
+					char imagePath[MAX_PATH];
+					sprintf_s(imagePath, "%s\\%03d_%s.jpg", currentDir.c_str(), surIndex, task.curTime);
+
+					FILE* fp = NULL;
+					QueryPerformanceCounter(&qpcBegin);
+					fopen_s(&fp, imagePath, "wb");
+					QueryPerformanceCounter(&qpcEnd);
+					openMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+					if (fp == NULL)
+					{
+						AddLostFrame(task.index, "打开输出文件失败");
+						if (jpegBuf != NULL)
+						{
+							tjFree(jpegBuf);
+							jpegBuf = NULL;
+						}
+						m_pool.RecycleBlock(task.buff);
+						continue;
+					}
+
+					QueryPerformanceCounter(&qpcBegin);
+					size_t writtenSize = fwrite(jpegBuf, 1, jpegSize, fp);
+					QueryPerformanceCounter(&qpcEnd);
+					fileWriteMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+
+					QueryPerformanceCounter(&qpcBegin);
+					fclose(fp);
+					QueryPerformanceCounter(&qpcEnd);
+					closeMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+
+					if (writtenSize != jpegSize)
+					{
+						AddLostFrame(task.index, "写图像文件不完整");
+					}
+					else
+					{
+						writeOk = true;
+					}
+				}
+
+				if (jpegBuf != NULL)
+				{
+					tjFree(jpegBuf);
+					jpegBuf = NULL;
+				}
+
+				if (!writeOk)
+				{
+					if (m_cfg.saveMode == "pack")
+					{
+						AddLostFrame(task.index, "整包写入失败");
+					}
+				}
+				else
+				{
+					AddSaveTimingSample(compressMs, openMs, fileWriteMs, closeMs, dirCreateMs);
+					m_totalSaved++;
+				}
+
+				m_pool.RecycleBlock(task.buff);
+			}
+			else
+			{
+				if (m_producerFinished && m_pool.GetReadySize() <= 0)
+				{
+					break;
+				}
+				Sleep(1);
+			}
+		}
+
+		if (tjInstance != NULL)
+		{
+			tjDestroy(tjInstance);
+			tjInstance = NULL;
+		}
+
+		std::ostringstream oss;
+		oss << "save thread " << workerId << " finished.";
+		m_log.PrintLine(oss.str());
+	}
+
+	void StatThreadProc()
+	{
+		while (!m_stopRequested)
+		{
+			Sleep(m_cfg.logIntervalMs);
+			FlushLostLogs();
+			FlushSaveLog(false);
+
+			if (m_producerFinished && m_pool.GetReadySize() <= 0)
+			{
+				break;
+			}
+		}
+	}
+
+	bool EnsureImageDir(int dirIndex, std::string& absDir, DWORD& dirCreateMs)
+	{
+		char dirName[64];
+		sprintf_s(dirName, "Image_%04d", dirIndex);
+		absDir = JoinPath(m_runOutputDir, dirName);
+
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcBegin;
+		LARGE_INTEGER qpcEnd;
+		QueryPerformanceFrequency(&qpcFreq);
+		QueryPerformanceCounter(&qpcBegin);
+		bool ok = EnsureDirectory(absDir);
+		QueryPerformanceCounter(&qpcEnd);
+		dirCreateMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+		return ok;
+	}
+
+	void FillCurrentPackIdxHeader(DEMO_IDX_FILE_HEADER& header)
+	{
+		memset(&header, 0, sizeof(header));
+		memcpy(header.magic, "IOVIDX1", 7);
+		header.version = 1;
+		header.headerSize = sizeof(header);
+		header.recordSize = sizeof(DEMO_IDX_RECORD);
+		header.packNo = (m_packCurrentNo >= 0) ? (DWORD)m_packCurrentNo : 0;
+		header.recordCount = (unsigned long long)m_packCurrentFrameCount;
+		header.createTimeValue = m_packCreateTimeValue;
+	}
+
+	bool FlushCurrentPackIdxHeaderUnlocked()
+	{
+		if (m_packIndexFile == NULL)
+		{
+			return true;
+		}
+
+		DEMO_IDX_FILE_HEADER header;
+		FillCurrentPackIdxHeader(header);
+
+		__int64 endPos = _ftelli64(m_packIndexFile);
+		if (endPos < 0)
+		{
+			return false;
+		}
+
+		if (_fseeki64(m_packIndexFile, 0, SEEK_SET) != 0)
+		{
+			return false;
+		}
+
+		size_t written = fwrite(&header, 1, sizeof(header), m_packIndexFile);
+		fflush(m_packIndexFile);
+		if (_fseeki64(m_packIndexFile, endPos, SEEK_SET) != 0)
+		{
+			return false;
+		}
+
+		return written == sizeof(header);
+	}
+
+	bool WritePackFrame(const DISK_IMAGE_TASK& task, const unsigned char* jpegBuf, unsigned long jpegSize, DWORD& openMs, DWORD& fileWriteMs, DWORD& closeMs)
+	{
+		if (jpegBuf == NULL || jpegSize == 0)
+		{
+			return false;
+		}
+
+		openMs = 0;
+		fileWriteMs = 0;
+		closeMs = 0;
+
+		EnterCriticalSection(&m_packLock);
+
+		bool ok = RotatePackFilesIfNeeded(jpegSize, openMs, closeMs);
+		if (!ok || m_packDataFile == NULL || m_packIndexFile == NULL)
+		{
+			LeaveCriticalSection(&m_packLock);
+			return false;
+		}
+
+		unsigned long long timeValue = ParseFrameTimeValue(task.curTime);
+
+		DEMO_DAT_FRAME_HEADER datHeader;
+		datHeader.magic = 0x3147504A;
+		datHeader.headerSize = sizeof(datHeader);
+		datHeader.sourceIndex = (unsigned long long)task.index;
+		datHeader.timeValue = timeValue;
+		datHeader.jpgSize = (DWORD)jpegSize;
+		datHeader.reserved = 0;
+
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcBegin;
+		LARGE_INTEGER qpcEnd;
+		QueryPerformanceFrequency(&qpcFreq);
+		QueryPerformanceCounter(&qpcBegin);
+
+		__int64 offset = _ftelli64(m_packDataFile);
+		size_t writeCount = 0;
+		writeCount += fwrite(&datHeader, 1, sizeof(datHeader), m_packDataFile);
+		writeCount += fwrite(jpegBuf, 1, jpegSize, m_packDataFile);
+
+		DEMO_IDX_RECORD idxRecord;
+		idxRecord.sourceIndex = (unsigned long long)task.index;
+		idxRecord.timeValue = timeValue;
+		idxRecord.datOffset = (unsigned long long)offset;
+		idxRecord.jpgSize = (DWORD)jpegSize;
+		idxRecord.reserved = 0;
+		size_t idxWritten = fwrite(&idxRecord, 1, sizeof(idxRecord), m_packIndexFile);
+
+		m_packCurrentFrameCount++;
+		m_packFramesSinceFlush++;
+		if (m_cfg.packFlushEvery <= 1 || m_packFramesSinceFlush >= m_cfg.packFlushEvery)
+		{
+			fflush(m_packDataFile);
+			ok = FlushCurrentPackIdxHeaderUnlocked();
+			m_packFramesSinceFlush = 0;
+		}
+
+		QueryPerformanceCounter(&qpcEnd);
+		fileWriteMs = (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+
+		size_t expectedDataBytes = sizeof(datHeader) + datHeader.jpgSize;
+		ok = ok && (writeCount == expectedDataBytes && idxWritten == sizeof(idxRecord));
+
+		LeaveCriticalSection(&m_packLock);
+		return ok;
+	}
+
+	bool RotatePackFilesIfNeeded(unsigned long jpegSize, DWORD& openMs, DWORD& closeMs)
+	{
+		unsigned long long packMaxBytes = (unsigned long long)m_cfg.packMaxMB * 1024ULL * 1024ULL;
+		if (packMaxBytes < (unsigned long long)sizeof(DEMO_DAT_FRAME_HEADER) + 1ULL)
+		{
+			packMaxBytes = (unsigned long long)sizeof(DEMO_DAT_FRAME_HEADER) + 1ULL;
+		}
+
+		if (m_packDataFile != NULL && m_packIndexFile != NULL)
+		{
+			__int64 currentDatSize = _ftelli64(m_packDataFile);
+			if (currentDatSize >= 0)
+			{
+				unsigned long long projectedSize =
+					(unsigned long long)currentDatSize +
+					(unsigned long long)sizeof(DEMO_DAT_FRAME_HEADER) +
+					(unsigned long long)jpegSize;
+				if (m_packCurrentFrameCount <= 0 || projectedSize <= packMaxBytes)
+				{
+					return true;
+				}
+			}
+			else
+			{
+				return true;
+			}
+		}
+
+		DWORD localCloseMs = 0;
+		if (!CloseCurrentPackFilesUnlocked(localCloseMs))
+		{
+			return false;
+		}
+		closeMs += localCloseMs;
+
+		char datName[64];
+		char idxName[64];
+		sprintf_s(datName, "Pack_%06d.dat", m_packSerialNo);
+		sprintf_s(idxName, "Pack_%06d.idx", m_packSerialNo);
+		std::string datPath = JoinPath(m_runOutputDir, datName);
+		std::string idxPath = JoinPath(m_runOutputDir, idxName);
+
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcBegin;
+		LARGE_INTEGER qpcEnd;
+		QueryPerformanceFrequency(&qpcFreq);
+
+		FILE* datFile = NULL;
+		FILE* idxFile = NULL;
+		QueryPerformanceCounter(&qpcBegin);
+		fopen_s(&datFile, datPath.c_str(), "wb");
+		fopen_s(&idxFile, idxPath.c_str(), "wb");
+		QueryPerformanceCounter(&qpcEnd);
+		openMs += (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+
+		if (datFile == NULL || idxFile == NULL)
+		{
+			if (datFile != NULL)
+			{
+				fclose(datFile);
+			}
+			if (idxFile != NULL)
+			{
+				fclose(idxFile);
+			}
+			return false;
+		}
+
+		m_packDataFile = datFile;
+		m_packIndexFile = idxFile;
+		m_packCurrentNo = m_packSerialNo;
+		m_packCreateTimeValue = ParseFrameTimeValue(MakeFrameTimeString().c_str());
+		m_packCurrentFrameCount = 0;
+		m_packFramesSinceFlush = 0;
+
+		DEMO_IDX_FILE_HEADER header;
+		FillCurrentPackIdxHeader(header);
+		size_t headerWritten = fwrite(&header, 1, sizeof(header), m_packIndexFile);
+		if (headerWritten != sizeof(header))
+		{
+			fclose(m_packDataFile);
+			fclose(m_packIndexFile);
+			m_packDataFile = NULL;
+			m_packIndexFile = NULL;
+			m_packCurrentNo = -1;
+			m_packCreateTimeValue = 0;
+			m_packCurrentFrameCount = 0;
+			m_packFramesSinceFlush = 0;
+			return false;
+		}
+
+		m_packSerialNo++;
+		return true;
+	}
+
+	void CloseCurrentPackFiles(DWORD& closeMs)
+	{
+		EnterCriticalSection(&m_packLock);
+		CloseCurrentPackFilesUnlocked(closeMs);
+		LeaveCriticalSection(&m_packLock);
+	}
+
+	bool CloseCurrentPackFilesUnlocked(DWORD& closeMs)
+	{
+		LARGE_INTEGER qpcFreq;
+		LARGE_INTEGER qpcBegin;
+		LARGE_INTEGER qpcEnd;
+		QueryPerformanceFrequency(&qpcFreq);
+
+		if (m_packDataFile != NULL || m_packIndexFile != NULL)
+		{
+			FlushCurrentPackIdxHeaderUnlocked();
+		}
+
+		if (m_packDataFile != NULL)
+		{
+			fflush(m_packDataFile);
+		}
+		if (m_packIndexFile != NULL)
+		{
+			fflush(m_packIndexFile);
+		}
+
+		QueryPerformanceCounter(&qpcBegin);
+		if (m_packDataFile != NULL)
+		{
+			fclose(m_packDataFile);
+			m_packDataFile = NULL;
+		}
+		if (m_packIndexFile != NULL)
+		{
+			fclose(m_packIndexFile);
+			m_packIndexFile = NULL;
+		}
+		QueryPerformanceCounter(&qpcEnd);
+
+		if (m_packCurrentFrameCount > 0)
+		{
+			closeMs += (DWORD)((qpcEnd.QuadPart - qpcBegin.QuadPart) * 1000 / qpcFreq.QuadPart);
+		}
+
+		m_packCurrentFrameCount = 0;
+		m_packFramesSinceFlush = 0;
+		m_packCurrentNo = -1;
+		m_packCreateTimeValue = 0;
+		return true;
+	}
+
+	void AddLostFrame(long long index, const char* reason)
+	{
+		std::ostringstream oss;
+		oss << "丢帧序号=" << index << "，原因=" << reason;
+
+		EnterCriticalSection(&m_lostLock);
+		m_lostLogs.push(oss.str());
+		LeaveCriticalSection(&m_lostLock);
+
+		EnterCriticalSection(&m_statLock);
+		m_secDroppedCount++;
+		m_totalDropped++;
+		LeaveCriticalSection(&m_statLock);
+	}
+
+	void FlushLostLogs()
+	{
+		std::queue<std::string> localQueue;
+		EnterCriticalSection(&m_lostLock);
+		std::swap(localQueue, m_lostLogs);
+		LeaveCriticalSection(&m_lostLock);
+
+		while (!localQueue.empty())
+		{
+			m_log.PrintLine(localQueue.front());
+			localQueue.pop();
+		}
+	}
+
+	void AddSaveTimingSample(DWORD compressMs, DWORD openMs, DWORD fileWriteMs, DWORD closeMs, DWORD dirCreateMs)
+	{
+		DWORD writeMs = openMs + fileWriteMs + closeMs;
+
+		EnterCriticalSection(&m_statLock);
+		m_secSavedCount++;
+		m_secCompressMs += compressMs;
+		m_secWriteMs += writeMs;
+		m_secOpenMs += openMs;
+		m_secFileWriteMs += fileWriteMs;
+		m_secCloseMs += closeMs;
+
+		if (dirCreateMs > 0)
+		{
+			m_secDirCreateCount++;
+			m_secDirCreateMs += dirCreateMs;
+			if (dirCreateMs > m_secDirCreateMaxMs)
+			{
+				m_secDirCreateMaxMs = dirCreateMs;
+			}
+		}
+
+		if (compressMs > m_secCompressMaxMs)
+		{
+			m_secCompressMaxMs = compressMs;
+		}
+		if (writeMs > m_secWriteMaxMs)
+		{
+			m_secWriteMaxMs = writeMs;
+		}
+		if (openMs > m_secOpenMaxMs)
+		{
+			m_secOpenMaxMs = openMs;
+		}
+		if (fileWriteMs > m_secFileWriteMaxMs)
+		{
+			m_secFileWriteMaxMs = fileWriteMs;
+		}
+		if (closeMs > m_secCloseMaxMs)
+		{
+			m_secCloseMaxMs = closeMs;
+		}
+		LeaveCriticalSection(&m_statLock);
+	}
+
+	void FlushSaveLog(bool force)
+	{
+		long long secSavedCount = 0;
+		long long secDroppedCount = 0;
+		long long secCompressMs = 0;
+		long long secWriteMs = 0;
+		long long secOpenMs = 0;
+		long long secFileWriteMs = 0;
+		long long secCloseMs = 0;
+		long long secDirCreateMs = 0;
+		long long secDirCreateCount = 0;
+		DWORD secCompressMaxMs = 0;
+		DWORD secWriteMaxMs = 0;
+		DWORD secOpenMaxMs = 0;
+		DWORD secFileWriteMaxMs = 0;
+		DWORD secCloseMaxMs = 0;
+		DWORD secDirCreateMaxMs = 0;
+		long long totalDropped = 0;
+
+		EnterCriticalSection(&m_statLock);
+		secSavedCount = m_secSavedCount;
+		secDroppedCount = m_secDroppedCount;
+		secCompressMs = m_secCompressMs;
+		secWriteMs = m_secWriteMs;
+		secOpenMs = m_secOpenMs;
+		secFileWriteMs = m_secFileWriteMs;
+		secCloseMs = m_secCloseMs;
+		secDirCreateMs = m_secDirCreateMs;
+		secDirCreateCount = m_secDirCreateCount;
+		secCompressMaxMs = m_secCompressMaxMs;
+		secWriteMaxMs = m_secWriteMaxMs;
+		secOpenMaxMs = m_secOpenMaxMs;
+		secFileWriteMaxMs = m_secFileWriteMaxMs;
+		secCloseMaxMs = m_secCloseMaxMs;
+		secDirCreateMaxMs = m_secDirCreateMaxMs;
+		totalDropped = m_totalDropped;
+
+		m_secSavedCount = 0;
+		m_secDroppedCount = 0;
+		m_secCompressMs = 0;
+		m_secWriteMs = 0;
+		m_secOpenMs = 0;
+		m_secFileWriteMs = 0;
+		m_secCloseMs = 0;
+		m_secDirCreateMs = 0;
+		m_secDirCreateCount = 0;
+		m_secCompressMaxMs = 0;
+		m_secWriteMaxMs = 0;
+		m_secOpenMaxMs = 0;
+		m_secFileWriteMaxMs = 0;
+		m_secCloseMaxMs = 0;
+		m_secDirCreateMaxMs = 0;
+		LeaveCriticalSection(&m_statLock);
+
+		int readySize = m_pool.GetReadySize();
+		int freeSize = m_pool.GetFreeSize();
+		bool idle = (secSavedCount <= 0 && readySize <= 0 && secDroppedCount <= 0);
+		if (idle && !force)
+		{
+			return;
+		}
+
+		double avgCompress = 0.0;
+		double avgWrite = 0.0;
+		double avgOpen = 0.0;
+		double avgFileWrite = 0.0;
+		double avgClose = 0.0;
+		double avgDirCreate = 0.0;
+		if (secSavedCount > 0)
+		{
+			avgCompress = (double)secCompressMs / (double)secSavedCount;
+			avgWrite = (double)secWriteMs / (double)secSavedCount;
+			avgOpen = (double)secOpenMs / (double)secSavedCount;
+			avgFileWrite = (double)secFileWriteMs / (double)secSavedCount;
+			avgClose = (double)secCloseMs / (double)secSavedCount;
+		}
+		if (secDirCreateCount > 0)
+		{
+			avgDirCreate = (double)secDirCreateMs / (double)secDirCreateCount;
+		}
+
+		int abnormalFreeThreshold = m_pool.GetBlockCount() / 2;
+		if (abnormalFreeThreshold < 1)
+		{
+			abnormalFreeThreshold = 1;
+		}
+		bool abnormal = (readySize > 0 || freeSize < abnormalFreeThreshold || secWriteMaxMs >= 100 || secCompressMaxMs >= 80 || secDroppedCount > 0);
+		const char* statType = abnormal ? "保存线程异常统计" : "保存线程正常统计";
+
+		char line[1024];
+		sprintf_s(line,
+			"%s，本秒保存张数=%lld，压缩平均耗时=%.1fms，压缩最大耗时=%lums，写盘总平均耗时=%.1fms，写盘总最大耗时=%lums，打开平均=%.1fms，打开最大=%lums，写入平均=%.1fms，写入最大=%lums，关闭平均=%.1fms，关闭最大=%lums，建目录次数=%lld，建目录平均=%.1fms，建目录最大=%lums，待处理队列=%d，空闲块=%d，本秒丢帧=%lld，总丢帧=%lld",
+			statType,
+			secSavedCount,
+			avgCompress,
+			secCompressMaxMs,
+			avgWrite,
+			secWriteMaxMs,
+			avgOpen,
+			secOpenMaxMs,
+			avgFileWrite,
+			secFileWriteMaxMs,
+			avgClose,
+			secCloseMaxMs,
+			secDirCreateCount,
+			avgDirCreate,
+			secDirCreateMaxMs,
+			readySize,
+			freeSize,
+			secDroppedCount,
+			totalDropped);
+		m_saveLog.PrintLine(line);
+	}
+
+private:
+	DiskStressConfig m_cfg;
+	std::string m_runOutputDir;
+	CImagePool m_pool;
+	CSimpleLog m_log;
+	CSimpleLog m_saveLog;
+	std::vector<unsigned char> m_sourceGray;
+	int m_width;
+	int m_height;
+	std::atomic<bool> m_stopRequested;
+	std::atomic<bool> m_producerFinished;
+	std::atomic<long long> m_nextOutputIndex;
+	std::atomic<long long> m_totalDropped;
+	std::atomic<long long> m_totalSaved;
+	std::thread m_producerThread;
+	std::thread m_statThread;
+	std::vector<std::thread> m_saveThreads;
+	CRITICAL_SECTION m_packLock;
+	FILE* m_packDataFile;
+	FILE* m_packIndexFile;
+	int m_packSerialNo;
+	int m_packCurrentNo;
+	unsigned long long m_packCreateTimeValue;
+	int m_packCurrentFrameCount;
+	int m_packFramesSinceFlush;
+
+	CRITICAL_SECTION m_statLock;
+	CRITICAL_SECTION m_lostLock;
+	std::queue<std::string> m_lostLogs;
+
+	long long m_secSavedCount;
+	long long m_secDroppedCount;
+	long long m_secCompressMs;
+	long long m_secWriteMs;
+	long long m_secOpenMs;
+	long long m_secFileWriteMs;
+	long long m_secCloseMs;
+	long long m_secDirCreateMs;
+	long long m_secDirCreateCount;
+	DWORD m_secCompressMaxMs;
+	DWORD m_secWriteMaxMs;
+	DWORD m_secOpenMaxMs;
+	DWORD m_secFileWriteMaxMs;
+	DWORD m_secCloseMaxMs;
+	DWORD m_secDirCreateMaxMs;
+};
+
+static CDiskStressApp* g_app = NULL;
+
+BOOL WINAPI ConsoleHandlerRoutine(DWORD ctrlType)
+{
+	if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT || ctrlType == CTRL_CLOSE_EVENT)
+	{
+		if (g_app != NULL)
+		{
+			g_app->RequestStop();
+		}
+		return TRUE;
+	}
+	return FALSE;
+}
+
+static void PrintUsage()
+{
+	std::cout
+		<< "DiskStressDemo usage:\n"
+		<< "  DiskStressDemo.exe [-input path] [-output dir] [-fps 20] [-count 0] [-duration 0]\n"
+		<< "                     [-threads 4] [-pool 80] [-quality 85] [-logInterval 1000]\n"
+		<< "                     [-mode single|pack] [-packMB 800] [-packFlush 20]\n"
+		<< "Config file: DiskStressDemo.ini (same directory as exe)\n";
+}
+
+static bool LoadConfigFromIniAndArgs(int argc, char* argv[], DiskStressConfig& cfg)
+{
+	std::string exeDir = GetExeDir();
+	std::string iniPath = JoinPath(exeDir, "DiskStressDemo.ini");
+
+	cfg.inputImage = ReadIniString(iniPath, "input", "imagePath", cfg.inputImage.c_str());
+	cfg.outputDir = ReadIniString(iniPath, "output", "rootDir", cfg.outputDir.c_str());
+	cfg.saveMode = ReadIniString(iniPath, "output", "saveMode", "single");
+	cfg.fps = ReadIniDouble(iniPath, "stress", "fps", cfg.fps);
+	cfg.totalCount = ReadIniInt64(iniPath, "stress", "totalCount", cfg.totalCount);
+	cfg.durationSec = ReadIniInt(iniPath, "stress", "durationSec", cfg.durationSec);
+	cfg.threadCount = ReadIniInt(iniPath, "stress", "threadCount", cfg.threadCount);
+	cfg.poolBlockCount = ReadIniInt(iniPath, "stress", "poolBlockCount", cfg.poolBlockCount);
+	cfg.jpegQuality = ReadIniInt(iniPath, "stress", "jpegQuality", cfg.jpegQuality);
+	cfg.logIntervalMs = ReadIniInt(iniPath, "stress", "logIntervalMs", cfg.logIntervalMs);
+	cfg.packMaxMB = ReadIniInt(iniPath, "pack", "packMaxMB", cfg.packMaxMB);
+	cfg.packFlushEvery = ReadIniInt(iniPath, "pack", "packFlushEvery", cfg.packFlushEvery);
+
+	for (int i = 1; i < argc; ++i)
+	{
+		std::string arg = argv[i];
+		if (arg == "-h" || arg == "--help")
+		{
+			PrintUsage();
+			return false;
+		}
+		else if ((arg == "-input" || arg == "--input") && i + 1 < argc)
+		{
+			cfg.inputImage = argv[++i];
+		}
+		else if ((arg == "-output" || arg == "--output") && i + 1 < argc)
+		{
+			cfg.outputDir = argv[++i];
+		}
+		else if ((arg == "-fps" || arg == "--fps") && i + 1 < argc)
+		{
+			cfg.fps = atof(argv[++i]);
+		}
+		else if ((arg == "-count" || arg == "--count") && i + 1 < argc)
+		{
+			cfg.totalCount = _atoi64(argv[++i]);
+		}
+		else if ((arg == "-duration" || arg == "--duration") && i + 1 < argc)
+		{
+			cfg.durationSec = atoi(argv[++i]);
+		}
+		else if ((arg == "-threads" || arg == "--threads") && i + 1 < argc)
+		{
+			cfg.threadCount = atoi(argv[++i]);
+		}
+		else if ((arg == "-pool" || arg == "--pool") && i + 1 < argc)
+		{
+			cfg.poolBlockCount = atoi(argv[++i]);
+		}
+		else if ((arg == "-quality" || arg == "--quality") && i + 1 < argc)
+		{
+			cfg.jpegQuality = atoi(argv[++i]);
+		}
+		else if ((arg == "-logInterval" || arg == "--logInterval") && i + 1 < argc)
+		{
+			cfg.logIntervalMs = atoi(argv[++i]);
+		}
+		else if ((arg == "-mode" || arg == "--mode") && i + 1 < argc)
+		{
+			cfg.saveMode = argv[++i];
+		}
+		else if ((arg == "-packMB" || arg == "--packMB") && i + 1 < argc)
+		{
+			cfg.packMaxMB = atoi(argv[++i]);
+		}
+		else if ((arg == "-packFlush" || arg == "--packFlush") && i + 1 < argc)
+		{
+			cfg.packFlushEvery = atoi(argv[++i]);
+		}
+	}
+
+	cfg.inputImage = ResolvePathByExeDir(cfg.inputImage);
+	cfg.outputDir = ResolvePathByExeDir(cfg.outputDir);
+	cfg.saveMode = ToLowerString(cfg.saveMode);
+	if (cfg.saveMode != "pack")
+	{
+		cfg.saveMode = "single";
+	}
+
+	if (cfg.threadCount < 1)
+	{
+		cfg.threadCount = 1;
+	}
+	if (cfg.poolBlockCount < cfg.threadCount * 2)
+	{
+		cfg.poolBlockCount = cfg.threadCount * 2;
+	}
+	if (cfg.jpegQuality < 1)
+	{
+		cfg.jpegQuality = 1;
+	}
+	if (cfg.jpegQuality > 100)
+	{
+		cfg.jpegQuality = 100;
+	}
+	if (cfg.logIntervalMs < 200)
+	{
+		cfg.logIntervalMs = 200;
+	}
+	if (cfg.packMaxMB < 1)
+	{
+		cfg.packMaxMB = 1;
+	}
+	if (cfg.packFlushEvery < 1)
+	{
+		cfg.packFlushEvery = 1;
+	}
+	if (cfg.fps < 0.1)
+	{
+		cfg.fps = 0.1;
+	}
+	return true;
+}
+
+int main(int argc, char* argv[])
+{
+	GdiplusStartupInput gdiplusStartupInput;
+	ULONG_PTR gdiplusToken = 0;
+	if (GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL) != Ok)
+	{
+		std::cout << "GDI+ startup failed." << std::endl;
+		return 1;
+	}
+
+	DiskStressConfig cfg;
+	if (!LoadConfigFromIniAndArgs(argc, argv, cfg))
+	{
+		GdiplusShutdown(gdiplusToken);
+		return 1;
+	}
+
+	CDiskStressApp app;
+	g_app = &app;
+	SetConsoleCtrlHandler(ConsoleHandlerRoutine, TRUE);
+
+	int ret = app.Run(cfg);
+
+	g_app = NULL;
+	GdiplusShutdown(gdiplusToken);
+	return ret;
+}
