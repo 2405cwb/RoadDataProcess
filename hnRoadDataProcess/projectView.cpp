@@ -848,6 +848,8 @@ void projectView::saveProjectEdit()
 		}
 	}
 	if (!project->updateProjectSettings(candidate, &error)) { QMessageBox::critical(this, QStringLiteral("保存失败"), error.isEmpty() ? QStringLiteral("工程设置未保存。") : error); return; }
+	// 工程方向、范围或路面信息会参与病害读取和出表，保存后必须丢弃旧缓存。
+	if (manager->getDiseaseService()) manager->getDiseaseService()->invalidateCache();
 	m_loadedProjectSettings = project->getCurProSetInfo();
 	QLineEdit* fields[] = { ui.lineEdit, ui.lineEdit_5, ui.lineEdit_2, ui.lineEdit_6, ui.lineEdit_3, ui.lineEdit_7, ui.lineEdit_4, ui.lineEdit_12, ui.lineEdit_9, ui.lineEdit_10, ui.lineEdit_11, ui.lineEdit_13 };
 	for (QLineEdit* field : fields) if (field) field->setReadOnly(true);

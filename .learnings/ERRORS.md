@@ -3271,3 +3271,58 @@ Prefer non-destructive fixture creation or an isolated test helper with explicit
 ### Resolution
 - **Resolved**: 2026-09-11T00:00:00+08:00
 - **Notes**: Skipped the blocked filesystem experiment and used source-level validation plus the existing Release build workflow.
+
+## [ERR-20260921-001] encoding-preserving source edit
+
+**Logged**: 2026-09-21T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+A CP936 source replacement failed because the match included localized text decoded differently by PowerShell.
+
+### Error
+`
+target block not found
+`
+
+### Context
+- Attempted a narrow replacement in hnRoadDataProcess/projectView.cpp.
+- No source bytes were written because the precondition failed.
+
+### Suggested Fix
+Match a stable ASCII-only code line and preserve the original encoding and line endings.
+
+### Metadata
+- Reproducible: yes
+- Related Files: hnRoadDataProcess/projectView.cpp
+
+---
+## [ERR-20260921-002] legacy Qt build verification
+
+**Logged**: 2026-09-21T14:26:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Build verification first used an absent VS2019 path, then exposed a VS2015 source-encoding parse error in an edited UTF-8 header.
+
+### Error
+`
+MSBuild.exe path not found; C2059 at hnReportProjectInfo.h line 52
+`
+
+### Context
+- The installed builder is Visual Studio 18 Build Tools, which invokes the v140 compiler.
+- UTF-8 Chinese comments without a BOM were parsed under CP936.
+
+### Suggested Fix
+Discover the installed MSBuild path first and keep UTF-8-without-BOM legacy headers ASCII-only outside escaped string literals.
+
+### Metadata
+- Reproducible: yes
+- Related Files: hnRoadDataProcess/hnReportProjectInfo.h
+
+---

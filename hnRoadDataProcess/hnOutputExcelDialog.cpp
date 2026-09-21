@@ -314,9 +314,7 @@ void hnOutputExcelDialog::setupMultiProjectWidthTable(const std::vector<hnPro::h
 		QTableWidgetItem* widthItem = new QTableWidgetItem(QString::number(reportInfo.roadWidth, 'g', 12));
 		const bool lineCamera = project->isLineCameraProject();
 		QTableWidgetItem* sourceItem = new QTableWidgetItem(lineCamera
-			? QStringLiteral("线阵有效区域")
-			: (hnReportProjectInfo::hasSavedRoadWidth(project)
-				? QStringLiteral("报表配置") : QStringLiteral("工程道路宽度")));
+			? QStringLiteral("线阵有效区域") : QStringLiteral("成果数据库"));
 		nameItem->setFlags(nameItem->flags() & ~Qt::ItemIsEditable);
 		standardItem->setFlags(standardItem->flags() & ~Qt::ItemIsEditable);
 		drawTypeItem->setFlags(drawTypeItem->flags() & ~Qt::ItemIsEditable);
@@ -760,8 +758,8 @@ void hnOutputExcelDialog::onOkButton()
 		if (!hnReportProjectInfo::save(project, projectReportInfo, &saveError))
 		{
 			QMessageBox::critical(this, QStringLiteral("保存失败"),
-				QStringLiteral("无法把工程信息写入工程配置文件：\n%1\n\n原因：%2")
-				.arg(QDir::toNativeSeparators(hnReportProjectInfo::configPath(project)),
+				QStringLiteral("无法把工程信息写入成果数据库：\n%1\n\n原因：%2")
+				.arg(QDir::toNativeSeparators(project->getDbResultFilePath()),
 					saveError.isEmpty() ? QStringLiteral("未知错误") : saveError));
 			return;
 		}

@@ -970,48 +970,7 @@ namespace hnPro
 					}
 
 				}
-				// The open-project dialog writes these user selections to ProjectInfo.txt.
-				// Existing result databases must be synchronized before runtime settings are used;
-				// otherwise the old database values silently override the user's selections.
-				bool projectSettingsChanged = false;
-				// 旧成果库只修复非法方向值，避免覆盖已经正确的上行/下行。
-				const bool databaseLineTypeInvalid = m_projectInfo.nLineType != 1 && m_projectInfo.nLineType != -1;
-				const bool projectLineTypeValid = curProDataInfo.proSetInfo.nLineType == 1 || curProDataInfo.proSetInfo.nLineType == -1;
-				if (databaseLineTypeInvalid && projectLineTypeValid)
-				{
-					m_projectInfo.nLineType = curProDataInfo.proSetInfo.nLineType;
-					projectSettingsChanged = true;
-				}
-				if (m_projectInfo.nDrawType != curProDataInfo.proSetInfo.nDrawType)
-				{
-					m_projectInfo.nDrawType = curProDataInfo.proSetInfo.nDrawType;
-					projectSettingsChanged = true;
-				}
-				if (strcmp(m_projectInfo.strRoadStandard, curProDataInfo.proSetInfo.strRoadStandard) != 0)
-				{
-					strcpy(m_projectInfo.strRoadStandard, curProDataInfo.proSetInfo.strRoadStandard);
-					projectSettingsChanged = true;
-				}
-				if (!qFuzzyCompare(m_projectInfo.dRoadWidth + 1.0, curProDataInfo.proSetInfo.dRoadWidth + 1.0))
-				{
-					m_projectInfo.dRoadWidth = curProDataInfo.proSetInfo.dRoadWidth;
-					projectSettingsChanged = true;
-				}
-				if (m_projectInfo.nRSurfaceType != curProDataInfo.proSetInfo.nRSurfaceType)
-				{
-					m_projectInfo.nRSurfaceType = curProDataInfo.proSetInfo.nRSurfaceType;
-					projectSettingsChanged = true;
-				}
-				if (strcmp(m_projectInfo.strRoadLevel, curProDataInfo.proSetInfo.strRoadLevel) != 0)
-				{
-					strcpy(m_projectInfo.strRoadLevel, curProDataInfo.proSetInfo.strRoadLevel);
-					projectSettingsChanged = true;
-				}
-				m_projectInfo.nGradIndex = curProDataInfo.proSetInfo.nGradIndex;
-				if (projectSettingsChanged && !m_pDbSqlite->m_projectSetTable.writeData(m_projectInfo))
-				{
-					return false;
-				}
+				// Existing result databases are the sole source of project settings.
 				if (!m_pDbSqlite->m_markerInfoTable.readData(m_vecMarkInfo))
 				{
 					return false;

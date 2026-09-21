@@ -12,7 +12,6 @@
 #include <QSet>
 #include <QSettings>
 #include <QStorageInfo>
-#include <QTextCodec>
 #include <QTextStream>
 #include <QThread>
 #include <QUuid>
@@ -114,76 +113,25 @@ namespace
 		return true;
 	}
 
-	QString decodeProjectInfo(const QByteArray& data)
+	bool readDatabaseProjectInfo(hnPro::hnProject* project, hnCommon::hnProjectSetInfo& info)
 	{
-		QString text = QString::fromUtf8(data);
-		if (text.contains(QChar::ReplacementCharacter))
-		{
-			QTextCodec* codec = QTextCodec::codecForLocale();
-			text = codec ? codec->toUnicode(data) : text;
-		}
-		return text;
+		return project && project->getDB() && project->getDB()->isOpen()
+			&& project->getDB()->m_projectSetTable.readData(info);
 	}
 
-	QString projectInfoValue(const QString& text, const QStringList& keys)
+	QString routeCodeFromDatabase(const hnCommon::hnProjectSetInfo& info)
 	{
-		const QStringList lines = text.split(QRegExp(QStringLiteral("[\\r\\n]+")), QString::SkipEmptyParts);
-		for (const QString& rawLine : lines)
-		{
-			const QString line = rawLine.trimmed();
-			for (const QString& key : keys)
-			{
-				if (!line.startsWith(key))
-				{
-					continue;
-				}
-				int separator = line.indexOf(QChar(0xFF1A));
-				if (separator < 0)
-				{
-					separator = line.indexOf(QLatin1Char(':'));
-				}
-				if (separator >= 0)
-				{
-					return line.mid(separator + 1).trimmed();
-				}
-			}
-		}
-		return QString();
+		return QString::fromLocal8Bit(info.strNumber).trimmed();
 	}
 
-	QString readProjectInfoText(hnPro::hnProject* project)
+	QString countyCodeFromDatabase(const hnCommon::hnProjectSetInfo& info)
 	{
-		if (!project || !project->get2DProject())
+		QString code = digitsOnly(QString::fromLocal8Bit(info.strRemark));
+		if (code.size() != 6)
 		{
-			return QString();
+			code = digitsOnly(QString::fromLocal8Bit(info.strCounty));
 		}
-		QFile file(QDir(project->get2DProject()->getBasePath()).filePath(QStringLiteral("ProjectInfo.txt")));
-		if (!file.open(QIODevice::ReadOnly))
-		{
-			return QString();
-		}
-		return decodeProjectInfo(file.readAll());
-	}
-
-	QString routeCodeFromProject(hnPro::hnProject* project, const QString& projectInfo)
-	{
-		QString routeCode = projectInfoValue(projectInfo,
-			QStringList() << QStringLiteral("检测公路路线编号") << QStringLiteral("检测公路编号")
-				<< QStringLiteral("公路路线编号") << QStringLiteral("路线编号")
-				<< QStringLiteral("公路编号") << QStringLiteral("路线代码"));
-		if (routeCode.isEmpty() && project && project->get2DProject())
-		{
-			routeCode = project->get2DProject()->_RoadCode.trimmed();
-		}
-		return routeCode.trimmed();
-	}
-
-	QString countyCodeFromText(const QString& projectInfo)
-	{
-		QString code = projectInfoValue(projectInfo,
-			QStringList() << QStringLiteral("县级行政区划代码") << QStringLiteral("县级行政代码")
-				<< QStringLiteral("行政区划代码") << QStringLiteral("县级代码"));
-		return digitsOnly(code);
+		return code.size() == 6 ? code : QString();
 	}
 
 	bool validateReadableFile(const QString& projectName, const QString& description,
@@ -470,6 +418,12 @@ namespace
 				continue;
 			}
 			QStringList projectErrors;
+			hnCommon::hnProjectSetInfo databaseInfo;
+			if (!readDatabaseProjectInfo(project, databaseInfo))
+			{
+				projectErrors.append(QStringLiteral("工程【%1】：成果数据库 SETTING_INFO 中没有有效工程信息。\n%2")
+					.arg(projectName, project->getDbResultFilePath()));
+			}
 
 			ExportContext context;
 			context.project = project;
@@ -477,7 +431,8 @@ namespace
 			context.projectName = projectName.isEmpty() ? fallbackName : projectName;
 			context.basePath = QDir::cleanPath(project->get2DProject()->getBasePath());
 			context.outputPath = QDir(context.basePath).filePath(QStringLiteral("ConverSource"));
-			context.standard = project->getBaseStandard();
+			context.standard = HnProjectEnums::roadTypeQStringToEnum(
+				QString::fromLocal8Bit(databaseInfo.strRoadStandard));
 			context.exportStandard = exportStandard;
 			hnGjOutputSelection outputSelection = requestedSelection;
             if (context.standard == HnProjectEnums::RuralRoadlowLevel)
@@ -486,10 +441,10 @@ namespace
                 outputSelection.haFile = outputSelection.rdFile = outputSelection.ttFile = outputSelection.lFile = false;
             }
             context.outputSelection = outputSelection;
-			context.drawType = project->getCurProSetInfo().nDrawType;
-			context.direction = project->getCurProSetInfo().nLineType;
-			context.startMile = project->getCurProSetInfo().dBegMile;
-			context.endMile = project->getCurProSetInfo().dEndMile;
+			context.drawType = databaseInfo.nDrawType;
+			context.direction = databaseInfo.nLineType;
+			context.startMile = databaseInfo.dBegMile;
+			context.endMile = databaseInfo.dEndMile;
 			context.hasGeometryResult = hasUsableGeometryResult(context.basePath);
 
 			if (!QFileInfo(context.basePath).isDir())
@@ -512,12 +467,9 @@ namespace
 					.arg(storage.bytesAvailable() / 1024 / 1024)
 					.arg(context.basePath));
 			}
-			const QString infoPath = QDir(context.basePath).filePath(QStringLiteral("ProjectInfo.txt"));
-			validateReadableFile(context.projectName, QStringLiteral("ProjectInfo.txt"), infoPath, projectErrors);
-			const QString projectInfo = readProjectInfoText(project);
-			const QString routeCode = routeCodeFromProject(project, projectInfo);
-			QString projectCountyCode = countyCodeFromText(projectInfo);
-			if (projectCountyCode.isEmpty()) projectCountyCode = digitsOnly(project->get2DProject()->_CityCode);
+			const QString infoPath = project->getDbResultFilePath();
+			const QString routeCode = routeCodeFromDatabase(databaseInfo);
+			const QString projectCountyCode = countyCodeFromDatabase(databaseInfo);
 			const QString countyCode = normalizedBatchCountyCode;
 			if (routeCode.size() < 4)
 			{
@@ -1871,7 +1823,7 @@ namespace
 		QFile file;
 		if (!openUtf8TextFile(file, QDir(routeRoot).filePath(QStringLiteral("RD/"))
 			+ dataFileName(context, QStringLiteral("RD")), errorMessage)
-			|| !writeUtf8Line(file, QStringLiteral("桩号(km),左车辙RD(mm),右车辙RD(mm),路面车辙RD(mm)"), errorMessage))
+			|| !writeUtf8Line(file, QStringLiteral("起点桩号(km),左车辙RD(mm),右车辙RD(mm),路面车辙RD(mm)"), errorMessage))
 			return false;
 		for (hnOutExcelMile row : rows)
 		{
@@ -2131,7 +2083,7 @@ namespace
 		QFile file;
 		if (!openUtf8TextFile(file, QDir(routeRoot).filePath(QStringLiteral("PB/"))
 			+ dataFileName(context, QStringLiteral("PB")), errorMessage)
-			|| !writeUtf8Line(file, QStringLiteral("桩号(km),PB_L,PB_M,PB_H,Δh(cm)"), errorMessage))
+			|| !writeUtf8Line(file, QStringLiteral("起点桩号(km),PB_L,PB_M,PB_H,Δh(cm)"), errorMessage))
 			return false;
 		for (hnOutExcelMile row : rows)
 		{
@@ -2964,10 +2916,9 @@ int hnGjBatchResult::skippedCount() const
 
 QString hnGjConvertSourceService::readCountyCode(hnPro::hnProject* project)
 {
-	if (!project || !project->get2DProject()) return QString();
-	QString code = countyCodeFromText(readProjectInfoText(project));
-	if (code.isEmpty()) code = digitsOnly(project->get2DProject()->_CityCode);
-	return code;
+	hnCommon::hnProjectSetInfo databaseInfo;
+	return readDatabaseProjectInfo(project, databaseInfo)
+		? countyCodeFromDatabase(databaseInfo) : QString();
 }
 
 QString hnGjConvertSourceService::standardDisplayName(hnGjExportStandard standard)
