@@ -182,6 +182,23 @@ bool hn2dDiseaseExchangeService::parseRoadLine(const QString& line, const ImageR
 	return true;
 }
 
+bool hnDiseaseImportRules::meetsRuralDiseaseAreaRequirement(
+	HnProjectEnums::StandardParmTypeEnum standard, const QByteArray& tableName, double area)
+{
+	if (standard != HnProjectEnums::RuralRoadlowLevel)
+	{
+		return true;
+	}
+
+	if (tableName != QByteArrayLiteral("DisSS") && tableName != QByteArrayLiteral("DisLG"))
+	{
+		return true;
+	}
+
+	// 与二三维手绘规则一致：低等级农村公路的松散、露骨面积不得小于 20 平方米。
+	return area >= 20.0;
+}
+
 hn2dDiseaseExchangeService::Result hn2dDiseaseExchangeService::replaceDiseases(const std::function<bool()>& cancelled)
 {
 	Result result;
@@ -233,6 +250,12 @@ hn2dDiseaseExchangeService::Result hn2dDiseaseExchangeService::replaceDiseases(c
 			{
 				// 二维允许混合规范；无法识别或不匹配当前绘制配置的文本静默跳过。
 				result.error.clear();
+				continue;
+			}
+			if (!hnDiseaseImportRules::meetsRuralDiseaseAreaRequirement(m_project->getBaseStandard(),
+				QByteArray(disease.strDiseaseTableName), disease.dArea))
+			{
+				++result.skippedCount;
 				continue;
 			}
 			diseases[QString::fromLocal8Bit(disease.strDiseaseTableName)].append(disease);

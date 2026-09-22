@@ -10,10 +10,23 @@
 #include <QDir>
 #include <QTimer>
 #include <QMessageBox>
+#include <cstdio>
 
 // 仅接收已经复制到验证目录的工程，绝不对客户原件运行。
 int main(int argc, char** argv)
 {
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--rural-area-rule"))
+    {
+        using hnDiseaseImportRules::meetsRuralDiseaseAreaRequirement;
+        if (meetsRuralDiseaseAreaRequirement(HnProjectEnums::RuralRoadlowLevel, QByteArrayLiteral("DisSS"), 19.99)) return 33;
+        if (meetsRuralDiseaseAreaRequirement(HnProjectEnums::RuralRoadlowLevel, QByteArrayLiteral("DisLG"), 19.99)) return 34;
+        if (!meetsRuralDiseaseAreaRequirement(HnProjectEnums::RuralRoadlowLevel, QByteArrayLiteral("DisSS"), 20.0)) return 35;
+        if (!meetsRuralDiseaseAreaRequirement(HnProjectEnums::RuralRoadlowLevel, QByteArrayLiteral("DisLG"), 20.0)) return 36;
+        if (!meetsRuralDiseaseAreaRequirement(HnProjectEnums::RuralRoadlowLevel, QByteArrayLiteral("DisKC"), 1.0)) return 37;
+        if (!meetsRuralDiseaseAreaRequirement(HnProjectEnums::DegreeRoad2018, QByteArrayLiteral("DisSS"), 1.0)) return 38;
+        std::fprintf(stdout, "PASS rural loose/exposed aggregate area rule boundaries\n");
+        return 0;
+    }
     QApplication app(argc, argv);
     QTextStream out(stdout); out.setCodec("UTF-8");
     if (argc < 3) return 2;

@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <QByteArray>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -12,6 +13,12 @@
 namespace hnPro
 {
 	class hnProject;
+}
+
+namespace hnDiseaseImportRules
+{
+	bool meetsRuralDiseaseAreaRequirement(HnProjectEnums::StandardParmTypeEnum standard,
+		const QByteArray& tableName, double area);
 }
 
 class hn2dDiseaseExchangeService
